@@ -76,9 +76,12 @@ def test_rejects_nonpositive_chip_value():
 
 
 def test_rejects_negative_bounty_even_when_villain_not_covered():
-    # Отрицательный bounty бессмыслен сам по себе — не должен молча
-    # проваливаться в "план без баунти" только потому, что villain_stack
-    # не покрыт коллом (bounty > 0 короткое замыкание).
+    # Когда villain не покрыт, bounty вообще не входит в арифметику
+    # результата — так что этот guard не предотвращает неверное число
+    # (оно и без guard'а было бы верным). Причина держать проверку здесь —
+    # отклонять семантически бессмысленный ввод на любом пути одинаково,
+    # а не только там, где он случайно влияет на результат, — так же,
+    # как knockout_cash уже отклоняет отрицательный bounty сам по себе.
     with pytest.raises(ValueError):
         required_equity_with_bounty(
             pot_before_call=100,
@@ -115,9 +118,12 @@ def test_rejects_negative_pot_even_when_bounty_applies():
         )
 
 
-def test_rejects_nonpositive_call_amount_even_when_bounty_applies():
-    # Та же ветка (villain покрыт, bounty > 0) не проверяла call_amount
-    # напрямую — обязана давать ту же ошибку, что required_equity.
+def test_rejects_nonpositive_call_amount():
+    # call_amount <= 0 всегда даёт covers_villain=False, раз villain_stack
+    # гарантированно положителен (см. свою же проверку выше) — значит,
+    # эта ошибка всегда всплывает через делегирование в required_equity,
+    # а не через ветку "villain покрыт". Тест фиксирует, что
+    # required_equity_with_bounty не глотает эту ошибку по пути.
     with pytest.raises(ValueError):
         required_equity_with_bounty(
             pot_before_call=100,
