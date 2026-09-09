@@ -1,0 +1,10 @@
+# -*- coding: utf-8 -*-
+# Точные версии, на которых прогонялись Task 1-6 (Python 3.14.4, Windows).
+# Ставить до `pip install -e ".[dev]" --no-deps`, иначе pip разрешит зависимости заново.
+colorama==0.4.6
+iniconfig==2.3.0
+packaging==26.3
+pluggy==1.6.0
+pokerkit==0.7.5
+Pygments==2.21.0
+pytest==9.1.1

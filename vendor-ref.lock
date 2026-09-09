@@ -1,0 +1,8 @@
+# Пины референсных репозиториев для vendor-ref/.
+# Формат: <каталог> <owner/repo> <commit-sha>
+# Обновление: склонировать вручную, поменять SHA здесь, зафиксировать причину в коммите.
+ggpoker-hand-analyzer LayorX/GGPoker-Hand-Analyzer 26ba89d59533f42d7426b10cdd57a971aeb4aa91
+poker-charts          AHTOOOXA/poker-charts        c7192b3bda783d4a0f12f37a6f9876daaf25151c
+pokercraft-local      McDic/pokercraft-local       288db55f2f59d179600f8ac131a12ba3fca02a79
+poker-hand-review     matthiola0/poker-hand-review 9b5f326fdd68c1ad405a82ce574b323a5dd66ded
+pokerkit              uoftcprg/pokerkit            54571ddda38a7da9b8c527d54c16c788ac14dac7

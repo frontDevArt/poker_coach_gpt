@@ -1,0 +1,127 @@
+Сделано: Task 1–5 из 12
+
+Ветка feat/poker-engine-core, 9 коммитов, дерево чистое, 35 тестов зелёные.
+
+┌──────┬────────────────────────────────────────────────────────┬──────────────────┐
+│ Task │                          Что                           │     Коммиты      │
+├──────┼────────────────────────────────────────────────────────┼──────────────────┤
+│ 1    │ каркас пакета, venv, pokerkit 0.7.5                    │ 5c6a404          │
+├──────┼────────────────────────────────────────────────────────┼──────────────────┤
+│ 2    │ scripts/fetch-vendor-ref.sh, 5 репо склонированы       │ 39fa526, f9b2b83 │
+├──────┼────────────────────────────────────────────────────────┼──────────────────┤
+│ 3    │ types.py — позиции, улицы, инвариант фишек             │ 255994b, ccd2fba │
+├──────┼────────────────────────────────────────────────────────┼──────────────────┤
+│ 4    │ potodds.py — пот-оддсы, chip-EV                        │ 1744218, 9725e38 │
+├──────┼────────────────────────────────────────────────────────┼──────────────────┤
+│ 5    │ icm.py — Malmuth-Harville, bubble factor, risk premium │ 33780b2, 0666849 │
+└──────┴────────────────────────────────────────────────────────┴──────────────────┘
+
+Каждая задача прошла оба ревью — spec compliance, потом code quality.
+
+Баги плана, найденные и исправленные
+
+1. positions_for(6) — код плана давал LJ, тест плана требовал UTG. «7 passed» был недостижим. Исправлена реализация, тест не тронут.
+2. _equity_with_busts возвращал список из функции -> float. Достижимо из тестов, ронял _icm_branches в TypeError.
+3. Отрицательные hero/villain — bubble_factor(...,-1,1) возвращал 1.167 вместо ошибки. Тихо неверное число.
+4. risk_premium делил на ноль на легальном входе. CLI из Task 9 ловит только ValueError/IndexError → трейсбек пользователю.
+5. Докстринг врал про сложность — O(n·2^n) заявлено, n!/(n-depth)! измерено. n=10 → 5 с, n=11 → 56 с. Task 10 републикует докстринг пользователям.
+6. Асимметрия валидации в potodds — required_equity отвергал мусор, соседи молча принимали.
+
+Плюс шесть тестов на непокрытые guard'ы. Итоговое ожидание для Task 9 — 59, а не 53; записал в память проекта, иначе следующая сессия пойдёт искать несуществующий пропавший тест.
+
+Открытое — нужно твоё решение
+
+risk_premium сравнивает win == lose точно. Точный ноль ловит, близкий — нет. Плоские лесенки выплат (то есть сателлиты) дают разницу ~1e-15 через разные ветки рекурсии, guard промахивается:
+
+stacks=[50,30,20]         payouts=[50,50,50] hero=1 villain=2 -> 0.5
+stacks=[100,90,80,70]     payouts=[25]*4     hero=0 villain=3 -> -0.5
+stacks=[13,17,19,23,29,31] payouts=[10]*6    hero=0 villain=5 -> -2.5
+
+Тот же класс, что и уже исправленный Critical: молча неверное число, без исключения. Не регрессия — было и до фикса. Лечится одной строкой (math.isclose(win, lose, abs_tol=1e-9)), у bubble_factor та же слабость.
+
+Предупреждение для Task 7/8
+
+Не начинал, но баг уже виден: в hand_equity условие elif len(deck) <= 20 and need <= 1:. На тёрне колода — 44 карты, ветка не срабатывает, уходит в Monte-Carlo. Task 8 вызывает этот же путь с trials=1 как «точный ответ» — получит один случайный ривер. test_monte_carlo_converges_to_exhaustive_on_turn упадёт. Условие должно быть need <= 1.
+
+Журнал прогона со всеми деталями — в scratchpad, execution-notes.md.
+
+Task 6 закрыт. Останавливаюсь, как просил.
+
+Что сделано
+
+bounty.py — PKO: knockout_cash, bounty_in_chips, required_equity_with_bounty. Три коммита:
+
+┌─────────┬───────────────────────────────────────────────────┐
+│   SHA   │                        Что                        │
+├─────────┼───────────────────────────────────────────────────┤
+│ a74b813 │ реализация + 12 тестов (8 плановых + 4 гарда)     │
+├─────────┼───────────────────────────────────────────────────┤
+│ 6d44805 │ правка неверных обоснований в двух тестах         │
+├─────────┼───────────────────────────────────────────────────┤
+│ 331e3d1 │ eager-валидация, общий _checks.py, покрытие split │
+└─────────┴───────────────────────────────────────────────────┘
+
+48 passed, дерево чистое. Оба ревью пройдены, второе — approved.
+
+Баги плана, найденные и закрытые
+
+1. villain_stack=-5 при call_amount=1 давал covers_villain=True — полный кредит за голову на колл в 1 фишку, порог падал до ~0.00095 вместо ~0.001. Тихо неверное число.
+2. Отрицательный pot_before_call на ветке с баунти обходил required_equity и возвращал 0.556 вместо исключения.
+3. Валидация зависела от значения соседнего аргумента: --chip-value -5 падал или молча проходил в зависимости от --bounty. Так как Task 9 делает cli.py чистым парсером, это и есть слой валидации CLI.
+4. split не был покрыт на верхнем уровне. Мутант — выброс аргумента из bounty_in_chips — выживал все 12 тестов. Ревьюер перепроверил мутацию сам после фикса: падает.
+
+Отклонение от плана — авторизовал я
+
+Новый src/poker_engine/_checks.py (check_amount, check_pot, check_probability); potodds.py и bounty.py импортируют оттуда. В файловой таблице плана его нет. Причина: две копии одинаковых гардов, а их строки ValueError — пользовательский текст ошибок CLI, расхождение сообщений сломало бы контракт. Task 7 и 9 сделали бы четыре копии. Ревьюер подтвердил: границы (< / <=) и сообщения байт-в-байт прежние, test_potodds.py не тронут.
+
+Открытое — три Minor, не блокеры
+
+1. test_bounty.py:109-113 — комментарий обобщает: «pot + extra неотрицателен, раз extra >= 0». Неверно, окно маскирования — [-extra, 0). Сам тест валиден, значения внутри окна.
+2. _check_bounty/_check_chip_value/_check_villain_stack в bounty.py — точные инстансы общих гардов, сообщения совпадают. Мешает только имя: нужен check_positive/check_non_negative вместо доменных check_pot/check_amount.
+3. Контракт «одинаковое нарушение → одинаковое сообщение» нигде не зафиксирован тестом. Мутант, переписывающий f-строку, проходит все 48.
+
+Ждёт решения с прошлого раза
+
+risk_premium и bubble_factor сравнивают win == lose точно. Плоские лесенки выплат дают разницу ~1e-15 — гард промахивается, возвращается молча неверное число (stacks=[50,30,20], payouts=[50,50,50] → 0.5). Одна строка: math.isclose(win, lose, abs_tol=1e-9).
+
+Предупреждение для Task 7
+
+hand_equity: elif len(deck) <= 20 and need <= 1 — на тёрне колода 44 карты, ветка не срабатывает. Task 8 зовёт этот путь с trials=1 как точный ответ и получит один случайный ривер. Условие должно быть need <= 1. Записано в задачу #2.
+
+----------------------------------------------------------------------------------------
+tak kak mi uje implementeravali navaki => path skaju chto nam nujno ot producta
+
+ya dayu screenshot pro konkretnuyu situaciyu v igre gde mne nujno prinyat reshenie.... 
+
+screenshot chitaet ai i ego function tolko vernut to strukturu chto nujno dlya prinyatie reshenie uje obuchennogo prilajenie. i skzat chto nado delat v takom sluche pravilnoe deystviya. potom eto deystviya ya v ume ili gdeto drugo mesto potom reshim budu sravnivat... 
+
+
+ya eto predstavlyayu tak.
+
+po nachalu opredelyaem trunament chto igraem. i ego structure. opredelyaem po ai kotoriy polachayet screenshot i vozvrashyaet nekiy structure kotiry peredayot v prilajenie. ili manual no po default screenshot
+
+potom u nas est drag and drop area kotoriy rabotaet eshyo s paste s clipboard. (zdes right click toje doljen oznachatca paste kak cntrl  + v)
+
+eto pervoe Stavka screenshot budet podrazumivat preflop gde nastal omment prinyatie reshenie. posle screenshota ti dayosh mne pravilnoe deystvie mnoyu. potom automatically s nizu otkrivaeysh eshyo odin file attch area no s tabami s verxu gde mi daljni skazat eto screenshot budet pro flop ili reyz na preflope, potom tak dalshe do rivera... kajdaya Novaya ulica doljen uchtivat prejnie reshenie. 
+
+
+
+i umenya zdes vopros kak budet pravilno.. 
+
+tak kak u nas est obuchennie scripti otvet dayotca iz locala na ulicax ili mi imeya eti navikai skarmlimaem prompt dlya ai chtob on dal nam otvet srazu posle chtenie screenshota ? 
+
+ili pered etim nujno obuchat dalshe po screenshotom ? u mneya ix mnogo pod raznie situacii. kak pravilno budeet dalshe i moyta ideya kak budet ispolyat ?
+
+-----------------------------------------------------------------------------------------------
+
+Дома
+
+git clone https://github.com/frontDevArt/poker_coach_gpt.git
+cd poker_coach_gpt && git checkout feat/poker-engine-core
+cd packages/poker-engine && python -m venv .venv
+.venv/Scripts/python -m pip install -r requirements-dev.lock
+.venv/Scripts/python -m pip install -e ".[dev]" --no-deps
+.venv/Scripts/python -m pytest        # 48 passed
+cd ../.. && bash scripts/fetch-vendor-ref.sh
+
+Дальше — читать HANDOFF.md, начинать Task 7.
