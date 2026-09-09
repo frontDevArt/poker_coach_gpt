@@ -4,10 +4,27 @@ from poker_engine.equity import hand_equity
 
 
 def test_mirror_hands_split_equity_exactly():
-    # AhKh против AdKd симметричны относительно перестановки мастей,
-    # поэтому эквити обязано делиться пополам при любом числе прогонов.
+    # Доска из четырёх карт ("2c7s9cTs") только треф и пик -> need == 1,
+    # ветка Ruling-1 перебирает все 44 ривера точно, без Monte-Carlo.
+    # Перестановка мастей h<->d фиксирует доску (в ней нет ни h, ни d),
+    # является биекцией оставшейся колоды и переводит AhKh в AdKd и
+    # обратно. Значит каждому ривер-исходу для AhKh соответствует
+    # ривер-исход для AdKd с точно такой же победой/поражением/сплитом
+    # (просто на другой карте той же биекции) -> сумма по всем 44
+    # ривера делится ровно пополам, без всякой статистической ошибки.
+    result = hand_equity(
+        ["AhKh", "AdKd"], board=["2c", "7s", "9c", "Ts"], trials=1, seed=1
+    )
+    assert result == pytest.approx([0.5, 0.5], abs=1e-9)
+
+
+def test_mirror_hands_split_equity_within_sampling_error():
+    # Без доски (need == 5) считается Monte-Carlo: симметрия h<->d верна
+    # только в математическом ожидании по всем возможным доскам, а не
+    # для конкретной случайной выборки. Допуск берём порядка масштаба
+    # самой выборки (~0.5/sqrt(trials) на сторону), а не машинного эпсилон.
     result = hand_equity(["AhKh", "AdKd"], board=[], trials=4000, seed=1)
-    assert result[0] == pytest.approx(result[1], abs=1e-9)
+    assert result[0] == pytest.approx(result[1], abs=0.02)
 
 
 def test_equities_sum_to_one():
