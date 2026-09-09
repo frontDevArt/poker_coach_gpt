@@ -1,0 +1,3 @@
+# Скрипты и локи читает bash/pip — на Windows CRLF ломает и то, и другое.
+*.sh   text eol=lf
+*.lock text eol=lf

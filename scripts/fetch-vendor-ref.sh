@@ -15,6 +15,7 @@ if [ ! -f "$LOCK" ]; then
 fi
 
 # Комментарии и пустые строки пропускаются; остальное — dir repo sha.
+# tr срезает CR: лок может лечь на диск с CRLF, и тогда sha уедет в checkout с хвостом.
 while read -r dir repo sha; do
   case "${dir:-}" in ''|'#'*) continue ;; esac
 
@@ -30,7 +31,7 @@ while read -r dir repo sha; do
   git -C "$DEST/$dir" fetch --quiet origin "$sha" 2>/dev/null || git -C "$DEST/$dir" fetch --quiet origin
   git -C "$DEST/$dir" checkout --quiet --detach "$sha"
   echo "pin  $dir -> $sha"
-done < "$LOCK"
+done < <(tr -d '\r' < "$LOCK")
 
 echo
 echo "Готово. vendor-ref/ соответствует vendor-ref.lock."

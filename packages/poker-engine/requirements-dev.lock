@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Точные версии, на которых прогонялись Task 1-6 (Python 3.14.4, Windows).
 # Ставить до `pip install -e ".[dev]" --no-deps`, иначе pip разрешит зависимости заново.
 colorama==0.4.6
