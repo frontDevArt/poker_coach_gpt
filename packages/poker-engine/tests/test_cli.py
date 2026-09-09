@@ -120,6 +120,36 @@ def test_malformed_scalar_flag_returns_error_json(capsys):
     assert "error" in data
 
 
+def test_empty_payouts_string_returns_error_json(capsys):
+    # "" когда-то парсился в пустой список выплат вместо отказа, и icm
+    # молча возвращал равные нулю эквити с кодом возврата 0.
+    code = main(["icm", "--stacks", "75,25", "--payouts", ""])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert code == 1
+    assert "error" in data
+
+
+def test_embedded_empty_token_in_list_returns_error_json(capsys):
+    # "50,,30,20" когда-то тихо схлопывался в 3 стека вместо 4, из-за чего
+    # --hero 2/--villain 1 адресовали не тех игроков, которых имел в виду
+    # пользователь, и команда возвращала правдоподобный, но неверный
+    # результат с кодом возврата 0.
+    code = main(
+        [
+            "risk-premium",
+            "--stacks", "50,,30,20",
+            "--payouts", "50,30,20",
+            "--hero", "2",
+            "--villain", "1",
+        ]
+    )
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert code == 1
+    assert "error" in data
+
+
 def test_help_still_exits_zero_with_usage_text(capsys):
     # -h/--help должен продолжать работать как раньше: argparse завершает
     # процесс через SystemExit(0) отдельным путём (exit, не error), и это

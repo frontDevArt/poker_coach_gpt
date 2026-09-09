@@ -48,6 +48,14 @@ def test_rejects_nonpositive_stack():
         icm_equities(stacks=[50, 0], payouts=[100])
 
 
+def test_rejects_empty_payouts():
+    # Пустой список выплат — не то же самое, что список короче поля игроков:
+    # короткий список законно добивается нулями, а пустой означает, что за
+    # раздачу вообще ничего не платят, и это должно быть отвергнуто.
+    with pytest.raises(ValueError):
+        icm_equities(stacks=[50, 25], payouts=[])
+
+
 def test_bubble_factor_is_one_under_winner_take_all():
     # Без лесенки выплат риска сверх фишкового нет.
     bf = bubble_factor(

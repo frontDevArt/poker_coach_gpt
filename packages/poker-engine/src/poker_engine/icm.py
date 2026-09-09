@@ -195,6 +195,8 @@ def _validate(stacks: list[int], payouts: list[float]) -> None:
         raise ValueError(f"нужно минимум 2 игрока, получено {len(stacks)}")
     if any(s <= 0 for s in stacks):
         raise ValueError(f"все стеки должны быть положительными: {stacks}")
+    if len(payouts) == 0:
+        raise ValueError("нужна хотя бы одна выплата, получено 0")
     if len(payouts) > len(stacks):
         raise ValueError(
             f"выплат ({len(payouts)}) больше, чем игроков ({len(stacks)})"

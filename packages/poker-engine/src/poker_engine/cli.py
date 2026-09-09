@@ -105,15 +105,18 @@ def _dispatch(args: argparse.Namespace) -> dict:
 
 
 def _int_list(text: str) -> list[int]:
-    return [int(x) for x in text.split(",") if x.strip()]
+    return [int(x) for x in text.split(",")]
 
 
 def _float_list(text: str) -> list[float]:
-    return [float(x) for x in text.split(",") if x.strip()]
+    return [float(x) for x in text.split(",")]
 
 
 def _str_list(text: str) -> list[str]:
-    return [x.strip() for x in text.split(",") if x.strip()]
+    tokens = [x.strip() for x in text.split(",")]
+    if any(not x for x in tokens):
+        raise ValueError(f"пустой элемент в списке: {text!r}")
+    return tokens
 
 
 def _build_parser() -> argparse.ArgumentParser:
