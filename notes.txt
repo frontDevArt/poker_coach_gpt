@@ -110,4 +110,18 @@ i umenya zdes vopros kak budet pravilno..
 
 tak kak u nas est obuchennie scripti otvet dayotca iz locala na ulicax ili mi imeya eti navikai skarmlimaem prompt dlya ai chtob on dal nam otvet srazu posle chtenie screenshota ? 
 
-ili pered etim nujno obuchat dalshe po screenshotom ? u mneya ix mnogo pod raznie situacii. kak pravilno budeet dalshe i moyta ideya kak budet ispolyat ? 
+ili pered etim nujno obuchat dalshe po screenshotom ? u mneya ix mnogo pod raznie situacii. kak pravilno budeet dalshe i moyta ideya kak budet ispolyat ?
+
+-----------------------------------------------------------------------------------------------
+
+Дома
+
+git clone https://github.com/frontDevArt/poker_coach_gpt.git
+cd poker_coach_gpt && git checkout feat/poker-engine-core
+cd packages/poker-engine && python -m venv .venv
+.venv/Scripts/python -m pip install -r requirements-dev.lock
+.venv/Scripts/python -m pip install -e ".[dev]" --no-deps
+.venv/Scripts/python -m pytest        # 48 passed
+cd ../.. && bash scripts/fetch-vendor-ref.sh
+
+Дальше — читать HANDOFF.md, начинать Task 7.
