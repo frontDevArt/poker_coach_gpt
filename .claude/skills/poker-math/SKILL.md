@@ -35,7 +35,7 @@ packages/poker-engine/.venv/Scripts/poker-engine.exe <команда> [опци�
 | Risk premium и bubble factor | `poker-engine risk-premium --stacks 12000,30000,8000 --payouts 50,30,20 --hero 0 --villain 1` |
 | Порог эквити по пот-оддсам | `poker-engine potodds --pot 100 --call 50` |
 | Порог эквити в PKO | `poker-engine bounty-ev --pot 100 --call 50 --villain-stack 50 --bounty 2.50 --chip-value 0.025` |
-| Эквити рук | `poker-engine equity --hands AsKs,7h7d --board Qh,8c,3d --trials 20000 --seed 1` |
+| Эквити рук | `poker-engine equity --hands AsKs,7h7d --board Kc,8c,3d --trials 20000 --seed 1` |
 
 ## Соглашения по аргументам
 
