@@ -88,6 +88,51 @@ def test_invalid_input_returns_error_json(capsys):
     assert "error" in data
 
 
+def test_malformed_list_flag_returns_error_json(capsys):
+    code = main(["icm", "--stacks", "abc", "--payouts", "70,30"])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert code == 1
+    assert "error" in data
+
+
+def test_missing_required_flag_returns_error_json(capsys):
+    code = main(["icm", "--stacks", "75,25"])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert code == 1
+    assert "error" in data
+
+
+def test_unknown_subcommand_returns_error_json(capsys):
+    code = main(["not-a-command"])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert code == 1
+    assert "error" in data
+
+
+def test_malformed_scalar_flag_returns_error_json(capsys):
+    code = main(["equity", "--hands", "AhKh,AdKd", "--trials", "x"])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert code == 1
+    assert "error" in data
+
+
+def test_help_still_exits_zero_with_usage_text(capsys):
+    # -h/--help должен продолжать работать как раньше: argparse завершает
+    # процесс через SystemExit(0) отдельным путём (exit, не error), и это
+    # исключение не перехватывается нашим JSON-обработчиком ошибок.
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--help"])
+    assert exc_info.value.code == 0
+    out = capsys.readouterr().out
+    assert "usage" in out.lower()
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(out)
+
+
 def test_error_json_is_valid_utf8_on_subprocess_console():
     # capsys нельзя использовать здесь: баг воспроизводится только через
     # реальную консоль Windows (cp1252), а не через перехват stdout в

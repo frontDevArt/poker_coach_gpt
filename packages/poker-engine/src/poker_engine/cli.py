@@ -20,14 +20,29 @@ from .potodds import required_equity
 def main(argv: list[str] | None = None) -> int:
     _ensure_utf8_stdout()
     parser = _build_parser()
-    args = parser.parse_args(argv)
     try:
+        args = parser.parse_args(argv)
         payload = _dispatch(args)
     except (ValueError, IndexError) as exc:
         print(json.dumps({"error": str(exc)}, ensure_ascii=False))
         return 1
     print(json.dumps(payload, ensure_ascii=False))
     return 0
+
+
+class _JsonErrorArgumentParser(argparse.ArgumentParser):
+    """Парсер, чьи собственные ошибки уходят в тот же JSON-путь, что и
+    ошибки движка, вместо usage-текста в stderr и кода возврата 2.
+
+    Текст сообщения не переформулируется — он ровно тот, что даёт argparse.
+    `add_subparsers` по умолчанию передаёт класс родителя сабпарсерам,
+    поэтому ошибки уровня подкоманды тоже попадают сюда. `-h`/`--help`
+    завершается через `SystemExit(0)` из другого пути (`exit`, не `error`),
+    поэтому не перехватывается и продолжает работать как раньше.
+    """
+
+    def error(self, message: str) -> None:  # noqa: D102 - сигнатура argparse
+        raise ValueError(message)
 
 
 def _ensure_utf8_stdout() -> None:
@@ -102,7 +117,7 @@ def _str_list(text: str) -> list[str]:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="poker-engine")
+    parser = _JsonErrorArgumentParser(prog="poker-engine")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_icm = sub.add_parser("icm", help="ICM-эквити по Malmuth-Harville")
