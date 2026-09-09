@@ -98,6 +98,25 @@ def test_risk_premium_with_degenerate_payouts_raises():
         risk_premium(stacks=[10, 10], payouts=[0, 0], hero=0, villain=1)
 
 
+@pytest.mark.parametrize(
+    "stacks, payouts, hero, villain",
+    [
+        ([50, 30, 20], [50, 50, 50], 1, 2),
+        ([100, 90, 80, 70], [25, 25, 25, 25], 0, 3),
+        ([13, 17, 19, 23, 29, 31], [10, 10, 10, 10, 10, 10], 0, 5),
+    ],
+)
+def test_flat_payout_ladder_is_exactly_degenerate(stacks, payouts, hero, villain):
+    # На полностью плоской лесенке (сателлиты) win и lose равны математически,
+    # но приходят к значению разными ветвями рекурсии и расходятся на ~1e-15.
+    # Точное сравнение float это ловит как false negative — риск-премия и
+    # bubble factor обязаны быть ровно 0 и 1, а не мусор от округления.
+    rp = risk_premium(stacks, payouts, hero, villain)
+    bf = bubble_factor(stacks, payouts, hero, villain)
+    assert rp == pytest.approx(0.0, abs=1e-9)
+    assert bf == pytest.approx(1.0)
+
+
 def test_bubble_and_risk_premium_hold_at_realistic_field_size():
     # 8 игроков, 5 оплачиваемых мест — реалистичная лесенка для 9-max,
     # где bust-and-recurse логика реально задействуется.

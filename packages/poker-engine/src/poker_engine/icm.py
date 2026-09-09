@@ -16,6 +16,7 @@ Monte-Carlo ICM (план 5). Здесь это не исправляется, �
 
 from __future__ import annotations
 
+import math
 from functools import lru_cache
 
 
@@ -71,9 +72,16 @@ def bubble_factor(
     Больше 1.0 — герой рискует деньгами сильнее, чем фишками.
     """
     now, win, lose = _icm_branches(stacks, payouts, hero, villain)
+    if math.isclose(win, now, abs_tol=1e-9) and not math.isclose(now, 0.0, abs_tol=1e-9):
+        # Плоская лесенка выплат (сателлиты): win и now математически
+        # совпадают, но приходят к значению разными ветвями рекурсии и
+        # расходятся на ~1e-15 — без допуска это ловится как money_up <= 0.
+        # Деньги при этом реально на кону (now != 0), поэтому давления
+        # лесенки нет и bubble factor определён — ровно 1.0.
+        return 1.0
     money_down = now - lose
     money_up = win - now
-    if money_up <= 0:
+    if money_up <= 0 or math.isclose(money_up, 0.0, abs_tol=1e-9):
         raise ValueError("выигрыш не увеличивает ICM-эквити, bubble factor не определён")
 
     chips_now = float(stacks[hero])
@@ -94,7 +102,15 @@ def risk_premium(
     Ноль при winner-take-all, положительно при лесенке выплат.
     """
     now, win, lose = _icm_branches(stacks, payouts, hero, villain)
-    if win == lose:
+    if math.isclose(win, lose, abs_tol=1e-9):
+        # Плоская лесенка выплат (сателлиты): win и lose равны математически,
+        # но приходят к значению разными ветвями рекурсии и расходятся на
+        # ~1e-15 — точное сравнение (win == lose) это пропускает.
+        # Если деньги реально на кону (now != 0), лесенка не давит и risk
+        # premium определён — ровно 0. Если выплаты нулевые, деньги не на
+        # кону вовсе, и это остаётся неопределённым случаем.
+        if not math.isclose(now, 0.0, abs_tol=1e-9):
+            return 0.0
         raise ValueError(
             "исход олл-ина не меняет ICM-эквити героя, risk premium не определён"
         )
