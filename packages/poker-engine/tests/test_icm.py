@@ -82,3 +82,28 @@ def test_bubble_factor_heads_up_survives_single_player_branch():
     # ветка, на которой наивная реализация падает.
     bf = bubble_factor(stacks=[60, 40], payouts=[70, 30], hero=0, villain=1)
     assert bf > 0.0
+
+
+def test_negative_hero_index_is_rejected():
+    # Отрицательный индекс не должен молча оборачиваться Python-семантикой
+    # индексации и отвечать за другого игрока.
+    with pytest.raises(ValueError):
+        bubble_factor(stacks=[50, 30, 20], payouts=[50, 30, 20], hero=-1, villain=1)
+
+
+def test_risk_premium_with_degenerate_payouts_raises():
+    # Нулевые выплаты не меняют ICM-эквити героя при любом исходе олл-ина,
+    # risk premium неопределён — должен упасть ValueError, а не ZeroDivisionError.
+    with pytest.raises(ValueError):
+        risk_premium(stacks=[10, 10], payouts=[0, 0], hero=0, villain=1)
+
+
+def test_bubble_and_risk_premium_hold_at_realistic_field_size():
+    # 8 игроков, 5 оплачиваемых мест — реалистичная лесенка для 9-max,
+    # где bust-and-recurse логика реально задействуется.
+    stacks = [300, 250, 200, 150, 120, 100, 80, 50]
+    payouts = [400, 250, 150, 100, 50]
+    bf = bubble_factor(stacks=stacks, payouts=payouts, hero=0, villain=1)
+    rp = risk_premium(stacks=stacks, payouts=payouts, hero=0, villain=1)
+    assert bf > 1.0
+    assert rp > 0.0

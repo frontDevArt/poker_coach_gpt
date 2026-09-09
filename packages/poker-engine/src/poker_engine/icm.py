@@ -4,9 +4,14 @@
 второго места для крупного стека. На баббле результат стоит сверять с
 Monte-Carlo ICM (план 5). Здесь это не исправляется, а документируется.
 
-Сложность рекурсии — O(n · 2^n) по числу игроков за счёт мемоизации по
-множеству уже занявших места. Для 9-max это приемлемо; выплат обычно
-меньше, чем игроков, поэтому рекурсия обрывается на глубине len(payouts).
+Сложность: `walk` перебирает упорядоченные префиксы игроков до глубины
+`depth` (число значимых выплат) — это порядка n! / (n − depth)! вызовов,
+т.е. падающий факториал, а не 2^n. Мемоизация `place_probs` ускоряет
+вычисление отдельной вероятности, но не схлопывает перебор порядков
+внутри `walk`. Для типичной турнирной лесенки (3–6 оплачиваемых мест)
+это быстро даже на 9-max; но полностью оплаченное поле или стол из
+10+ игроков с глубокой лесенкой считается заметно дольше — от секунд
+до минуты.
 """
 
 from __future__ import annotations
@@ -89,6 +94,10 @@ def risk_premium(
     Ноль при winner-take-all, положительно при лесенке выплат.
     """
     now, win, lose = _icm_branches(stacks, payouts, hero, villain)
+    if win == lose:
+        raise ValueError(
+            "исход олл-ина не меняет ICM-эквити героя, risk premium не определён"
+        )
     money_threshold = (now - lose) / (win - lose)
 
     chips_win = float(stacks[hero] + min(stacks[hero], stacks[villain]))
@@ -102,6 +111,11 @@ def _icm_branches(
     stacks: list[int], payouts: list[float], hero: int, villain: int
 ) -> tuple[float, float, float]:
     """ICM-эквити героя сейчас, после выигрыша и после проигрыша олл-ина."""
+    n = len(stacks)
+    if not (0 <= hero < n):
+        raise ValueError(f"hero={hero} вне диапазона игроков [0, {n - 1}]")
+    if not (0 <= villain < n):
+        raise ValueError(f"villain={villain} вне диапазона игроков [0, {n - 1}]")
     if hero == villain:
         raise ValueError("hero и villain должны различаться")
     at_risk = min(stacks[hero], stacks[villain])
