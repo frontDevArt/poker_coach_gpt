@@ -58,16 +58,21 @@ _FULL_RING_ORDER: list[Position] = [
 #
 # Не сворачивай это обратно в один общий срез — это тихо сломает
 # именование позиций на 6-max.
-_POSITION_OVERRIDES: dict[int, list[Position]] = {
-    2: [Position.SB, Position.BB],
-    6: [
+#
+# Значения — кортежи, а не списки: `positions_for` всегда возвращает
+# свежесозданный список (`list(...)`), так что этот модульный константный
+# словарь остаётся действительно неизменяемым и не может быть случайно
+# испорчен вызывающим кодом, мутирующим ранее полученный результат.
+_POSITION_OVERRIDES: dict[int, tuple[Position, ...]] = {
+    2: (Position.SB, Position.BB),
+    6: (
         Position.UTG,
         Position.HJ,
         Position.CO,
         Position.BTN,
         Position.SB,
         Position.BB,
-    ],
+    ),
 }
 
 
@@ -75,13 +80,16 @@ def positions_for(players: int) -> list[Position]:
     """Позиции за столом на `players` игроков.
 
     GG по умолчанию раздаёт 8-max в MTT. Хедз-ап вырождается в SB/BB.
+
+    Всегда возвращает свежий список — безопасно мутировать результат,
+    не затрагивая внутренние структуры модуля или другие вызовы.
     """
     if players < 2:
         raise ValueError(f"нужно минимум 2 игрока, получено {players}")
     if players > len(_FULL_RING_ORDER):
         raise ValueError(f"максимум {len(_FULL_RING_ORDER)} игроков, получено {players}")
     if players in _POSITION_OVERRIDES:
-        return _POSITION_OVERRIDES[players]
+        return list(_POSITION_OVERRIDES[players])
     return _FULL_RING_ORDER[len(_FULL_RING_ORDER) - players:]
 
 
