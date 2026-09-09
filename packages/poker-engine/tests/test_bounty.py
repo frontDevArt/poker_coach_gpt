@@ -106,8 +106,11 @@ def test_rejects_nonpositive_villain_stack():
 
 
 def test_rejects_negative_pot_even_when_bounty_applies():
-    # Прежде эта ветка (villain покрыт, bounty > 0) считала по формуле
-    # напрямую, минуя required_equity, и потому не проверяла pot_before_call.
+    # На ветке "villain покрыт, bounty > 0" required_equity видит только
+    # уже сдвинутый pot_before_call + extra (который неотрицателен, раз
+    # extra >= 0), так что отрицательный pot_before_call может поймать
+    # только собственный eager-guard этой функции. Тест фиксирует, что
+    # этот guard действительно есть и не обходится веткой с баунти.
     with pytest.raises(ValueError):
         required_equity_with_bounty(
             pot_before_call=-10,
@@ -119,11 +122,11 @@ def test_rejects_negative_pot_even_when_bounty_applies():
 
 
 def test_rejects_nonpositive_call_amount():
-    # call_amount <= 0 всегда даёт covers_villain=False, раз villain_stack
-    # гарантированно положителен (см. свою же проверку выше) — значит,
-    # эта ошибка всегда всплывает через делегирование в required_equity,
-    # а не через ветку "villain покрыт". Тест фиксирует, что
-    # required_equity_with_bounty не глотает эту ошибку по пути.
+    # required_equity_with_bounty отклоняет call_amount <= 0 своим
+    # собственным eager-guard'ом (до вычисления covers_villain), с тем же
+    # сообщением, что и potodds.required_equity — так что контракт ошибки
+    # для вызывающей стороны (в частности, будущего CLI) одинаков вне
+    # зависимости от того, задействован ли путь с баунти.
     with pytest.raises(ValueError):
         required_equity_with_bounty(
             pot_before_call=100,
@@ -132,3 +135,16 @@ def test_rejects_nonpositive_call_amount():
             bounty=2.50,
             chip_value=0.025,
         )
+
+
+def test_split_reaches_the_threshold():
+    # split=1.0 -> вся голова 2.50 наличными -> 2.50/0.025 = 100 фишек.
+    # Порог = 50 / (100 + 100 + 50) = 0.2
+    assert required_equity_with_bounty(
+        pot_before_call=100,
+        call_amount=50,
+        villain_stack=50,
+        bounty=2.50,
+        chip_value=0.025,
+        split=1.0,
+    ) == pytest.approx(0.2)

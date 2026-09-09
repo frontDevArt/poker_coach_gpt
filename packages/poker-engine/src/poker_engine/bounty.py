@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from ._checks import check_amount, check_pot
 from .potodds import required_equity
 
 DEFAULT_SPLIT = 0.5
@@ -45,25 +46,26 @@ def required_equity_with_bounty(
     Голова засчитывается только если колл героя покрывает стек соперника,
     то есть нокаут действительно возможен в этой раздаче.
 
-    Валидация всех параметров выполняется здесь безусловно, а не только
-    на том пути, где формула фактически использует конкретное значение:
-    иначе, например, отрицательный bounty или бессмысленный villain_stack
-    молча проваливались бы в «план без баунти» вместо явной ошибки.
+    Валидация всех параметров — `bounty`, `villain_stack`, `chip_value`,
+    `split`, `call_amount`, `pot_before_call` — выполняется безусловно,
+    до вычисления `covers_villain`: валидность одного аргумента не должна
+    зависеть от значения другого. В частности `chip_value` — обязательный
+    позиционный параметр без "неприменимого" значения, а этот модуль и
+    есть слой валидации CLI-ввода: `--chip-value -5` обязан падать
+    одинаково вне зависимости от того, что передано в `--bounty`.
     """
     _check_bounty(bounty)
     _check_villain_stack(villain_stack)
-    _check_amount(call_amount, "call_amount")
-    _check_pot(pot_before_call, "pot_before_call")
+    _check_chip_value(chip_value)
+    _check_split(split)
+    check_amount(call_amount, "call_amount")
+    check_pot(pot_before_call, "pot_before_call")
 
     covers_villain = call_amount >= villain_stack
-    extra = (
-        bounty_in_chips(bounty, chip_value, split)
-        if covers_villain and bounty > 0
-        else 0.0
-    )
-    if extra == 0.0:
+    if not (covers_villain and bounty > 0):
         return required_equity(pot_before_call, call_amount)
-    return call_amount / (pot_before_call + extra + call_amount)
+    extra = bounty_in_chips(bounty, chip_value, split)
+    return required_equity(pot_before_call + extra, call_amount)
 
 
 def _check_bounty(value: float) -> None:
@@ -84,13 +86,3 @@ def _check_chip_value(value: float) -> None:
 def _check_villain_stack(value: float) -> None:
     if value <= 0:
         raise ValueError(f"villain_stack должен быть > 0, получено {value}")
-
-
-def _check_amount(value: float, name: str) -> None:
-    if value <= 0:
-        raise ValueError(f"{name} должен быть > 0, получено {value}")
-
-
-def _check_pot(value: float, name: str) -> None:
-    if value < 0:
-        raise ValueError(f"{name} не может быть отрицательным: {value}")
