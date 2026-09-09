@@ -1,30 +1,36 @@
 #!/usr/bin/env bash
 # Клонирует референсные репозитории в vendor-ref/ (read-only, не в git).
 # Используются как источник по формату данных GG и для cross-check (T4).
+# Версии пинятся в vendor-ref.lock — без этого «воспроизводимо» было бы на словах.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="$ROOT/vendor-ref"
+LOCK="$ROOT/vendor-ref.lock"
 mkdir -p "$DEST"
 
-clone() {
-  local repo="$1" dir="$2"
-  if [ -d "$DEST/$dir/.git" ]; then
-    echo "skip $dir (уже склонирован)"
-    return
-  fi
-  git clone --depth 50 "https://github.com/$repo.git" "$DEST/$dir"
-}
+if [ ! -f "$LOCK" ]; then
+  echo "нет $LOCK" >&2
+  exit 1
+fi
 
-clone "matthiola0/poker-hand-review"      "poker-hand-review"
-clone "McDic/pokercraft-local"            "pokercraft-local"
-clone "LayorX/GGPoker-Hand-Analyzer"      "ggpoker-hand-analyzer"
-clone "AHTOOOXA/poker-charts"             "poker-charts"
-clone "uoftcprg/pokerkit"                 "pokerkit"
+# Комментарии и пустые строки пропускаются; остальное — dir repo sha.
+while read -r dir repo sha; do
+  case "${dir:-}" in ''|'#'*) continue ;; esac
+
+  if [ ! -d "$DEST/$dir/.git" ]; then
+    git clone "https://github.com/$repo.git" "$DEST/$dir"
+  fi
+
+  if [ "$(git -C "$DEST/$dir" rev-parse HEAD)" = "$sha" ]; then
+    echo "ok   $dir ($sha)"
+    continue
+  fi
+
+  git -C "$DEST/$dir" fetch --quiet origin "$sha" 2>/dev/null || git -C "$DEST/$dir" fetch --quiet origin
+  git -C "$DEST/$dir" checkout --quiet --detach "$sha"
+  echo "pin  $dir -> $sha"
+done < "$LOCK"
 
 echo
-echo "Готово. Зафиксировать использованные коммиты:"
-for d in "$DEST"/*/; do
-  [ -d "$d/.git" ] || continue
-  printf '%-28s %s\n' "$(basename "$d")" "$(git -C "$d" rev-parse --short HEAD)"
-done
+echo "Готово. vendor-ref/ соответствует vendor-ref.lock."

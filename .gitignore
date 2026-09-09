@@ -31,5 +31,11 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# чужие репо, клонируются через scripts/fetch-vendor-ref.sh
+# чужие репо, 322 МБ; клонируются по пинам через scripts/fetch-vendor-ref.sh + vendor-ref.lock
 vendor-ref/
+
+# локальные заметки сессии; переносимое состояние — в docs/superpowers/state/
+notes.txt
+
+# Claude Code: настройки проекта коммитятся, машинно-локальные оверрайды — нет
+.claude/settings.local.json
