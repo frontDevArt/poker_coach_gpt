@@ -49,3 +49,22 @@ def test_ev_shove_without_fold_equity_reduces_to_ev_call():
     )
     manual = 0.4 * (100 + 200) - 0.6 * 200
     assert shove == pytest.approx(manual)
+
+
+def test_required_equity_rejects_negative_pot():
+    with pytest.raises(ValueError):
+        required_equity(pot_before_call=-10, call_amount=50)
+
+
+def test_probability_guard_rejects_out_of_range_values():
+    with pytest.raises(ValueError):
+        ev_call(pot_before_call=100, call_amount=50, equity=1.5)
+    with pytest.raises(ValueError):
+        ev_shove(
+            pot_before_shove=100, shove_amount=200, fold_equity=-0.1, equity_when_called=0.4
+        )
+
+
+def test_ev_call_rejects_negative_call_amount():
+    with pytest.raises(ValueError):
+        ev_call(pot_before_call=100, call_amount=-50, equity=0.5)
