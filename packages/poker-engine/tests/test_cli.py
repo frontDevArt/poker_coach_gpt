@@ -61,11 +61,23 @@ def test_riskpremium_command(capsys):
 
 
 def test_equity_command(capsys):
+    # Цель — проверить, что подкоманда equity парсит флаги (включая --board)
+    # и сериализует JSON, а не переоткрывать математику эквити. Четыре карты
+    # борда оставляют одну карту недостающей, поэтому hand_equity перебирает
+    # все 44 ривера точно (trials игнорируется). Борд состоит только из треф
+    # и пик, поэтому замена мастей h<->d — биекция оставшейся колоды, которая
+    # оставляет борд на месте и переводит AhKh в AdKd и обратно: каждому
+    # исходу ривера для первой руки соответствует зеркальный исход для
+    # второй, и сплит ровно 50/50.
     code, data = run(
-        ["equity", "--hands", "AhKh,AdKd", "--trials", "2000", "--seed", "1"], capsys
+        [
+            "equity", "--hands", "AhKh,AdKd", "--board", "2c,7s,9c,Ts",
+            "--trials", "1", "--seed", "1",
+        ],
+        capsys,
     )
     assert code == 0
-    assert data["equities"][0] == pytest.approx(data["equities"][1], abs=1e-9)
+    assert data["equities"] == pytest.approx([0.5, 0.5], abs=1e-9)
 
 
 def test_invalid_input_returns_error_json(capsys):
