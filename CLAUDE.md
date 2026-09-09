@@ -5,12 +5,11 @@ Nuxt-оболочка плюс Python-ядро `packages/poker-engine` (ICM, п�
 
 ## Текущее состояние
 
-Ветка `feat/poker-engine-core`, Tasks 1–6 из 12 закрыты, 48 тестов зелёные.
+Ветка `feat/poker-engine-core`, все 12 задач плана закрыты, 80 тестов зелёные. Ветка не влита.
 
-**Продолжать с Task 7. Перед первой строкой кода прочитать
-`docs/superpowers/state/HANDOFF.md`** — там сетап машины, три перенесённых пункта (баг в
-`hand_equity`, ожидающее решение по точному сравнению float в ICM, устаревший счётчик тестов в плане)
-и конвенции, установленные за Tasks 1–6.
+**Перед работой прочитать `docs/superpowers/state/HANDOFF.md`** — там сетап машины, что появилось
+в Tasks 7–12, восемь решений, принятых против текста плана (план требовал недоказуемых инвариантов),
+один пункт, ждущий решения пользователя, и список сознательно отложенных мелочей.
 
 | Документ | Что |
 |---|---|
@@ -19,15 +18,14 @@ Nuxt-оболочка плюс Python-ядро `packages/poker-engine` (ICM, п�
 | `docs/superpowers/state/HANDOFF.md` | точка входа для новой сессии |
 | `docs/superpowers/state/2026-09-09-poker-engine-execution-notes.md` | полный журнал ревью Tasks 1–6 |
 
-План требует `superpowers:subagent-driven-development` или `superpowers:executing-plans`; плагины
-перечислены в `.claude/settings.json`.
+Плагины перечислены в `.claude/settings.json`.
 
 ## Команды
 
 ```bash
 # ядро
 cd packages/poker-engine
-.venv/Scripts/python -m pytest              # 48 passed на конец Task 6
+.venv/Scripts/python -m pytest              # 80 passed, ~1 мин
 
 # первый запуск на новой машине
 python -m venv .venv

@@ -1,108 +1,83 @@
-# Handoff — resume poker-engine core at Task 7
+# Handoff — план 1 (Ф0 + Ф1) закрыт
 
-Last updated: 2026-09-09. Branch `feat/poker-engine-core`, base `main` @ `e112e24`.
+Last updated: 2026-09-09. Ветка `feat/poker-engine-core`, база `main` @ `e112e24`, 30 коммитов.
 
-**Tasks 1–6 done. Start at Task 7.**
-Plan: `docs/superpowers/plans/2026-09-09-poker-engine-core.md`
-Spec: `docs/superpowers/specs/2026-09-09-poker-skillpack-design.md`
-Full review log: `docs/superpowers/state/2026-09-09-poker-engine-execution-notes.md`
+**Все 12 задач плана `docs/superpowers/plans/2026-09-09-poker-engine-core.md` выполнены.
+80 тестов зелёные, ни одного skip, ни одного xfail. Ветка не влита.**
 
-## 1. Machine setup on a fresh clone
+Спека: `docs/superpowers/specs/2026-09-09-poker-skillpack-design.md`
+Журнал Tasks 1–6: `docs/superpowers/state/2026-09-09-poker-engine-execution-notes.md`
+
+## 1. Что появилось в Tasks 7–12
+
+| Что | Где |
+|---|---|
+| Эквити рук: точный перебор при `need <= 1`, иначе Monte-Carlo | `packages/poker-engine/src/poker_engine/equity.py` |
+| Перекрёстная сверка выборки против точного перебора | `packages/poker-engine/tests/test_equity_crosscheck.py` |
+| JSON-CLI: `icm`, `potodds`, `bounty-ev`, `risk-premium`, `equity` | `packages/poker-engine/src/poker_engine/cli.py` |
+| Скилл L1 — контракт «число только из вывода CLI» | `.claude/skills/poker-math/SKILL.md` |
+| Скилл L0 — словарь домена | `.claude/skills/poker-ontology/SKILL.md` |
+| README пакета | `packages/poker-engine/README.md` |
+
+## 2. Машина
+
+Сетап не изменился — см. «Команды» в `CLAUDE.md`. Проверено на Python 3.12, pokerkit 0.7.5.
 
 ```bash
-git clone https://github.com/frontDevArt/poker_coach_gpt.git
-cd poker_coach_gpt
-git checkout feat/poker-engine-core
-
-# Python core (this is where all remaining work happens)
-cd packages/poker-engine
-python -m venv .venv
-.venv/Scripts/python -m pip install -r requirements-dev.lock   # exact versions used so far
-.venv/Scripts/python -m pip install -e ".[dev]" --no-deps
-.venv/Scripts/python -m pytest                                  # expect: 48 passed
-
-# Reference repos (322 MB, deliberately not in git — pinned by vendor-ref.lock)
-cd ../..
-bash scripts/fetch-vendor-ref.sh
-
-# Nuxt shell (not touched by this plan)
-npm install
+cd packages/poker-engine && .venv/Scripts/python -m pytest    # 80 passed, ~1 мин
 ```
 
-Verified toolchain: Python 3.14.4, pokerkit 0.7.5, pytest 9.1.1 on Windows.
-`pyproject.toml` says `requires-python = ">=3.11"` and `pokerkit>=0.5`; the lock file is what was
-actually exercised. If the home machine resolves a different pokerkit, re-verify Task 7 —
-`StandardHighHand.from_game(hole, board)` and `StandardHighHand(Card.parse(...))` were confirmed on
-0.7.5 only.
+Один файл, `tests/test_equity_crosscheck.py`, занимает ~40 с из этой минуты: он строит точное
+эквити флопа перебором всех 45 тёрнов, каждый из которых перебирает все 44 ривера, и сверяет с
+выборкой на 20000 прогонов. Это цена независимой проверки сэмплера, а не тормоза.
 
-## 2. Claude Code setup
+## 3. Что решено за автора по ходу Tasks 7–12
 
-`.claude/settings.json` is committed and enables the plugins this plan depends on. On first session
-the home machine will prompt to trust the marketplaces; accept, then confirm with `/plugin`:
+План местами утверждал недоказуемое, и эти места переписаны. Полный список решений — в отчёте
+сессии; ключевые, которые видно в коде:
 
-- `superpowers@claude-plugins-official` — **required.** The plan's header mandates
-  `superpowers:subagent-driven-development` or `superpowers:executing-plans`, and each task uses
-  `test-driven-development`, `verification-before-completion`, `requesting-code-review`.
-- `context7@claude-plugins-official` — pokerkit API lookups.
-- `caveman@caveman` — response-style only, optional.
+1. **Ветка точного перебора в `equity.py` — условие `need <= 1`**, без отброшенного плановым текстом
+   `len(deck) <= 20`. На тёрне колода 44 карты, и плановое условие не срабатывало никогда.
+2. **Три теста плана переписаны**: план требовал точного равенства эквити зеркальных рук
+   (`AhKh` против `AdKd`) с допуском 1e-9 на Monte-Carlo. Ни один корректный сэмплер этого не даёт —
+   симметрия выполняется только в среднем. Инвариант перенесён на ветку точного перебора, где он
+   действительно точен, плюс отдельный тест на сходимость с допуском масштаба выборки.
+3. **Перекрёстная сверка перенацелена на флоп.** После п. 1 обе стороны плановой сверки уходили в
+   точный перебор и сравнивали число само с собой.
+4. **`risk_premium` и `bubble_factor` сравнивают эквити через `math.isclose`**, а не `==`. На плоских
+   лесенках выплат расхождение ~1e-15 обходило guard и возвращало молча неверное число.
+5. **Ошибки argparse тоже сериализуются в JSON.** Раньше `parse_args` стоял вне `try`, и опечатка в
+   аргументах давала код 2 с пустым stdout — ровно на том пути, который обязан отдавать разбираемый
+   ответ.
+6. **stdout принудительно UTF-8.** Все сообщения об ошибках русские, и на консоли cp1252 их печать
+   падала с `UnicodeEncodeError` вне `try`.
+7. **Пустые токены в списках CLI отвергаются, а не пропускаются.** `--stacks "50,,30,20"` молча
+   сдвигал индексы, и `--hero 2` адресовал не того игрока.
+8. **Дубль карты в примерах плана** (`AsKs` при `Ks` на доске) исправлен переносом короля на трефы —
+   и в тесте, и в таблице команд скилла.
 
-Version used so far: superpowers 5.1.0.
+## 4. Открытое
 
-Project skills `.claude/skills/poker-ontology/` and `.claude/skills/poker-math/` do not exist yet —
-Tasks 10 and 11 create them, and they land in git like any other source file.
+**Требует решения пользователя.** `.claude/settings.json` включает сторонний marketplace-плагин
+`caveman@JuliusBrussee/caveman` и лежит в git, то есть достаётся всем, кто клонирует ветку. Ни план,
+ни спека его не упоминают; закоммичен в `b6bb68d` во время Tasks 1–6. Решение — оставить или убрать —
+за автором репозитория.
 
-Nothing else lives outside the repo. There are no secrets, no `.env`, no API keys — the engine is
-pure local computation.
+**Мелочи, зафиксированные и сознательно отложенные.** Ревью ветки нашло их, ни одна не блокирует:
 
-## 3. Before writing Task 7 code — read these
+- `notes.txt` в корне репозитория всё ещё говорит «Tasks 1–5, 35 тестов» и дублирует этот файл.
+- `bounty.py` держит три собственных гарда, дословно повторяющих `_checks.py` — расхождение сообщений
+  сломало бы контракт CLI, хотя сейчас они совпадают байт в байт.
+- Оба скилла ссылаются на `poker-review-method`, которого ещё нет (он из плана 5).
+- `TableSnapshot` проверяет сохранение фишек только по явному вызову `validate()`, и типом пока никто
+  не пользуется.
+- `cli.py` считает `_icm_branches` дважды за вызов `risk-premium`.
+- README не упоминает `requirements-dev.lock` и не говорит, что `equity` работает по конкретным рукам,
+  без диапазонов.
+- Инвариант T1 «игрок со 100% фишек получает первое место» не покрыт прямым тестом: буквально он
+  недостижим, стеки обязаны быть > 0. Покрыт в пределе.
 
-Three items carried over. The first two are decisions already made and not yet applied.
+## 5. Дальше
 
-### 3.1 Pre-existing bug that Task 7/8 will trip over
-
-`hand_equity` (Task 7) has:
-
-```python
-elif len(deck) <= 20 and need <= 1:
-```
-
-On the turn the deck holds 44 cards, so this never fires and control falls into Monte-Carlo. Task 8's
-`_exhaustive_turn_equity` calls the same path with `trials=1` and treats the answer as exact — it gets
-one random river. `test_monte_carlo_converges_to_exhaustive_on_turn` (abs=0.01) will fail.
-
-**Fix: the condition must be `need <= 1` alone.**
-
-### 3.2 Waiting on a decision — exact float comparison in ICM
-
-`risk_premium` and `bubble_factor` compare `win == lose` exactly. Flat payout ladders (satellites)
-make the two mathematically equal but ~1e-15 apart through different recursion paths, so the guard
-misses and a silently wrong number is returned:
-
-| stacks | payouts | hero | villain | returned |
-|---|---|---|---|---|
-| `[50,30,20]` | `[50,50,50]` | 1 | 2 | `0.5` |
-| `[100,90,80,70]` | `[25]*4` | 0 | 3 | `-0.5` |
-| `[13,17,19,23,29,31]` | `[10]*6` | 0 | 5 | `-2.5` |
-
-Same failure class as the Critical already fixed in `0666849`: wrong number, no exception.
-Pre-existing, not a regression. One line: `math.isclose(win, lose, abs_tol=1e-9)` instead of `==`.
-`bubble_factor`'s `money_up <= 0` guard has the same weakness.
-
-### 3.3 The plan's test-count gate is stale
-
-Plan Task 9 Step 6 asserts the suite must end at **53 passed** and says a mismatch means a test was
-lost. That number predates the guard-coverage tests added during review.
-
-**Expected total is 64**: 1 smoke + 7 types + 11 potodds + 16 icm + 13 bounty + 8 equity
-+ 2 crosscheck + 6 cli. Measured so far: 35 after Task 5, 48 after Task 6. Do not go hunting for a
-phantom missing test; recompute per module if Tasks 7–8 add more.
-
-## 4. Convention established during Tasks 1–6
-
-- One commit per task, plus follow-up `fix(engine): …` commits for review findings. Conventional
-  Commits.
-- Every task runs two reviews: spec compliance first, then code quality. Both must approve.
-- Argument validation lives in the engine, not the CLI — Task 9 makes `cli.py` a pure parser, so
-  `ValueError` strings from `_checks.py` are user-facing error text. Keep them stable.
-- Shared guards go in `src/poker_engine/_checks.py` (an authorized addition not in the plan's file
-  table). Do not re-duplicate them in `equity.py`.
+План 1 закрыт. Следующий — Ф2 (`pushfold`, Nash + ICM-коррекция), самая тяжёлая фаза по спеке.
+Перед ней ветку нужно влить.
