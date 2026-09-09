@@ -80,6 +80,52 @@ def test_equity_command(capsys):
     assert data["equities"] == pytest.approx([0.5, 0.5], abs=1e-9)
 
 
+def test_riskpremium_command_hero_villain_are_not_interchangeable(capsys):
+    # В отличие от test_riskpremium_command выше, выплаты здесь НЕ
+    # winner-take-all (50/30/20, а не 100/0/0) — при плоской (WTA) лесенке
+    # risk premium/bubble factor у героя и виллана совпадают почти всегда,
+    # и подстановка --hero/--villain не в тот аргумент CLI ничего не меняет
+    # в результате. При лесенке 50/30/20 стек 30 значит для риска не то же
+    # самое, что стек 20 (у второго меньше падать при проигрыше и меньше
+    # получать при выигрыше относительно поля), поэтому если cli.py перепутает
+    # местами --hero и --villain при вызове risk_premium/bubble_factor,
+    # числа изменятся — это ловит именно порядок аргументов, а не их наличие.
+    code, data = run(
+        [
+            "risk-premium",
+            "--stacks", "50,30,20",
+            "--payouts", "50,30,20",
+            "--hero", "0",
+            "--villain", "1",
+        ],
+        capsys,
+    )
+    assert code == 0
+    assert data["risk_premium"] == pytest.approx(0.03896103896103875)
+    assert data["bubble_factor"] == pytest.approx(1.1690140845070411)
+
+
+def test_equity_command_board_changes_result(capsys):
+    # Борд здесь оставляет ровно одну карту недостающей до ривера, поэтому
+    # hand_equity перебирает все 44 исхода точно (--trials игнорируется) —
+    # результат детерминирован и не зависит от seed. Если cli.py забудет
+    # передать args.board и подставит [], hand_equity вместо точного перебора
+    # уйдёт в Monte-Carlo с --trials 1 по неполной раздаче: величина совпадёт
+    # с borded-результатом только случайно, поэтому число здесь доказывает,
+    # что --board действительно дошёл до движка.
+    code, data = run(
+        [
+            "equity", "--hands", "AhAd,KhKd", "--board", "2c,7s,9c,Ts",
+            "--trials", "1", "--seed", "1",
+        ],
+        capsys,
+    )
+    assert code == 0
+    assert data["equities"] == pytest.approx(
+        [0.9545454545454546, 0.045454545454545456]
+    )
+
+
 def test_invalid_input_returns_error_json(capsys):
     code = main(["icm", "--stacks", "50", "--payouts", "100"])
     out = capsys.readouterr().out
