@@ -22,3 +22,14 @@ logs
 .env
 .env.*
 !.env.example
+
+# poker-engine
+packages/poker-engine/.venv/
+packages/poker-engine/*.egg-info/
+packages/poker-engine/src/*.egg-info/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# чужие репо, клонируются через scripts/fetch-vendor-ref.sh
+vendor-ref/

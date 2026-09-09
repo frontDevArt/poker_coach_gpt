@@ -1,0 +1,25 @@
+[project]
+name = "poker-engine"
+version = "0.1.0"
+description = "Computation core for MTT poker coaching: ICM, pot odds, PKO bounty EV, equity"
+requires-python = ">=3.11"
+dependencies = [
+    "pokerkit>=0.5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+poker-engine = "poker_engine.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
