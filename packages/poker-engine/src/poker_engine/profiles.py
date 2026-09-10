@@ -31,8 +31,9 @@ def range_for_vpip(vpip: float | None, hands: int | None) -> tuple[list[str], bo
     """Комбинации диапазона и признак того, что взят дефолт.
 
     Второй элемент истинен, когда VPIP отсутствует, посчитан по выборке
-    меньше `MIN_VPIP_HANDS` или пришёл с неизвестным размером выборки
-    (`hands is None`): процент без числа раздач ничем не подтверждён.
+    меньше `MIN_VPIP_HANDS` или пришёл с размером выборки, который не
+    сравним с порогом (`None`, `NaN`): процент без внятного числа раздач
+    ничем не подтверждён.
     Бейдж `0` у только что подсевшего игрока не означает нита, и вывод
     обязан это помечать.
 
@@ -47,7 +48,9 @@ def range_for_vpip(vpip: float | None, hands: int | None) -> tuple[list[str], bo
     if hands is not None:
         check_non_negative(hands, "число раздач")
 
-    used_default = vpip is None or hands is None or hands < MIN_VPIP_HANDS
+    # `not hands >= ...`, а не `hands < ...`: NaN проваливает оба сравнения,
+    # и выборку неизвестного размера полагается считать недостаточной.
+    used_default = vpip is None or hands is None or not hands >= MIN_VPIP_HANDS
     value = DEFAULT_VPIP if used_default else float(vpip)
 
     target = TOTAL_COMBOS * value / 100
