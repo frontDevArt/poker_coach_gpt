@@ -8,6 +8,14 @@
 Внутри класса все комбинации эквивалентны с точностью до перестановки
 мастей, поэтому считается по одному представителю на класс.
 
+Сид ОДИН на все 169 классов намеренно — не разнообразить. Живых
+комбинаций у любого класса героя ровно 1225, а колоды под ранаут — ровно
+48, поэтому при общем сиде поток индексов у всех классов идентичен: это
+общие случайные числа (common random numbers). Они снижают дисперсию
+РАЗНОСТЕЙ, и сравнение двух классов между собой получается точнее, чем
+маргинальная ошибка ±0.0035 у каждой оценки по отдельности. Свой сид на
+класс разрушил бы это и ухудшил порядок.
+
 Цена прогона — около 27 минут (измерено: ~9.5 с на класс, 169 классов),
 почти всё время уходит в `equity._best_hand`. Это разовая плата: результат
 коммитится, и тесты читают готовый JSON, а не пересчитывают его.
@@ -47,12 +55,13 @@ def main() -> None:
     if reconfigure is not None:
         reconfigure(encoding="utf-8")
 
+    classes = hand_classes()
     rows = []
-    for index, name in enumerate(hand_classes(), start=1):
+    for index, name in enumerate(classes, start=1):
         combos = parse_range(name)
         shares = equity_vs_range(combos[0], RANDOM_HAND, [], TRIALS, SEED)
         rows.append({"hand": name, "combos": len(combos), "equity": round(shares[0], 6)})
-        print(f"{index:3}/169  {name:4}  {shares[0]:.4f}", flush=True)
+        print(f"{index:3}/{len(classes)}  {name:4}  {shares[0]:.4f}", flush=True)
 
     rows.sort(key=lambda row: row["equity"], reverse=True)
     OUT.parent.mkdir(parents=True, exist_ok=True)
