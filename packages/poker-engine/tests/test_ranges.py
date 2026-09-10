@@ -41,6 +41,7 @@ def test_plus_ranges_are_nested():
 
 def test_explicit_combo_is_a_single_entry():
     assert parse_range("AsKh") == ["AsKh"]
+    assert parse_range("KhAs") == parse_range("AsKh")
 
 
 def test_comma_list_is_the_union():

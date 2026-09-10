@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from itertools import combinations
 
-from .equity import FULL_DECK, RANKS, SUITS
+from .equity import RANKS, SUITS, _parse_cards
 
 
 def parse_range(text: str) -> list[str]:
@@ -27,15 +27,19 @@ def parse_range(text: str) -> list[str]:
         if not token:
             raise ValueError(f"пустой элемент в диапазоне: {text!r}")
         combos |= _expand(token)
-    if not combos:
-        raise ValueError(f"пустой диапазон: {text!r}")
     return sorted(combos)
 
 
-def _combo(first: str, second: str) -> str:
-    """Каноническая запись комбинации — порядок карт фиксирован сортировкой."""
-    low, high = sorted((first, second))
-    return low + high
+def _combo(first_card: str, second_card: str) -> str:
+    """Каноническая запись комбинации.
+
+    Порядок карт фиксирован лексикографической сортировкой строк, а не
+    рангом — это НЕ покерный порядок (ASCII: 2..9 < A < J < K < Q < T),
+    только способ получить одну устойчивую форму для set/dedup. Эту
+    строку нельзя показывать пользователю как «старшая карта первая».
+    """
+    first_card, second_card = sorted((first_card, second_card))
+    return first_card + second_card
 
 
 def _expand(token: str) -> set[str]:
@@ -45,10 +49,7 @@ def _expand(token: str) -> set[str]:
     if len(body) == 4 and body[1] in SUITS and body[3] in SUITS:
         if plus:
             raise ValueError(f"'+' неприменим к конкретной комбинации: {token!r}")
-        first, second = body[:2], body[2:]
-        for card in (first, second):
-            if card not in FULL_DECK:
-                raise ValueError(f"неизвестная карта: {card!r}")
+        first, second = _parse_cards(body, expected=2, label="комбинация")
         if first == second:
             raise ValueError(f"дубль карты в комбинации: {token!r}")
         return {_combo(first, second)}
@@ -76,8 +77,8 @@ def _expand(token: str) -> set[str]:
 
     lows = range(lo, hi) if plus else [lo]
     out: set[str] = set()
-    for l in lows:
-        out |= _two_rank_combos(hi, l, suitedness)
+    for low_rank in lows:
+        out |= _two_rank_combos(hi, low_rank, suitedness)
     return out
 
 
