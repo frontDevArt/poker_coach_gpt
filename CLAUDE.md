@@ -6,7 +6,8 @@ Nuxt-оболочка плюс Python-ядро `packages/poker-engine` (ICM, п�
 ## Текущее состояние
 
 План 1 (`feat/poker-engine-core`) закрыт и влит в `main`. Текущая работа — план 2 «скриншот-коуч»,
-ветка `feat/screenshot-coach-engine`: Tasks 1–4 из 7 сделаны, 144 теста зелёные, ветка не влита.
+ветка `feat/screenshot-coach-engine`: Tasks 1–5 из 7 сделаны, 167 тестов зелёные, ветка не влита.
+Остались Task 6 (`handstate.py`) и Task 7 (команда `analyze`).
 
 **Перед работой прочитать `docs/superpowers/state/HANDOFF.md`** — там сетап машины, что появилось
 в Tasks 7–12, восемь решений, принятых против текста плана (план требовал недоказуемых инвариантов),
@@ -20,7 +21,7 @@ Nuxt-оболочка плюс Python-ядро `packages/poker-engine` (ICM, п�
 | `docs/superpowers/state/2026-09-09-poker-engine-execution-notes.md` | полный журнал ревью Tasks 1–6 плана 1 |
 | `docs/superpowers/plans/2026-09-10-screenshot-coach-engine.md` | план 2, 7 задач |
 | `docs/superpowers/specs/2026-09-10-screenshot-coach-design.md` | спека плана 2 |
-| `docs/superpowers/state/2026-09-10-screenshot-coach-execution-notes.md` | журнал плана 2, Tasks 1–4 |
+| `docs/superpowers/state/2026-09-10-screenshot-coach-execution-notes.md` | журнал плана 2, Tasks 1–5 |
 
 Плагины перечислены в `.claude/settings.json`.
 
@@ -29,7 +30,7 @@ Nuxt-оболочка плюс Python-ядро `packages/poker-engine` (ICM, п�
 ```bash
 # ядро
 cd packages/poker-engine
-.venv/Scripts/python -m pytest              # 144 passed, ~6 мин
+.venv/Scripts/python -m pytest              # 167 passed, ~4 мин
 
 # первый запуск на новой машине
 python -m venv .venv
@@ -50,5 +51,11 @@ npm install && npm run dev
 - Валидация аргументов живёт в движке, не в CLI: Task 9 делает `cli.py` чистым парсером, поэтому
   тексты `ValueError` из `src/poker_engine/_checks.py` — пользовательские сообщения об ошибках.
   Менять их нельзя без обновления тестов.
+- Гарды в `_checks.py` названы по ограничению, не по домену: `check_positive`, `check_non_negative`,
+  `check_probability`. Тексты собираются из параметра `name`, поэтому переименование гарда
+  пользователю не видно, а вот текст самого сообщения — виден и менять его нельзя.
+- Где несколько гардов модуля бросают `ValueError`, тест на отказ обязан пинить сообщение через
+  `match=`: голый `pytest.raises(ValueError)` ловит любой гард, включая не тот. Мутационная
+  приёмка должна включать класс «снести гард целиком», а не только развороты операторов.
 - Общие гарды — только в `_checks.py`, не копировать в новые модули.
 - Тесты — аналитические инварианты, проверяемые на бумаге, а не числа из памяти модели.
