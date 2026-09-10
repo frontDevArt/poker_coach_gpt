@@ -209,6 +209,36 @@ def test_help_still_exits_zero_with_usage_text(capsys):
         json.loads(out)
 
 
+def test_equity_accepts_a_range(capsys):
+    code, data = run(
+        [
+            "equity",
+            "--hero", "JhTh",
+            "--vs-range", "AA",
+            "--board", "8c,2s,9d,4c,Tc",
+        ],
+        capsys,
+    )
+    assert code == 0
+    assert len(data["equities"]) == 2
+    assert sum(data["equities"]) == pytest.approx(1.0)
+
+
+def test_equity_without_hands_or_range_is_a_json_error(capsys):
+    code, data = run(["equity", "--board", "8c,2s,9d"], capsys)
+    assert code == 1
+    assert "error" in data
+
+
+def test_equity_rejects_hands_and_range_together(capsys):
+    code, data = run(
+        ["equity", "--hands", "JhTh,AsKd", "--hero", "JhTh", "--vs-range", "AA"],
+        capsys,
+    )
+    assert code == 1
+    assert "error" in data
+
+
 def test_error_json_is_valid_utf8_on_subprocess_console():
     # capsys нельзя использовать здесь: баг воспроизводится только через
     # реальную консоль Windows (cp1252), а не через перехват stdout в

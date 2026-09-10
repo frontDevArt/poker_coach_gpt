@@ -65,6 +65,56 @@ def hand_equity(
     return [w / total for w in wins]
 
 
+def equity_vs_range(
+    hero: str,
+    villain_range: list[str],
+    board: list[str],
+    trials: int = 10_000,
+    seed: int | None = None,
+) -> list[float]:
+    """Доли банка героя и соперника, чья рука случайна внутри диапазона.
+
+    hero — строка вида "JhTh".
+    villain_range — комбинации из `ranges.parse_range`.
+    Комбинации, конфликтующие с картами героя или доской, исключаются:
+    соперник не может держать карту, которую мы уже видим.
+
+    При дорисованной доске диапазон перебирается целиком и результат
+    точен; иначе идёт Monte-Carlo по паре (комбинация, ранаут).
+    """
+    hero_cards = _parse_cards(hero, expected=2, label="рука")
+    parsed_board = _parse_board(board)
+    _check_duplicates(hero_cards + parsed_board)
+    check_amount(trials, "trials")
+
+    blocked = set(hero_cards) | set(parsed_board)
+    live: list[list[str]] = []
+    for combo in villain_range:
+        cards = _parse_cards(combo, expected=2, label="комбинация")
+        if not blocked.intersection(cards):
+            live.append(cards)
+    if not live:
+        raise ValueError("диапазон соперника пуст после исключения известных карт")
+
+    need = 5 - len(parsed_board)
+    wins = [0.0, 0.0]
+
+    if need == 0:
+        for villain in live:
+            _score_runout([hero_cards, villain], parsed_board, wins)
+        total = len(live)
+    else:
+        rng = random.Random(seed)
+        for _ in range(trials):
+            villain = rng.choice(live)
+            deck = [c for c in FULL_DECK if c not in blocked and c not in villain]
+            extra = rng.sample(deck, need)
+            _score_runout([hero_cards, villain], parsed_board + extra, wins)
+        total = trials
+
+    return [w / total for w in wins]
+
+
 def _score_runout(
     hands: list[list[str]], board: list[str], wins: list[float]
 ) -> None:

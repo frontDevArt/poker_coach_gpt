@@ -12,9 +12,10 @@ import json
 import sys
 
 from .bounty import DEFAULT_SPLIT, required_equity_with_bounty
-from .equity import hand_equity
+from .equity import equity_vs_range, hand_equity
 from .icm import bubble_factor, icm_equities, risk_premium
 from .potodds import required_equity
+from .ranges import parse_range
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -95,6 +96,22 @@ def _dispatch(args: argparse.Namespace) -> dict:
         }
 
     if args.command == "equity":
+        if args.vs_range is not None:
+            if args.hero is None:
+                raise ValueError("для --vs-range нужен --hero")
+            if args.hands is not None:
+                raise ValueError("--hands и --vs-range взаимоисключающи")
+            return {
+                "equities": equity_vs_range(
+                    args.hero,
+                    parse_range(args.vs_range),
+                    board=args.board,
+                    trials=args.trials,
+                    seed=args.seed,
+                )
+            }
+        if args.hands is None:
+            raise ValueError("нужен либо --hands, либо --hero вместе с --vs-range")
         return {
             "equities": hand_equity(
                 args.hands, board=args.board, trials=args.trials, seed=args.seed
@@ -146,7 +163,23 @@ def _build_parser() -> argparse.ArgumentParser:
     p_rp.add_argument("--villain", type=int, required=True)
 
     p_eq = sub.add_parser("equity", help="эквити рук")
-    p_eq.add_argument("--hands", type=_str_list, required=True)
+    p_eq.add_argument("--hands", type=_str_list, default=None)
+    p_eq.add_argument("--hero", type=str, default=None)
+    p_eq.add_argument(
+        "--vs-range",
+        dest="vs_range",
+        type=str,
+        default=None,
+        help=(
+            "диапазон соперника для --hero: 'AA' (пара), 'AKs'/'AKo' "
+            "(одномастная/разномастная), 'AK' (обе), 'AsKh' (конкретная "
+            "комбинация). '+' раздвигает диапазон вверх: у пары растёт "
+            "ранг ('TT+' = TT..AA), у двух рангов поднимается МЛАДШАЯ "
+            "карта при фиксированной старшей ('ATs+' = ATs..AKs) — это "
+            "не то же самое, что цепочка коннекторов ('76s+' = 76s..AKs) "
+            "из Equilab/Flopzilla; к конкретной комбинации '+' неприменим"
+        ),
+    )
     p_eq.add_argument("--board", type=_str_list, default=[])
     p_eq.add_argument("--trials", type=int, default=10_000)
     p_eq.add_argument("--seed", type=int, default=None)
