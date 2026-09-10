@@ -172,6 +172,42 @@ def _as_optional_float(
         ) from None
 
 
+def _as_list(raw: dict, key: str) -> list:
+    """Обязательное поле как список. Форма — часть контракта, а не предмет
+    интерпретации: `list(...)` на строке не бросает и молча разваливает её
+    на символы, так что `heroCards: "JhTh"` дало бы отказ про число карт, а
+    не про испорченную форму поля."""
+    value = _require(raw, key)
+    if not isinstance(value, list):
+        raise ValueError(f"поле {key!r} должно быть списком, получено {value!r}")
+    return list(value)
+
+
+def _as_optional_list(raw: dict, key: str, default: list | None = None) -> list:
+    """Необязательное поле как список, см. `_as_list`. Отсутствие ключа и
+    `null` дают `default` (пустой список по умолчанию), а не отказ."""
+    if key not in raw or raw[key] is None:
+        return list(default) if default is not None else []
+    value = raw[key]
+    if not isinstance(value, list):
+        raise ValueError(f"поле {key!r} должно быть списком, получено {value!r}")
+    return list(value)
+
+
+def _as_optional_dict(raw: dict, key: str, default: dict | None = None) -> dict:
+    """Необязательное поле как объект (`dict`). Отсутствие ключа и `null`
+    дают `default` (пустой объект по умолчанию); значение другой формы
+    (строка, список) отвергается по имени поля вместо того, чтобы `dict(...)`
+    либо бросил английский `TypeError` на `None`, либо молча собрал блайнды
+    из чужой структуры."""
+    if key not in raw or raw[key] is None:
+        return dict(default) if default is not None else {}
+    value = raw[key]
+    if not isinstance(value, dict):
+        raise ValueError(f"поле {key!r} должно быть объектом, получено {value!r}")
+    return dict(value)
+
+
 def context_from_dict(raw: dict) -> TournamentContext:
     payouts = [
         Payout(
@@ -196,7 +232,7 @@ def node_from_dict(raw: dict) -> DecisionNode:
     seats = [
         Seat(
             seat_index=_as_int(entry, "seatIndex"),
-            name=str(entry.get("name", "")),
+            name="" if entry.get("name") is None else str(entry["name"]),
             stack_bb=_as_float(entry, "stackBb"),
             invested_bb=_as_optional_float(entry, "investedBb", 0.0),
             in_hand=bool(_require(entry, "inHand")),
@@ -204,18 +240,18 @@ def node_from_dict(raw: dict) -> DecisionNode:
             vpip=_as_optional_float(entry, "vpip"),
             vpip_hands=_as_optional_int(entry, "vpipHands"),
         )
-        for entry in _require(raw, "seats")
+        for entry in _as_list(raw, "seats")
     ]
     return DecisionNode(
         street=str(_require(raw, "street")),
         level=_as_optional_int(raw, "level", 0),
-        blinds=dict(raw.get("blinds", {})),
+        blinds=_as_optional_dict(raw, "blinds"),
         hero_rank=_as_int(raw, "heroRank"),
         players_left=_as_int(raw, "playersLeft"),
         seats=seats,
         button_seat=_as_int(raw, "buttonSeat"),
-        hero_cards=list(_require(raw, "heroCards")),
-        board=list(raw.get("board", [])),
+        hero_cards=_as_list(raw, "heroCards"),
+        board=_as_optional_list(raw, "board"),
         pot_bb=_as_float(raw, "potBb"),
         to_call_bb=_as_float(raw, "toCallBb"),
         raise_to_bb=_as_optional_float(raw, "raiseToBb"),

@@ -594,3 +594,92 @@ def test_garbage_raise_to_bb_is_rejected():
         ValueError, match=re.escape("поле 'raiseToBb' должно быть числом")
     ):
         node_from_dict(raw)
+
+
+# R20 — три остатка, найденные и вынесенные в круге 3: явный `null` в `blinds`
+# и `board` бросал английский `TypeError`; `null` в `name` тихо превращался в
+# строку "None"; `heroCards` строкой разваливался на символы и отвергался с
+# текстом про число карт вместо текста про форму поля. Плюс `board`/`seats`
+# проверены на ту же ловушку формы.
+
+
+def test_blinds_default_to_empty_dict_when_absent_or_null():
+    raw = _node()
+    del raw["blinds"]
+    assert node_from_dict(raw).blinds == {}
+
+    raw2 = _node()
+    raw2["blinds"] = None
+    assert node_from_dict(raw2).blinds == {}
+
+
+def test_blinds_of_the_wrong_shape_is_rejected():
+    raw = _node()
+    raw["blinds"] = "sb700bb1400"
+    with pytest.raises(
+        ValueError, match=re.escape("поле 'blinds' должно быть объектом")
+    ):
+        node_from_dict(raw)
+
+
+def test_board_defaults_to_empty_list_when_absent_or_null():
+    raw = _node()
+    del raw["board"]
+    assert node_from_dict(raw).board == []
+
+    raw2 = _node()
+    raw2["board"] = None
+    assert node_from_dict(raw2).board == []
+
+
+def test_board_of_the_wrong_shape_is_rejected():
+    raw = _node(street="flop")
+    raw["board"] = "8c2s9d"
+    with pytest.raises(
+        ValueError, match=re.escape("поле 'board' должно быть списком")
+    ):
+        node_from_dict(raw)
+
+    raw2 = _node(street="flop")
+    raw2["board"] = {"flop": ["8c", "2s", "9d"]}
+    with pytest.raises(
+        ValueError, match=re.escape("поле 'board' должно быть списком")
+    ):
+        node_from_dict(raw2)
+
+
+def test_name_defaults_to_empty_string_when_absent_or_null():
+    # "None" в выводе Task 7 выглядел бы как настоящее имя игрока.
+    seats = _node()["seats"]
+    del seats[0]["name"]
+    seats[1]["name"] = None
+    node = node_from_dict(_node(seats=seats))
+    assert node.seats[0].name == ""
+    assert node.seats[1].name == ""
+
+
+def test_hero_cards_as_a_bare_string_is_rejected_by_shape_not_by_count():
+    raw = _node()
+    raw["heroCards"] = "JhTh"
+    with pytest.raises(
+        ValueError, match=re.escape("поле 'heroCards' должно быть списком")
+    ):
+        node_from_dict(raw)
+
+
+def test_seats_as_a_bare_string_is_rejected_by_shape():
+    raw = _node()
+    raw["seats"] = "ab"
+    with pytest.raises(
+        ValueError, match=re.escape("поле 'seats' должно быть списком")
+    ):
+        node_from_dict(raw)
+
+
+def test_seats_as_a_dict_is_rejected_by_shape():
+    raw = _node()
+    raw["seats"] = {"0": {"seatIndex": 0}}
+    with pytest.raises(
+        ValueError, match=re.escape("поле 'seats' должно быть списком")
+    ):
+        node_from_dict(raw)
