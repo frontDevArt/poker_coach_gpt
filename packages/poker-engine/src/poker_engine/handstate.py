@@ -215,7 +215,7 @@ def context_from_dict(raw: dict) -> TournamentContext:
             last=_as_int(entry, "to"),
             amount=_as_float(entry, "amount"),
         )
-        for entry in _require(raw, "payouts")
+        for entry in _as_list(raw, "payouts")
     ]
     return TournamentContext(
         payouts=payouts,

@@ -683,3 +683,24 @@ def test_seats_as_a_dict_is_rejected_by_shape():
         ValueError, match=re.escape("поле 'seats' должно быть списком")
     ):
         node_from_dict(raw)
+
+
+def test_payouts_as_a_bare_string_is_rejected_by_shape():
+    # Тот же класс, что и у `seats`: без проверки формы строка/dict проваливаются
+    # в разбор элементов и дают "нет обязательного поля 'from'" — верное
+    # исключение, неверная причина.
+    broken = dict(CONTEXT)
+    broken["payouts"] = "1,1,1090.51"
+    with pytest.raises(
+        ValueError, match=re.escape("поле 'payouts' должно быть списком")
+    ):
+        context_from_dict(broken)
+
+
+def test_payouts_as_a_dict_is_rejected_by_shape():
+    broken = dict(CONTEXT)
+    broken["payouts"] = {"1": {"from": 1, "to": 1, "amount": 1090.51}}
+    with pytest.raises(
+        ValueError, match=re.escape("поле 'payouts' должно быть списком")
+    ):
+        context_from_dict(broken)
