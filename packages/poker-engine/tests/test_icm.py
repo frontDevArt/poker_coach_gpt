@@ -134,3 +134,13 @@ def test_bubble_and_risk_premium_hold_at_realistic_field_size():
     rp = risk_premium(stacks=stacks, payouts=payouts, hero=0, villain=1)
     assert bf > 1.0
     assert rp > 0.0
+
+
+def test_icm_is_invariant_to_stack_scale():
+    # Свёртка поля переводит BB в десятые доли BB. Это допустимо только
+    # потому, что ICM зависит от долей стеков, а не от их абсолюта.
+    payouts = [50.0, 30.0, 20.0]
+    base = icm_equities([12, 30, 8, 50], payouts)
+    scaled = icm_equities([120, 300, 80, 500], payouts)
+    for first, second in zip(base, scaled):
+        assert first == pytest.approx(second)
