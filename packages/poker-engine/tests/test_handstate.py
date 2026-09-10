@@ -17,7 +17,7 @@ from poker_engine.handstate import (
     payout_ladder,
     validate_hand,
 )
-from poker_engine.types import Position
+from poker_engine.types import Position, positions_for
 
 CONTEXT = {
     "payouts": [
@@ -99,7 +99,11 @@ def test_positions_run_clockwise_from_the_button():
 
 def test_positions_are_unique_and_complete():
     positions = assign_positions(node_from_dict(_node()))
-    assert len(set(positions.values())) == 8
+    assert set(positions.values()) == set(positions_for(8))
+    # Место 7 (герой) — самая ранняя позиция за столом на 8-max: сдвиг
+    # опорной точки на один шаг сместил бы её на соседнюю позицию незаметно
+    # для одной только проверки множества.
+    assert positions[7] == Position.UTG1
 
 
 def test_board_size_must_match_the_street():
@@ -236,12 +240,13 @@ def test_chips_must_be_conserved_between_nodes():
 
 
 def test_rounding_between_nodes_is_tolerated():
-    # Клиент печатает стеки с точностью 0.1 BB; сумма по восьми местам
-    # может разойтись на эту величину без всякой ошибки распознавания.
+    # Клиент печатает стеки с точностью 0.1 BB: место 0 "похудело" на 0.1 BB
+    # между скриншотами без компенсации в банке — это и есть расхождение,
+    # а не то же число, разложенное на минус здесь и плюс там.
     first = _node()
     seats = _node()["seats"]
     seats[0]["stackBb"] = 72.1
-    second = _node(street="flop", board=["8c", "2s", "9d"], seats=seats, potBb=9.5)
+    second = _node(street="flop", board=["8c", "2s", "9d"], seats=seats)
     _validate([first, second])
 
 
@@ -434,7 +439,7 @@ def test_decision_node_hero_returns_the_hero_seat():
 def test_decision_node_hero_raises_when_nobody_is_marked_as_hero():
     seats = [dict(seat, isHero=False) for seat in _node()["seats"]]
     node = node_from_dict(_node(seats=seats))
-    with pytest.raises(ValueError, match="в узле нет героя"):
+    with pytest.raises(ValueError, match=re.escape("DecisionNode.hero вызывать только после")):
         node.hero
 
 
@@ -447,3 +452,65 @@ def test_assign_positions_on_heads_up_uses_the_small_blind_as_the_button():
     positions = assign_positions(node_from_dict(heads_up))
     assert positions[0] == Position.SB
     assert positions[1] == Position.BB
+
+
+def test_assign_positions_on_six_max_uses_the_shortened_order():
+    # 6-max — вторая ловушка именования: механический хвост дал бы LJ на
+    # самой ранней позиции, но соглашение требует UTG (types.py).
+    six_max = _node(
+        seats=[
+            _seat(0, 30.0),
+            _seat(1, 30.0),
+            _seat(2, 30.0),
+            _seat(3, 30.0),
+            _seat(4, 30.0),
+            _seat(5, 30.0, hero=True),
+        ],
+        buttonSeat=2,
+    )
+    positions = assign_positions(node_from_dict(six_max))
+    assert set(positions.values()) == set(positions_for(6))
+    assert positions[2] == Position.BTN
+    assert positions[5] == Position.UTG
+
+
+def test_assign_positions_raises_a_named_precondition_error_without_the_button():
+    # `assign_positions` вызывается только после `validate_hand`, но если это
+    # предусловие нарушено, отказ обязан называть себя, а не течь наружу как
+    # внутренний `StopIteration`.
+    node = node_from_dict(
+        _node(seats=[_seat(0, 10.0), _seat(1, 10.0, hero=True)], buttonSeat=4)
+    )
+    with pytest.raises(
+        ValueError, match=re.escape("assign_positions вызывать только после")
+    ):
+        assign_positions(node)
+
+
+def test_null_in_a_required_field_is_rejected_like_a_missing_field():
+    # Источник — vision-модель: `null` в обязательном поле — тот же отказ,
+    # что и отсутствующий ключ, не программная ошибка типа.
+    raw = _node()
+    raw["buttonSeat"] = None
+    with pytest.raises(
+        ValueError, match=re.escape("в данных нет обязательного поля 'buttonSeat'")
+    ):
+        node_from_dict(raw)
+
+
+def test_garbage_string_in_a_numeric_field_is_rejected():
+    raw = _node()
+    raw["potBb"] = "n/a"
+    with pytest.raises(
+        ValueError, match=re.escape("поле 'potBb' должно быть числом")
+    ):
+        node_from_dict(raw)
+
+
+def test_garbage_string_in_an_integer_field_is_rejected():
+    raw = _node()
+    raw["heroRank"] = "n/a"
+    with pytest.raises(
+        ValueError, match=re.escape("поле 'heroRank' должно быть целым числом")
+    ):
+        node_from_dict(raw)

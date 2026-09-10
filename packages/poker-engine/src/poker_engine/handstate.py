@@ -17,8 +17,11 @@ from ._checks import check_non_negative, check_positive
 from .equity import FULL_DECK
 from .types import Position, positions_for
 
-STREETS = ("preflop", "flop", "turn", "river")
 BOARD_SIZE = {"preflop": 0, "flop": 3, "turn": 4, "river": 5}
+# Порядок улиц — ключи `BOARD_SIZE` в порядке вставки (гарантия языка), а не
+# второй независимый источник истины: расхождение дало бы `ValueError` от
+# `list.index` вместо пользовательского текста.
+STREETS = tuple(BOARD_SIZE)
 
 # Клиент печатает стеки с точностью 0.1 BB. Сумма по местам расходится
 # на величину порядка этого шага, и это не ошибка распознавания.
@@ -27,6 +30,14 @@ ROUNDING_STEP_BB = 0.1
 
 @dataclass(frozen=True)
 class Seat:
+    """Одно место за столом на одном скриншоте.
+
+    `vpip` — процент 0..100 (как в `profiles.py`), не доля 0..1; `None`,
+    когда клиент бейдж не показал. `invested_bb` — уже вложенное этим местом
+    в текущую улицу; `DecisionNode.pot_bb` (см. ниже) подразумевается уже
+    учитывающим эти вложения, отдельно они к банку не прибавляются.
+    """
+
     seat_index: int
     name: str
     stack_bb: float
@@ -39,9 +50,17 @@ class Seat:
 
 @dataclass(frozen=True)
 class DecisionNode:
+    """Один снимок раздачи — одно решение на одном скриншоте.
+
+    `pot_bb` — банк на момент снимка, уже включающий вложения текущей улицы
+    (`Seat.invested_bb` по каждому месту); проверка сохранения фишек между
+    узлами (`_validate_transition`) складывает только стеки и банк ровно
+    поэтому — второй раз вложенное не прибавляется.
+    """
+
     street: str
     level: int
-    blinds: dict
+    blinds: dict[str, int]
     hero_rank: int
     players_left: int
     seats: list[Seat]
@@ -54,10 +73,17 @@ class DecisionNode:
 
     @property
     def hero(self) -> Seat:
+        """Место героя. Предусловие: узел уже прошёл `validate_hand`, который
+        гарантирует ровно одного героя — здесь второй гард на то же условие не
+        заводится (см. `assign_positions`), а нарушение предусловия называется
+        по имени, а не пересказывается вторым пользовательским текстом."""
         for seat in self.seats:
             if seat.is_hero:
                 return seat
-        raise ValueError("в узле нет героя")
+        raise ValueError(
+            "нарушено предусловие: DecisionNode.hero вызывать только после "
+            "validate_hand, который гарантирует ровно одного героя в узле"
+        )
 
 
 @dataclass(frozen=True)
@@ -69,6 +95,9 @@ class Payout:
 
 @dataclass(frozen=True)
 class TournamentContext:
+    """Турнирный контекст раздачи — общий для всех узлов одной раздачи,
+    в отличие от `DecisionNode`, который снимается на каждом скриншоте."""
+
     payouts: list[Payout]
     places_paid: int
     entrants: int
@@ -79,37 +108,64 @@ class TournamentContext:
 
 
 def _require(raw: dict, key: str):
-    if key not in raw:
+    """Значение обязательного поля. `None` — то же нарушение, что и его отсутствие:
+    источник данных — vision-модель, и не увидевшая поле модель и увидевшая в нём
+    пустоту дают пользователю одну и ту же причину не доверять скриншоту.
+    """
+    if key not in raw or raw[key] is None:
         raise ValueError(f"в данных нет обязательного поля {key!r}")
     return raw[key]
+
+
+def _as_int(raw: dict, key: str) -> int:
+    """Обязательное поле как целое число. Мусор (не число, дробь с текстом и т.п.)
+    — тот же класс отказа, что и отсутствующее поле, а не программная ошибка."""
+    value = _require(raw, key)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"поле {key!r} должно быть целым числом, получено {value!r}"
+        ) from None
+
+
+def _as_float(raw: dict, key: str) -> float:
+    """Обязательное поле как вещественное число, см. `_as_int`."""
+    value = _require(raw, key)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"поле {key!r} должно быть числом, получено {value!r}"
+        ) from None
 
 
 def context_from_dict(raw: dict) -> TournamentContext:
     payouts = [
         Payout(
-            first=int(_require(entry, "from")),
-            last=int(_require(entry, "to")),
-            amount=float(_require(entry, "amount")),
+            first=_as_int(entry, "from"),
+            last=_as_int(entry, "to"),
+            amount=_as_float(entry, "amount"),
         )
         for entry in _require(raw, "payouts")
     ]
     return TournamentContext(
         payouts=payouts,
-        places_paid=int(_require(raw, "placesPaid")),
-        entrants=int(_require(raw, "entrants")),
-        players_left=int(_require(raw, "playersLeft")),
+        places_paid=_as_int(raw, "placesPaid"),
+        entrants=_as_int(raw, "entrants"),
+        players_left=_as_int(raw, "playersLeft"),
         late_reg_open=bool(_require(raw, "lateRegOpen")),
-        seats_per_table=int(_require(raw, "seatsPerTable")),
-        average_stack_bb=float(_require(raw, "averageStackBb")),
+        seats_per_table=_as_int(raw, "seatsPerTable"),
+        average_stack_bb=_as_float(raw, "averageStackBb"),
     )
 
 
 def node_from_dict(raw: dict) -> DecisionNode:
     seats = [
         Seat(
-            seat_index=int(_require(entry, "seatIndex")),
+            seat_index=_as_int(entry, "seatIndex"),
             name=str(entry.get("name", "")),
-            stack_bb=float(_require(entry, "stackBb")),
+            stack_bb=_as_float(entry, "stackBb"),
             invested_bb=float(entry.get("investedBb", 0.0)),
             in_hand=bool(_require(entry, "inHand")),
             is_hero=bool(entry.get("isHero", False)),
@@ -125,14 +181,14 @@ def node_from_dict(raw: dict) -> DecisionNode:
         street=str(_require(raw, "street")),
         level=int(raw.get("level", 0)),
         blinds=dict(raw.get("blinds", {})),
-        hero_rank=int(_require(raw, "heroRank")),
-        players_left=int(_require(raw, "playersLeft")),
+        hero_rank=_as_int(raw, "heroRank"),
+        players_left=_as_int(raw, "playersLeft"),
         seats=seats,
-        button_seat=int(_require(raw, "buttonSeat")),
+        button_seat=_as_int(raw, "buttonSeat"),
         hero_cards=list(_require(raw, "heroCards")),
         board=list(raw.get("board", [])),
-        pot_bb=float(_require(raw, "potBb")),
-        to_call_bb=float(_require(raw, "toCallBb")),
+        pot_bb=_as_float(raw, "potBb"),
+        to_call_bb=_as_float(raw, "toCallBb"),
         raise_to_bb=None if raise_to is None else float(raise_to),
     )
 
@@ -149,28 +205,39 @@ def assign_positions(node: DecisionNode) -> dict[int, Position]:
     позицией берётся `SB` — это переименование того же места, а не новое
     соглашение о посадке.
 
-    Предусловие: узел уже прошёл `validate_hand`. Функция не проверяет ни
-    наличие кнопки среди мест, ни уникальность `seat_index` — оба уже
-    отвергаются `validate_hand` с пользовательским текстом, и дублировать
-    гарды здесь означало бы два сообщения на одно и то же нарушение.
+    Предусловие: узел уже прошёл `validate_hand`. Функция не проверяет
+    уникальность `seat_index` — `validate_hand` уже отвергает дубли с
+    пользовательским текстом, и дублировать гард здесь означало бы два
+    сообщения на одно и то же нарушение. Отсутствующую кнопку `validate_hand`
+    тоже отвергает первой; здесь нарушение того же предусловия называется по
+    имени функции, а не пересказывается вторым текстом и не всплывает как
+    внутренний `StopIteration`.
     """
     seats = sorted(node.seats, key=lambda seat: seat.seat_index)
-    order = positions_for(len(seats))
-    button_at = next(
-        i for i, seat in enumerate(seats) if seat.seat_index == node.button_seat
-    )
+    n = len(seats)
+    order = positions_for(n)  # len(order) == n по построению positions_for
+    try:
+        button_at = next(
+            i for i, seat in enumerate(seats) if seat.seat_index == node.button_seat
+        )
+    except StopIteration:
+        raise ValueError(
+            "нарушено предусловие: assign_positions вызывать только после "
+            "validate_hand, который гарантирует кнопку среди мест за столом"
+        ) from None
     anchor = Position.BTN if Position.BTN in order else Position.SB
     anchor_at = order.index(anchor)
-    return {
-        seats[(button_at + offset) % len(seats)].seat_index: order[
-            (anchor_at + offset) % len(order)
-        ]
-        for offset in range(len(seats))
-    }
+    positions: dict[int, Position] = {}
+    for offset in range(n):
+        seat_index = seats[(button_at + offset) % n].seat_index
+        positions[seat_index] = order[(anchor_at + offset) % n]
+    return positions
 
 
 def payout_ladder(context: TournamentContext, places: int) -> list[float]:
-    """Призовые по местам от первого, добитые нулями до `places`."""
+    """Призовые по местам от первого, добитые нулями до `places`. Если
+    `places` меньше числа оплачиваемых мест, лесенка молча обрезается по
+    `places` — призы за более дальние места в результат не попадают."""
     ladder = [0.0] * places
     for payout in context.payouts:
         for place in range(payout.first, payout.last + 1):
