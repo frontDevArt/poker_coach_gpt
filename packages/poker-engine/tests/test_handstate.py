@@ -514,3 +514,83 @@ def test_garbage_string_in_an_integer_field_is_rejected():
         ValueError, match=re.escape("поле 'heroRank' должно быть целым числом")
     ):
         node_from_dict(raw)
+
+
+# R19: те же гарантии для необязательных числовых полей (`investedBb`, `vpip`,
+# `vpipHands` на месте, `level` и `raiseToBb` на узле) — тот же JSON от той же
+# vision-модели, отсутствие/`null` не ошибка, а мусор в присутствующем значении
+# отвергается тем же русским текстом, что и в обязательных полях.
+
+
+def test_optional_seat_fields_default_when_absent():
+    seats = _node()["seats"]
+    del seats[4]["investedBb"]
+    del seats[5]["vpip"]
+    del seats[6]["vpipHands"]
+    node = node_from_dict(_node(seats=seats))
+    assert node.seats[4].invested_bb == 0.0
+    assert node.seats[5].vpip is None
+    assert node.seats[6].vpip_hands is None
+
+
+def test_optional_seat_fields_default_when_null():
+    seats = _node()["seats"]
+    seats[4]["investedBb"] = None
+    seats[5]["vpip"] = None
+    seats[6]["vpipHands"] = None
+    node = node_from_dict(_node(seats=seats))
+    assert node.seats[4].invested_bb == 0.0
+    assert node.seats[5].vpip is None
+    assert node.seats[6].vpip_hands is None
+
+
+def test_garbage_invested_bb_is_rejected():
+    seats = _node()["seats"]
+    seats[4]["investedBb"] = "n/a"
+    with pytest.raises(
+        ValueError, match=re.escape("поле 'investedBb' должно быть числом")
+    ):
+        node_from_dict(_node(seats=seats))
+
+
+def test_garbage_vpip_is_rejected():
+    seats = _node()["seats"]
+    seats[5]["vpip"] = "n/a"
+    with pytest.raises(ValueError, match=re.escape("поле 'vpip' должно быть числом")):
+        node_from_dict(_node(seats=seats))
+
+
+def test_garbage_vpip_hands_is_rejected():
+    seats = _node()["seats"]
+    seats[6]["vpipHands"] = "n/a"
+    with pytest.raises(
+        ValueError, match=re.escape("поле 'vpipHands' должно быть целым числом")
+    ):
+        node_from_dict(_node(seats=seats))
+
+
+def test_level_and_raise_to_bb_default_when_absent_or_null():
+    raw = _node()
+    del raw["raiseToBb"]
+    raw["level"] = None
+    node = node_from_dict(raw)
+    assert node.raise_to_bb is None
+    assert node.level == 0
+
+
+def test_garbage_level_is_rejected():
+    raw = _node()
+    raw["level"] = "n/a"
+    with pytest.raises(
+        ValueError, match=re.escape("поле 'level' должно быть целым числом")
+    ):
+        node_from_dict(raw)
+
+
+def test_garbage_raise_to_bb_is_rejected():
+    raw = _node()
+    raw["raiseToBb"] = "n/a"
+    with pytest.raises(
+        ValueError, match=re.escape("поле 'raiseToBb' должно быть числом")
+    ):
+        node_from_dict(raw)

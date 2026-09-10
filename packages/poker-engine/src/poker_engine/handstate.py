@@ -140,6 +140,38 @@ def _as_float(raw: dict, key: str) -> float:
         ) from None
 
 
+def _as_optional_int(raw: dict, key: str, default: int | None = None) -> int | None:
+    """Необязательное поле как целое число. Отсутствие ключа и `null` — не
+    ошибка, это законное «модель не увидела значение», и обе формы дают
+    `default`. Ошибка — только когда поле присутствует, но не число: тот же
+    класс отказа, что и мусор в обязательном поле (`_as_int`), поэтому и
+    сообщение то же по форме."""
+    if key not in raw or raw[key] is None:
+        return default
+    value = raw[key]
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"поле {key!r} должно быть целым числом, получено {value!r}"
+        ) from None
+
+
+def _as_optional_float(
+    raw: dict, key: str, default: float | None = None
+) -> float | None:
+    """Необязательное поле как вещественное число, см. `_as_optional_int`."""
+    if key not in raw or raw[key] is None:
+        return default
+    value = raw[key]
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"поле {key!r} должно быть числом, получено {value!r}"
+        ) from None
+
+
 def context_from_dict(raw: dict) -> TournamentContext:
     payouts = [
         Payout(
@@ -166,20 +198,17 @@ def node_from_dict(raw: dict) -> DecisionNode:
             seat_index=_as_int(entry, "seatIndex"),
             name=str(entry.get("name", "")),
             stack_bb=_as_float(entry, "stackBb"),
-            invested_bb=float(entry.get("investedBb", 0.0)),
+            invested_bb=_as_optional_float(entry, "investedBb", 0.0),
             in_hand=bool(_require(entry, "inHand")),
             is_hero=bool(entry.get("isHero", False)),
-            vpip=None if entry.get("vpip") is None else float(entry["vpip"]),
-            vpip_hands=(
-                None if entry.get("vpipHands") is None else int(entry["vpipHands"])
-            ),
+            vpip=_as_optional_float(entry, "vpip"),
+            vpip_hands=_as_optional_int(entry, "vpipHands"),
         )
         for entry in _require(raw, "seats")
     ]
-    raise_to = raw.get("raiseToBb")
     return DecisionNode(
         street=str(_require(raw, "street")),
-        level=int(raw.get("level", 0)),
+        level=_as_optional_int(raw, "level", 0),
         blinds=dict(raw.get("blinds", {})),
         hero_rank=_as_int(raw, "heroRank"),
         players_left=_as_int(raw, "playersLeft"),
@@ -189,7 +218,7 @@ def node_from_dict(raw: dict) -> DecisionNode:
         board=list(raw.get("board", [])),
         pot_bb=_as_float(raw, "potBb"),
         to_call_bb=_as_float(raw, "toCallBb"),
-        raise_to_bb=None if raise_to is None else float(raise_to),
+        raise_to_bb=_as_optional_float(raw, "raiseToBb"),
     )
 
 
