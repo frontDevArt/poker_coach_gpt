@@ -158,7 +158,7 @@ def test_empty_pot_is_rejected():
 
 
 def test_negative_call_is_rejected():
-    with pytest.raises(ValueError, match=re.escape("сумма колла не может быть отрицательным")):
+    with pytest.raises(ValueError, match=re.escape("размер колла не может быть отрицательным")):
         _validate([_node(toCallBb=-1.0)])
 
 
@@ -325,7 +325,7 @@ def test_non_positive_payout_amount_is_rejected():
     broken = dict(CONTEXT)
     broken["payouts"] = [{"from": 1, "to": 1, "amount": 0.0}]
     with pytest.raises(
-        ValueError, match=re.escape("выплата за место 1 должен быть > 0")
+        ValueError, match=re.escape("приз за место 1 должен быть > 0")
     ):
         validate_hand(context_from_dict(broken), [node_from_dict(_node())])
 
@@ -406,3 +406,44 @@ def test_tolerance_scales_with_the_larger_of_the_two_seat_counts():
         potBb=358.3,
     )
     _validate([first, second])
+
+
+def test_validate_hand_rejects_an_empty_node_list():
+    with pytest.raises(ValueError, match="в раздаче нет ни одного узла решения"):
+        validate_hand(context_from_dict(CONTEXT), [])
+
+
+def test_missing_required_field_is_rejected():
+    # Источник — vision-модель: пропавшее поле в JSON от Nuxt это ровно тот
+    # отказ, который обслуживает `_require`, а не программная ошибка.
+    raw = _node()
+    del raw["buttonSeat"]
+    with pytest.raises(
+        ValueError, match=re.escape("в данных нет обязательного поля 'buttonSeat'")
+    ):
+        node_from_dict(raw)
+
+
+def test_decision_node_hero_returns_the_hero_seat():
+    # Не первое место, а именно то, что помечено `isHero` — герой в фикстуре
+    # сидит последним (место 7).
+    node = node_from_dict(_node())
+    assert node.hero.seat_index == 7
+
+
+def test_decision_node_hero_raises_when_nobody_is_marked_as_hero():
+    seats = [dict(seat, isHero=False) for seat in _node()["seats"]]
+    node = node_from_dict(_node(seats=seats))
+    with pytest.raises(ValueError, match="в узле нет героя"):
+        node.hero
+
+
+def test_assign_positions_on_heads_up_uses_the_small_blind_as_the_button():
+    # На хедз-апе `positions_for` не содержит BTN вообще (SB и есть кнопка).
+    heads_up = _node(
+        seats=[_seat(0, 50.0), _seat(1, 50.0, hero=True)],
+        buttonSeat=0,
+    )
+    positions = assign_positions(node_from_dict(heads_up))
+    assert positions[0] == Position.SB
+    assert positions[1] == Position.BB

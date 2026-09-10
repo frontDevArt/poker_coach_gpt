@@ -143,17 +143,27 @@ def assign_positions(node: DecisionNode) -> dict[int, Position]:
     Позиции не подписаны на скриншоте и не называются моделью: порядок
     берётся из `positions_for`, который уже знает неочевидные соглашения
     для 2 и 6 игроков, и разворачивается по кругу от кнопки.
+
+    На хедз-апе (2 места) `positions_for` не включает `BTN` в список: кнопка
+    и малый блайнд там — одно и то же место (`types.py`), так что опорной
+    позицией берётся `SB` — это переименование того же места, а не новое
+    соглашение о посадке.
+
+    Предусловие: узел уже прошёл `validate_hand`. Функция не проверяет ни
+    наличие кнопки среди мест, ни уникальность `seat_index` — оба уже
+    отвергаются `validate_hand` с пользовательским текстом, и дублировать
+    гарды здесь означало бы два сообщения на одно и то же нарушение.
     """
     seats = sorted(node.seats, key=lambda seat: seat.seat_index)
     order = positions_for(len(seats))
     button_at = next(
         i for i, seat in enumerate(seats) if seat.seat_index == node.button_seat
     )
-    button_in_order = order.index(Position.BTN)
-    shift = button_at - button_in_order
+    anchor = Position.BTN if Position.BTN in order else Position.SB
+    anchor_at = order.index(anchor)
     return {
-        seats[(button_in_order + offset + shift) % len(seats)].seat_index: order[
-            (button_in_order + offset) % len(order)
+        seats[(button_at + offset) % len(seats)].seat_index: order[
+            (anchor_at + offset) % len(order)
         ]
         for offset in range(len(seats))
     }
@@ -193,7 +203,7 @@ def _validate_context(context: TournamentContext) -> None:
             raise ValueError(
                 f"неверный интервал мест в выплатах: {payout.first}–{payout.last}"
             )
-        check_positive(payout.amount, f"выплата за место {payout.first}")
+        check_positive(payout.amount, f"приз за место {payout.first}")
         places = set(range(payout.first, payout.last + 1))
         if places & seen:
             raise ValueError(
@@ -240,7 +250,7 @@ def _validate_node(node: DecisionNode) -> None:
         check_non_negative(seat.invested_bb, f"вложение на месте {seat.seat_index}")
 
     check_positive(node.pot_bb, "банк")
-    check_non_negative(node.to_call_bb, "сумма колла")
+    check_non_negative(node.to_call_bb, "размер колла")
     if node.raise_to_bb is not None and node.raise_to_bb <= node.to_call_bb:
         raise ValueError("рейз не превышает сумму колла")
 
