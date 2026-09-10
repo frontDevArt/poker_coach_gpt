@@ -72,6 +72,20 @@ def test_complete_board_enumerates_the_range_instead_of_sampling():
     assert shares[0] == pytest.approx(15 / 16)
 
 
+def test_turn_board_enumerates_every_river_card():
+    # Тёрн 8c,2s,9d,4c против AA: шесть живых комбинаций (тузов ни на
+    # доске, ни у героя), у каждой 52-6-2 = 44 ривера. Спарившись (JJ
+    # или TT), герой всё равно отстаёт от пары тузов, флеша нет ни у
+    # кого — герой выигрывает ровно стритом: ривер 7 (7-8-9-T-J) или Q
+    # (8-9-T-J-Q), это 4+4 = 8 карт из 44. Доля героя ровно 8/44, число
+    # с бумаги, а не с выборки.
+    board = ["8c", "2s", "9d", "4c"]
+    shares = equity_vs_range("JhTh", parse_range("AA"), board, 10, SEED)
+    assert shares[0] == pytest.approx(8 / 44)
+    assert sum(shares) == pytest.approx(1.0)
+    assert shares == equity_vs_range("JhTh", parse_range("AA"), board, 50_000, SEED)
+
+
 def test_range_equity_is_the_mean_over_its_combos():
     # Комбинация внутри диапазона выбирается равновероятно, и у каждой
     # свой полный набор ранаутов — значит эквити против диапазона это
