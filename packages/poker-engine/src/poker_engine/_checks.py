@@ -5,6 +5,10 @@
 параметры с одинаковым смыслом (`call_amount`, `pot_before_call`,
 вероятности) и обязаны выдавать на одно и то же нарушение одно и то же
 сообщение об ошибке — это часть пользовательского контракта CLI.
+
+Проверки названы по типу ограничения, а не по предметной области:
+`check_non_negative` одинаково обслуживает размер банка и число
+наблюдённых раздач соперника.
 """
 
 from __future__ import annotations
@@ -15,7 +19,7 @@ def check_amount(value: float, name: str) -> None:
         raise ValueError(f"{name} должен быть > 0, получено {value}")
 
 
-def check_pot(value: float, name: str) -> None:
+def check_non_negative(value: float, name: str) -> None:
     if value < 0:
         raise ValueError(f"{name} не может быть отрицательным: {value}")
 
