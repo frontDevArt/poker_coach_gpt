@@ -26,10 +26,16 @@
   pydantic; здесь он сознательно не берётся ради нулевого прироста зависимостей.
 - Тексты `ValueError` из движка — пользовательские сообщения об ошибках (конвенция
   `CLAUDE.md`). Сообщения на русском. Существующие тексты менять нельзя без правки тестов.
-- Общие гарды живут только в `src/poker_engine/_checks.py`: `check_amount`,
-  `check_non_negative`, `check_probability`. Не копировать их в новые модули.
-  (`check_pot` переименован в `check_non_negative` в Task 4: гард обслуживает и банк, и число
-  раздач соперника. Тексты сообщений не изменились — они собираются из параметра `name`.)
+- Общие **скалярные** гарды живут только в `src/poker_engine/_checks.py`: `check_positive`,
+  `check_non_negative`, `check_probability`. Не копировать их в новые модули. Имя гарда —
+  всегда имя ограничения, не предметной области; тексты сообщений собираются из параметра
+  `name`, поэтому переименования гардов пользователю не видны.
+  (`check_pot` → `check_non_negative` в Task 4, `check_amount` → `check_positive` между
+  Tasks 4 и 5 — см. раздел «Между Task 4 и Task 5».)
+- **Карточные гарды в `_checks.py` не переезжают.** `_parse_cards`, `_parse_board`,
+  `_check_duplicates` остаются в `equity.py` рядом с `FULL_DECK`: они не скалярные, а перенос
+  тянул бы за собой константы колоды и создавал цикл импорта (`equity.py` импортирует
+  `_checks`). Новым модулям — импортировать их из `equity.py`, а не писать свою проверку.
 - Тесты — аналитические инварианты, проверяемые на бумаге, а не числа, вспомненные моделью.
   Если тест содержит константу вроде `0.4412`, он написан неправильно.
 - Один коммит на задачу, Conventional Commits. Правки ревью — отдельными `fix(engine): …`.
@@ -276,7 +282,8 @@ git commit -m "feat(engine): разбор нотации диапазонов р
 
 **Interfaces:**
 - Consumes: `parse_range` из Task 1; `_parse_cards`, `_parse_board`, `_check_duplicates`,
-  `_score_runout`, `FULL_DECK` из `equity.py`; `check_amount` из `_checks.py`.
+  `_score_runout`, `FULL_DECK` из `equity.py`; `check_positive` из `_checks.py`
+  (на момент исполнения Task 2 гард звался `check_amount`).
 - Produces: `equity_vs_range(hero: str, villain_range: list[str], board: list[str],
   trials: int = 10_000, seed: int | None = None) -> list[float]` — два числа, `[герой, соперник]`,
   в сумме ровно 1. Используется в Task 3 и Task 7.
@@ -398,7 +405,7 @@ def equity_vs_range(
     hero_cards = _parse_cards(hero, expected=2, label="рука")
     parsed_board = _parse_board(board)
     _check_duplicates(hero_cards + parsed_board)
-    check_amount(trials, "trials")
+    check_positive(trials, "trials")
 
     blocked = set(hero_cards) | set(parsed_board)
     live: list[list[str]] = []
@@ -969,6 +976,54 @@ git commit -m "feat(engine): диапазон соперника по наблю
 
 ---
 
+### Между Task 4 и Task 5: два закрытых долга
+
+Оба вопроса, оставленных открытыми после Task 4, решены. Первый — чистая правка кода,
+отдельным коммитом **до** начала Task 5. Второй решён «оставить как есть» и требует только
+одной добавки в Task 6 (уже внесена ниже).
+
+**Files:**
+- Modify: `src/poker_engine/_checks.py`, `src/poker_engine/equity.py`,
+  `src/poker_engine/bounty.py`, `src/poker_engine/potodds.py`
+
+- [ ] **Step 1: `check_amount` → `check_positive`**
+
+Механическое переименование: определение плюс 6 вызовов (`equity.py` ×2, `potodds.py` ×3,
+`bounty.py` ×1). Мотив: `check_amount(trials, "trials")` — «amount» неправда, `trials` не
+сумма. После правки все три гарда названы по ограничению, а не по домену: `check_positive`
+(`> 0`), `check_non_negative` (`>= 0`), `check_probability` (`[0, 1]` — «быть вероятностью»
+и есть это ограничение). Это закрывает вторую половину Minor № 2 ревью плана 1
+(`2026-09-09-poker-engine-execution-notes.md:84-86`).
+
+Тексты `ValueError` **не меняются**: они целиком собираются из параметра `name`. Ни один
+тест на сообщения править не нужно, `cli.py` `_checks` не импортирует.
+
+Заодно удалить из докстринга `_checks.py` абзац про «две другие функции названы доменно» —
+после правки исключения нет, конвенция ровная: имя гарда = имя ограничения.
+
+Проверка: `grep -rn "check_amount" .` по всему репозиторию (включая `tests/`, `.claude/skills/`,
+`README`, `docs/`) должен вернуть только исторические упоминания в журналах исполнения.
+
+Run: `.venv/Scripts/python -m pytest`
+Expected: PASS, 144 теста, ни одного изменённого текста ошибки.
+
+- [ ] **Step 2: Коммит**
+
+```bash
+git add src/poker_engine/_checks.py src/poker_engine/equity.py \
+        src/poker_engine/bounty.py src/poker_engine/potodds.py
+git commit -m "refactor(engine): check_amount -> check_positive"
+```
+
+**Решение по карточным гардам (кода не требует).** `_parse_cards`/`_parse_board`/
+`_check_duplicates` **остаются в `equity.py`**. В `_checks.py` им не место: модуль по
+контракту скалярный, а перенос потянул бы туда `RANKS`/`SUITS`/`FULL_DECK` либо создал цикл
+импорта. Подчёркивание в именах сохраняется — это package-private, легитимно разделяемое
+внутри пакета, ровно как сам `_checks.py`. Следствие для Task 6: `handstate.py`
+**импортирует** проверку из `equity.py`, а не пишет третью копию (см. Task 6, Step 3).
+
+---
+
 ### Task 5: Свёртка турнирного поля для ICM
 
 **Files:**
@@ -1198,6 +1253,10 @@ git commit -m "feat(engine): свёртка турнирного поля для
 
 **Interfaces:**
 - Consumes: `positions_for`, `Position` из `src/poker_engine/types.py`.
+- Consumes: `FULL_DECK` из `equity.py` — проверку личности карт **не писать заново**
+  (решение раздела «Между Task 4 и Task 5»). `_parse_cards` здесь не подходит по форме: он
+  разбирает склейку `"JhTh"`, а схема Nuxt даёт список `["Jh", "Th"]`. Нужна проверка
+  членства в `FULL_DECK`, как в `_parse_board`.
 - Produces: `Seat`, `DecisionNode`, `TournamentContext` — фризнутые `dataclass`-ы.
 - Produces: `context_from_dict(raw: dict) -> TournamentContext`,
   `node_from_dict(raw: dict) -> DecisionNode` — разбор JSON с camelCase-ключами от Nuxt.
@@ -1385,6 +1444,22 @@ def test_hero_rank_cannot_exceed_the_field():
         _validate([_node(heroRank=500, playersLeft=496)])
 
 
+def test_card_outside_the_deck_is_rejected():
+    # Источник схемы — vision-модель; "Xz" это не гипотеза.
+    with pytest.raises(ValueError, match="неизвестная карта"):
+        _validate([_node(heroCards=["Jh", "Xz"])])
+
+
+def test_board_card_outside_the_deck_is_rejected():
+    with pytest.raises(ValueError, match="неизвестная карта"):
+        _validate([_node(street="flop", board=["8c", "2s", "9x"])])
+
+
+def test_hero_must_hold_exactly_two_cards():
+    with pytest.raises(ValueError):
+        _validate([_node(heroCards=["Jh"])])
+
+
 def test_duplicate_card_between_hand_and_board_is_rejected():
     with pytest.raises(ValueError):
         _validate([_node(street="flop", board=["Jh", "2s", "9d"], potBb=9.4)])
@@ -1502,6 +1577,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .equity import FULL_DECK
 from .types import Position, positions_for
 
 STREETS = ("preflop", "flop", "turn", "river")
@@ -1747,7 +1823,17 @@ def _validate_node(node: DecisionNode) -> None:
             f"ранг героя ({node.hero_rank}) вне поля из {node.players_left} игроков"
         )
 
+    # Личность карт проверяется здесь, а не откладывается до equity_vs_range
+    # в Task 7: там она всплывёт как ошибка про склейку "JhXz", которой
+    # пользователь не писал. Источник — vision-модель, `"Xz"` от неё реален.
+    if len(node.hero_cards) != 2:
+        raise ValueError(
+            f"у героя должно быть 2 карты, получено {len(node.hero_cards)}"
+        )
     cards = list(node.hero_cards) + list(node.board)
+    for card in cards:
+        if card not in FULL_DECK:
+            raise ValueError(f"неизвестная карта: {card!r}")
     if len(set(cards)) != len(cards):
         raise ValueError(f"карта встречается дважды: {sorted(cards)}")
 
