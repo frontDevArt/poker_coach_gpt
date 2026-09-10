@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from ._checks import check_amount, check_non_negative
+from ._checks import check_non_negative, check_positive
 from .potodds import required_equity
 
 DEFAULT_SPLIT = 0.5
@@ -58,7 +58,7 @@ def required_equity_with_bounty(
     _check_villain_stack(villain_stack)
     _check_chip_value(chip_value)
     _check_split(split)
-    check_amount(call_amount, "call_amount")
+    check_positive(call_amount, "call_amount")
     check_non_negative(pot_before_call, "pot_before_call")
 
     covers_villain = call_amount >= villain_stack

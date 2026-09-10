@@ -10,12 +10,12 @@
 
 from __future__ import annotations
 
-from ._checks import check_amount, check_non_negative, check_probability
+from ._checks import check_non_negative, check_positive, check_probability
 
 
 def required_equity(pot_before_call: float, call_amount: float) -> float:
     """Минимальное эквити, при котором колл безубыточен по фишкам."""
-    check_amount(call_amount, "call_amount")
+    check_positive(call_amount, "call_amount")
     check_non_negative(pot_before_call, "pot_before_call")
     return call_amount / (pot_before_call + call_amount)
 
@@ -23,7 +23,7 @@ def required_equity(pot_before_call: float, call_amount: float) -> float:
 def ev_call(pot_before_call: float, call_amount: float, equity: float) -> float:
     """Chip-EV колла: выигрываем банк с вероятностью equity, иначе теряем колл."""
     check_probability(equity, "equity")
-    check_amount(call_amount, "call_amount")
+    check_positive(call_amount, "call_amount")
     check_non_negative(pot_before_call, "pot_before_call")
     return equity * pot_before_call - (1.0 - equity) * call_amount
 
@@ -42,7 +42,7 @@ def ev_shove(
     """
     check_probability(fold_equity, "fold_equity")
     check_probability(equity_when_called, "equity_when_called")
-    check_amount(shove_amount, "shove_amount")
+    check_positive(shove_amount, "shove_amount")
     check_non_negative(pot_before_shove, "pot_before_shove")
     ev_fold = pot_before_shove
     ev_called = (

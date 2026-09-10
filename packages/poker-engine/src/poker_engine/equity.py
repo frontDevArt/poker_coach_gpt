@@ -12,7 +12,7 @@ from itertools import combinations
 
 from pokerkit import Card, StandardHighHand
 
-from ._checks import check_amount
+from ._checks import check_positive
 
 RANKS = "23456789TJQKA"
 SUITS = "cdhs"
@@ -55,7 +55,7 @@ def hand_equity(
             _score_runout(parsed, parsed_board + list(extra), wins)
         total = len(runouts)
     else:
-        check_amount(trials, "trials")
+        check_positive(trials, "trials")
         rng = random.Random(seed)
         for _ in range(trials):
             extra = rng.sample(deck, need)
@@ -94,7 +94,7 @@ def equity_vs_range(
     hero_cards = _parse_cards(hero, expected=2, label="рука")
     parsed_board = _parse_board(board)
     _check_duplicates(hero_cards + parsed_board)
-    check_amount(trials, "trials")
+    check_positive(trials, "trials")
 
     if not villain_range:
         raise ValueError("диапазон соперника пуст")
