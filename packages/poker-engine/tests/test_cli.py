@@ -210,18 +210,22 @@ def test_help_still_exits_zero_with_usage_text(capsys):
 
 
 def test_equity_accepts_a_range(capsys):
+    # Борд 8c,2s,9d,4c,Tc отдаёт герою JhTh ровно 15/16 против диапазона
+    # AK (см. вывод в tests/test_equity_vs_range.py) — сквозная проверка
+    # парсер -> parse_range -> equity_vs_range -> JSON на настоящем числе,
+    # а не просто на форме ответа.
     code, data = run(
         [
             "equity",
             "--hero", "JhTh",
-            "--vs-range", "AA",
+            "--vs-range", "AK",
             "--board", "8c,2s,9d,4c,Tc",
         ],
         capsys,
     )
     assert code == 0
     assert len(data["equities"]) == 2
-    assert sum(data["equities"]) == pytest.approx(1.0)
+    assert data["equities"][0] == pytest.approx(15 / 16)
 
 
 def test_equity_without_hands_or_range_is_a_json_error(capsys):
@@ -235,6 +239,12 @@ def test_equity_rejects_hands_and_range_together(capsys):
         ["equity", "--hands", "JhTh,AsKd", "--hero", "JhTh", "--vs-range", "AA"],
         capsys,
     )
+    assert code == 1
+    assert "error" in data
+
+
+def test_vs_range_without_hero_is_a_json_error(capsys):
+    code, data = run(["equity", "--vs-range", "AA"], capsys)
     assert code == 1
     assert "error" in data
 

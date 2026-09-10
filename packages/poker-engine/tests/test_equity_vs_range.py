@@ -41,10 +41,16 @@ def test_aces_against_only_aces_split_the_pot():
     # картами одной масти отдаёт флеш только тому, чья дырка в этой масти —
     # это реальная асимметрия исхода, а не шум выборки (проверено отдельно:
     # борд 2s,7s,9s,Ks,4d даёт [1.0, 0.0], а вовсе не сплит). Поэтому здесь
-    # берём дорисованную доску, где ни у одной масти нет четырёх карт: флеш
-    # недостижим ни для кого, ранги дырок совпадают (AA против AA), и
-    # раздача обязана закончиться точной ничьей независимо от числа
-    # прогонов — доска полная, значит trials движком вообще не используется.
+    # берём дорисованную доску 8c,2s,9d,4c,Tc. На ней три трефы — этого
+    # хватило бы на флеш тому, у кого в руке два трефовых блокера (см.
+    # test_complete_board_enumerates_the_range_instead_of_sampling ниже,
+    # где именно так и выигрывает AcKc). Но здесь расклад другой: у героя
+    # AsAh треф нет вообще (0 + 3 борда = 3), а у единственной живой руки
+    # соперника AcAd — ровно одна (1 + 3 борда = 4) — обоим не хватает до
+    # пяти, флеш недостижим ни для кого именно в этой паре рук. Ранги дырок
+    # совпадают (AA против AA), значит раздача обязана закончиться точной
+    # ничьей независимо от числа прогонов — доска полная, trials движком
+    # вообще не используется.
     board = ["8c", "2s", "9d", "4c", "Tc"]
     shares = equity_vs_range("AsAh", parse_range("AA"), board, 200, SEED)
     assert shares[0] == pytest.approx(0.5)
@@ -55,13 +61,27 @@ def test_best_starting_hand_is_never_behind_a_range():
     assert shares[0] >= 0.5
 
 
-def test_complete_board_needs_no_sampling():
-    # Доска дорисована: исход каждой комбинации диапазона определён,
-    # и число прогонов на результат не влияет.
+def test_complete_board_enumerates_the_range_instead_of_sampling():
+    # Доска 8c,2s,9d,4c,Tc: три трефы. Из 16 комбинаций AK ровно одна,
+    # AcKc, добирает пятую трефу и выигрывает флешем; остальные 15 — туз
+    # старшая, проигрывают паре десяток героя (Th + Tc). Значит доля
+    # героя ровно 15/16. Число выводится на бумаге, а не из выборки:
+    # получить его можно только перебрав диапазон целиком.
     board = ["8c", "2s", "9d", "4c", "Tc"]
-    few = equity_vs_range("JhTh", parse_range("AA"), board, 50, SEED)
-    many = equity_vs_range("JhTh", parse_range("AA"), board, 5_000, SEED)
-    assert few[0] == pytest.approx(many[0])
+    shares = equity_vs_range("JhTh", parse_range("AK"), board, 50, SEED)
+    assert shares[0] == pytest.approx(15 / 16)
+
+
+def test_range_equity_is_the_mean_over_its_combos():
+    # Комбинация внутри диапазона выбирается равновероятно, и у каждой
+    # свой полный набор ранаутов — значит эквити против диапазона это
+    # ровно среднее эквити против каждой комбинации. Тождество, а не
+    # число: оба конца считает hand_equity прямо здесь.
+    vs_ak = hand_equity(["JhTh", "AsKd"], [], TRIALS, SEED)[0]
+    vs_22 = hand_equity(["JhTh", "2c2d"], [], TRIALS, SEED)[0]
+    assert abs(vs_ak - vs_22) > 0.05  # концы различимы, среднее осмысленно
+    mixed = equity_vs_range("JhTh", ["2c2d", "AsKd"], [], TRIALS, SEED)[0]
+    assert mixed == pytest.approx((vs_ak + vs_22) / 2, abs=0.02)
 
 
 def test_range_fully_blocked_by_known_cards_is_rejected():

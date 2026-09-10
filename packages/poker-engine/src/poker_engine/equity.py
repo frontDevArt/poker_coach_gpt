@@ -76,21 +76,33 @@ def equity_vs_range(
 
     hero — строка вида "JhTh".
     villain_range — комбинации из `ranges.parse_range`.
+    board — уже открытые карты, от нуля до пяти.
+    trials — число прогонов Monte-Carlo; при дорисованной доске не
+        используется, но всё равно проверяется — строже, чем в
+        hand_equity, которая проверяет trials только тогда, когда
+        реально его использует.
+    seed — сид генератора случайных чисел, для воспроизводимости.
+
     Комбинации, конфликтующие с картами героя или доской, исключаются:
     соперник не может держать карту, которую мы уже видим.
 
-    При дорисованной доске диапазон перебирается целиком и результат
-    точен; иначе идёт Monte-Carlo по паре (комбинация, ранаут).
+    При дорисованной доске либо когда остаётся ровно одна карта диапазон
+    перебирается целиком и результат точен; иначе идёт Monte-Carlo по
+    паре (комбинация, ранаут).
     """
     hero_cards = _parse_cards(hero, expected=2, label="рука")
     parsed_board = _parse_board(board)
     _check_duplicates(hero_cards + parsed_board)
     check_amount(trials, "trials")
 
+    if not villain_range:
+        raise ValueError("диапазон соперника пуст")
+
     blocked = set(hero_cards) | set(parsed_board)
     live: list[list[str]] = []
     for combo in villain_range:
         cards = _parse_cards(combo, expected=2, label="комбинация")
+        _check_duplicates(cards)
         if not blocked.intersection(cards):
             live.append(cards)
     if not live:
@@ -103,6 +115,14 @@ def equity_vs_range(
         for villain in live:
             _score_runout([hero_cards, villain], parsed_board, wins)
         total = len(live)
+    elif need == 1:
+        # Один ранаут — перебор дешевле выборки и точен, как в hand_equity.
+        total = 0
+        for villain in live:
+            deck = [c for c in FULL_DECK if c not in blocked and c not in villain]
+            for card in deck:
+                _score_runout([hero_cards, villain], parsed_board + [card], wins)
+                total += 1
     else:
         rng = random.Random(seed)
         for _ in range(trials):

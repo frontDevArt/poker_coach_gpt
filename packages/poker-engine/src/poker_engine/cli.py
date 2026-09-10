@@ -96,6 +96,9 @@ def _dispatch(args: argparse.Namespace) -> dict:
         }
 
     if args.command == "equity":
+        # Это не валидация значений (та живёт в движке), а выбор формы
+        # вызова: какую из двух функций движка звать. Движок выразить это
+        # не может — у него для этого две разные сигнатуры.
         if args.vs_range is not None:
             if args.hero is None:
                 raise ValueError("для --vs-range нужен --hero")
@@ -110,6 +113,8 @@ def _dispatch(args: argparse.Namespace) -> dict:
                     seed=args.seed,
                 )
             }
+        if args.hero is not None:
+            raise ValueError("--hero без --vs-range ничего не делает: добавьте --vs-range")
         if args.hands is None:
             raise ValueError("нужен либо --hands, либо --hero вместе с --vs-range")
         return {
@@ -163,8 +168,18 @@ def _build_parser() -> argparse.ArgumentParser:
     p_rp.add_argument("--villain", type=int, required=True)
 
     p_eq = sub.add_parser("equity", help="эквити рук")
-    p_eq.add_argument("--hands", type=_str_list, default=None)
-    p_eq.add_argument("--hero", type=str, default=None)
+    p_eq.add_argument(
+        "--hands",
+        type=_str_list,
+        default=None,
+        help="руки через запятую, например 'AhKh,AdKd'",
+    )
+    p_eq.add_argument(
+        "--hero",
+        type=str,
+        default=None,
+        help="рука героя для --vs-range, например 'JhTh'",
+    )
     p_eq.add_argument(
         "--vs-range",
         dest="vs_range",
