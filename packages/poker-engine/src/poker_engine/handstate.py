@@ -107,12 +107,30 @@ class TournamentContext:
     average_stack_bb: float
 
 
+def _present(raw, key: str) -> bool:
+    """Есть ли у поля значение, и объект ли вообще то, у чего его спрашивают.
+
+    Единственная точка, где проверяется форма контейнера. Список объектов
+    приходит от vision-модели, и `null` либо число внутри `seats` или
+    `payouts` от неё так же реальны, как испорченное поле: без этой проверки
+    `key not in raw` бросал бы английский `TypeError: argument of type
+    'NoneType' is not a container`, который `cli.main` не ловит — наружу
+    уходил бы трейсбек вместо разбираемого ответа с ключом `error`.
+
+    Проверка стоит здесь, а не в разборе каждого списка, потому что дефект
+    один на весь слой: любое будущее вложение получает её даром.
+    """
+    if not isinstance(raw, dict):
+        raise ValueError(f"ожидался объект с полем {key!r}, получено {raw!r}")
+    return key in raw and raw[key] is not None
+
+
 def _require(raw: dict, key: str):
     """Значение обязательного поля. `None` — то же нарушение, что и его отсутствие:
     источник данных — vision-модель, и не увидевшая поле модель и увидевшая в нём
     пустоту дают пользователю одну и ту же причину не доверять скриншоту.
     """
-    if key not in raw or raw[key] is None:
+    if not _present(raw, key):
         raise ValueError(f"в данных нет обязательного поля {key!r}")
     return raw[key]
 
@@ -146,7 +164,7 @@ def _as_optional_int(raw: dict, key: str, default: int | None = None) -> int | N
     `default`. Ошибка — только когда поле присутствует, но не число: тот же
     класс отказа, что и мусор в обязательном поле (`_as_int`), поэтому и
     сообщение то же по форме."""
-    if key not in raw or raw[key] is None:
+    if not _present(raw, key):
         return default
     value = raw[key]
     try:
@@ -161,7 +179,7 @@ def _as_optional_float(
     raw: dict, key: str, default: float | None = None
 ) -> float | None:
     """Необязательное поле как вещественное число, см. `_as_optional_int`."""
-    if key not in raw or raw[key] is None:
+    if not _present(raw, key):
         return default
     value = raw[key]
     try:
@@ -186,7 +204,7 @@ def _as_list(raw: dict, key: str) -> list:
 def _as_optional_list(raw: dict, key: str, default: list | None = None) -> list:
     """Необязательное поле как список, см. `_as_list`. Отсутствие ключа и
     `null` дают `default` (пустой список по умолчанию), а не отказ."""
-    if key not in raw or raw[key] is None:
+    if not _present(raw, key):
         return list(default) if default is not None else []
     value = raw[key]
     if not isinstance(value, list):
@@ -200,7 +218,7 @@ def _as_optional_dict(raw: dict, key: str, default: dict | None = None) -> dict:
     (строка, список) отвергается по имени поля вместо того, чтобы `dict(...)`
     либо бросил английский `TypeError` на `None`, либо молча собрал блайнды
     из чужой структуры."""
-    if key not in raw or raw[key] is None:
+    if not _present(raw, key):
         return dict(default) if default is not None else {}
     value = raw[key]
     if not isinstance(value, dict):

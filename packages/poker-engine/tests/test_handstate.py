@@ -704,3 +704,24 @@ def test_payouts_as_a_dict_is_rejected_by_shape():
         ValueError, match=re.escape("поле 'payouts' должно быть списком")
     ):
         context_from_dict(broken)
+
+
+def test_a_seat_that_is_not_an_object_is_rejected_by_shape():
+    # Список правильной формы с испорченным элементом. Проверка формы самого
+    # списка сюда не достаёт, а разбор элемента спрашивал у `None` наличие
+    # ключа и получал английский `TypeError`, который `cli.main` не ловит:
+    # наружу уходил трейсбек вместо ответа с ключом `error`.
+    raw = _node()
+    raw["seats"] = [None] + raw["seats"][1:]
+    with pytest.raises(
+        ValueError, match=re.escape("ожидался объект с полем 'seatIndex'")
+    ):
+        node_from_dict(raw)
+
+
+def test_a_payout_that_is_not_an_object_is_rejected_by_shape():
+    # Тот же класс, что и у места: испорчен элемент, а не список.
+    broken = dict(CONTEXT)
+    broken["payouts"] = [5]
+    with pytest.raises(ValueError, match=re.escape("ожидался объект с полем 'from'")):
+        context_from_dict(broken)

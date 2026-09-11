@@ -126,6 +126,11 @@ def _dispatch(args: argparse.Namespace) -> dict:
 
     if args.command == "analyze":
         payload = _read_json(args.input)
+        # Не валидация входа, а разбор конверта файла: `{context, nodes}` —
+        # формат аргумента командной строки, а не сигнатура движка, и движку
+        # он не виден. Без проверки здесь был бы `KeyError` мимо `main`,
+        # который ловит `(ValueError, IndexError)`. Форму самих `context` и
+        # `nodes` проверяет уже движок — эти гарды сюда не поднимать.
         if "context" not in payload or "nodes" not in payload:
             raise ValueError("во входном JSON нужны ключи 'context' и 'nodes'")
         return analyze(

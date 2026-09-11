@@ -302,6 +302,25 @@ def test_analyze_without_the_required_keys_is_a_json_error(tmp_path, capsys):
     assert "нужны ключи 'context' и 'nodes'" in data["error"]
 
 
+def test_analyze_on_a_null_inside_seats_is_a_json_error(
+    tmp_path, capsys, analyze_context, analyze_node
+):
+    # Форма самого конверта цела, испорчен элемент вложенного списка — то,
+    # что vision-модель отдаёт не реже, чем сломанный верхний уровень.
+    # Контракт `cli` («любая ошибка сериализуется в JSON с ключом error»)
+    # держится только если движок бросает ValueError: TypeError пролетает
+    # мимо `main`, который ловит `(ValueError, IndexError)`.
+    analyze_node["seats"] = [None] + analyze_node["seats"][1:]
+    path = tmp_path / "hand.json"
+    path.write_text(
+        json.dumps({"context": analyze_context, "nodes": [analyze_node]}),
+        encoding="utf-8",
+    )
+    code, data = run(["analyze", "--input", str(path)], capsys)
+    assert code == 1
+    assert "ожидался объект с полем 'seatIndex'" in data["error"]
+
+
 def test_analyze_on_a_json_scalar_is_a_json_error(tmp_path, capsys):
     # `5` — корректный JSON, но не объект: без проверки формы он уходил бы
     # в движок и всплывал внутренним TypeError мимо ключа `error`.
