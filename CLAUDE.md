@@ -6,10 +6,14 @@ Nuxt-оболочка плюс Python-ядро `packages/poker-engine` (ICM, п�
 ## Текущее состояние
 
 План 1 (`feat/poker-engine-core`) закрыт и влит в `main`. Текущая работа — план 2 «скриншот-коуч»,
-ветка `feat/screenshot-coach-engine`: Tasks 1–6 из 7 сделаны, 241 тест зелёный, ветка не влита.
-Остался Task 7 (команда `analyze`).
+ветка `feat/screenshot-coach-engine`: Tasks 1–6 закрыты, Task 7 реализован, но не закрыт —
+пройдено одно ревью из двух, 282 теста зелёные, ветка не влита.
 
-**Перед работой прочитать `docs/superpowers/state/HANDOFF.md`** — там сетап машины, что появилось
+**Перед работой прочитать `docs/superpowers/state/2026-09-11-task7-handoff.md`** — что осталось
+по Task 7, решения, принятые за автора, и четыре открытых вопроса. Готовый промпт для новой
+сессии — `docs/superpowers/state/2026-09-11-next-session-prompt.md`.
+
+**Затем `docs/superpowers/state/HANDOFF.md`** — там сетап машины, что появилось
 в Tasks 7–12, восемь решений, принятых против текста плана (план требовал недоказуемых инвариантов),
 один пункт, ждущий решения пользователя, и список сознательно отложенных мелочей.
 
@@ -22,6 +26,8 @@ Nuxt-оболочка плюс Python-ядро `packages/poker-engine` (ICM, п�
 | `docs/superpowers/plans/2026-09-10-screenshot-coach-engine.md` | план 2, 7 задач |
 | `docs/superpowers/specs/2026-09-10-screenshot-coach-design.md` | спека плана 2 |
 | `docs/superpowers/state/2026-09-10-screenshot-coach-execution-notes.md` | журнал плана 2, Tasks 1–6 |
+| `docs/superpowers/state/2026-09-11-task7-handoff.md` | точка входа: что осталось по Task 7 |
+| `docs/superpowers/state/2026-09-11-next-session-prompt.md` | готовый промпт для новой сессии |
 
 Плагины перечислены в `.claude/settings.json`.
 
@@ -30,7 +36,7 @@ Nuxt-оболочка плюс Python-ядро `packages/poker-engine` (ICM, п�
 ```bash
 # ядро
 cd packages/poker-engine
-.venv/Scripts/python -m pytest              # 241 passed, ~4.5 мин
+.venv/Scripts/python -m pytest              # 282 passed, ~8 мин
 
 # первый запуск на новой машине
 python -m venv .venv
