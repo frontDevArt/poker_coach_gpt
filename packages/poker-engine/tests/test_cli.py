@@ -267,6 +267,9 @@ def test_error_json_is_valid_utf8_on_subprocess_console():
 
 
 def test_analyze_reads_a_file(tmp_path, capsys, analyze_context, analyze_node):
+    # Финальный стол вместо плановых 496 живых: тест про чтение файла и
+    # форму ответа, а свёртка поля стоит ему десять лишних секунд.
+    analyze_node.update(playersLeft=8, heroRank=8)
     path = tmp_path / "hand.json"
     path.write_text(
         json.dumps({"context": analyze_context, "nodes": [analyze_node]}),
@@ -354,6 +357,9 @@ def test_analyze_passes_trials_and_seed_to_the_engine(
     # Оба параметра меняют результат Monte-Carlo, поэтому совпадение с
     # прямым вызовом движка на тех же значениях — единственная проверка
     # того, что CLI их действительно передаёт, а не роняет в умолчания.
+    # Разбор здесь считается дважды, поэтому узел — финальный стол: ICM к
+    # пробросу `--trials` и `--seed` отношения не имеет.
+    analyze_node.update(playersLeft=8, heroRank=8)
     path = tmp_path / "hand.json"
     path.write_text(
         json.dumps({"context": analyze_context, "nodes": [analyze_node]}),

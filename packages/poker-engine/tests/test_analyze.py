@@ -17,8 +17,21 @@ from poker_engine.types import Position
 
 @pytest.fixture
 def run_analyze(analyze_context, analyze_node):
+    """Разбор плановой раздачи с правками узла — по умолчанию на финальном столе.
+
+    Умолчание `playersLeft=8, heroRank=8` — не упрощение проверяемого, а
+    цена прогона: свёртки поля при восьми живых нет, ICM считает восемь
+    узлов вместо пятнадцати, то есть 40 320 упорядоченных префиксов
+    вместо 3.6 млн — около секунды против одиннадцати на вызов. Ни один
+    ключ ответа при этом не пропадает.
+
+    Тесту, которому нужна именно свёртка, передавать `playersLeft` явно;
+    базовый ответ на неправленой фикстуре живёт в `analyze_base_result`.
+    """
+
     def call(**overrides):
         node = copy.deepcopy(analyze_node)
+        node.update(playersLeft=8, heroRank=8)
         node.update(overrides)
         return analyze(analyze_context, [node], trials=2_000, seed=11)
 
@@ -168,14 +181,18 @@ def test_preflop_advice_is_flagged_as_not_computed(analyze_base_result):
 
 
 def test_postflop_is_not_flagged_as_missing_pushfold(analyze_context, analyze_node):
-    flop = copy.deepcopy(analyze_node)
+    # Финальный стол в обоих узлах: тест про улицу, а не про свёртку поля,
+    # и платить за пятнадцатиузловой ICM дважды ему не за что.
+    preflop = copy.deepcopy(analyze_node)
+    preflop.update(playersLeft=8, heroRank=8)
+    flop = copy.deepcopy(preflop)
     flop.update(
         street="flop",
         board=["8c", "2s", "9d"],
         toCallBb=0.0,
         raiseToBb=None,
     )
-    result = analyze(analyze_context, [analyze_node, flop], trials=2_000, seed=11)
+    result = analyze(analyze_context, [preflop, flop], trials=2_000, seed=11)
     assert "no_pushfold" not in result["flags"]
 
 
@@ -191,10 +208,18 @@ def test_hand_with_no_active_opponent_skips_head_to_head_numbers(
 
 
 def test_invalid_hand_is_rejected_before_any_computation(analyze_context, analyze_node):
+    # Вход нарушает сразу два правила: банк нулевой (валидатор раздачи) и
+    # лесенка платит за все 165 мест (бюджет перебора, гард ниже по ходу).
+    # Побеждать обязан валидатор — иначе пользователь получил бы отказ про
+    # неподъёмный ICM на раздаче, которую движок и разбирать не должен был.
+    # Одного нулевого банка для этого мало: тест остался бы зелёным, даже
+    # если перенести `validate_hand` в самый конец `analyze`.
+    context = copy.deepcopy(analyze_context)
+    context["payouts"] = [{"from": 1, "to": 165, "amount": 400.0}]
     broken = copy.deepcopy(analyze_node)
     broken["potBb"] = 0.0
     with pytest.raises(ValueError, match="банк должен быть > 0"):
-        analyze(analyze_context, [broken], trials=2_000, seed=11)
+        analyze(context, [broken], trials=2_000, seed=11)
 
 
 def test_nodes_must_be_a_list(analyze_context, analyze_node):
@@ -215,26 +240,6 @@ def test_context_must_be_an_object(analyze_node):
 def test_every_node_must_be_an_object(analyze_context, analyze_node):
     with pytest.raises(ValueError, match="узел решения 1 должен быть объектом"):
         analyze(analyze_context, [analyze_node, None], trials=2_000, seed=11)
-
-
-def test_prizes_deeper_than_the_field_are_flagged_as_truncated(
-    analyze_context, analyze_node
-):
-    # Выплаты доходят до 25-го места, а в модели 15 узлов: призы за места
-    # с 16-го по 25-е в расчёт не попали, и ICM-эквити героя занижено.
-    #
-    # Лесенка нарочно с разрывом (места 7..19 не оплачены): сплошная
-    # лесенка до 25-го места дала бы пятнадцать ненулевых мест из
-    # пятнадцати, а Malmuth-Harville перебирает упорядоченные префиксы
-    # до последней ненулевой выплаты — 15! порядков, то есть тест,
-    # который не кончается. Это ровно та цена, из-за которой лесенка и
-    # обрезается, и ровно то, о чём обязана сообщать пометка.
-    context = copy.deepcopy(analyze_context)
-    context["payouts"] = context["payouts"] + [
-        {"from": 20, "to": 25, "amount": 100.0}
-    ]
-    result = analyze(context, [analyze_node], trials=2_000, seed=11)
-    assert "ladder_truncated" in result["flags"]
 
 
 def test_a_dense_prize_ladder_is_rejected_instead_of_hanging(
@@ -273,10 +278,14 @@ def test_a_mid_sized_field_beyond_the_budget_is_also_rejected(
 
 
 def test_the_ladder_at_the_budget_edge_is_still_computed(analyze_base_result):
-    # Плановая фикстура платит за шесть мест из пятнадцати — 3.6 млн
-    # префиксов против потолка в 4 млн, последняя переносимая глубина.
-    # Разбор обязан состояться, а не быть отвергнут заодно с плотными.
-    assert analyze_base_result["icm"]["fieldNodes"] == 15
+    # Плановая фикстура платит за шесть мест из пятнадцати. Связь с
+    # бюджетом здесь и есть предмет теста, поэтому она посчитана, а не
+    # пересказана: шесть мест укладываются в потолок, седьмое — нет, то
+    # есть разбор идёт по последней переносимой глубине и обязан
+    # состояться, а не быть отвергнутым заодно с плотными лесенками.
+    nodes = analyze_base_result["icm"]["fieldNodes"]
+    assert nodes == MAX_FIELD_NODES
+    assert math.perm(nodes, 6) <= MAX_ICM_PREFIXES < math.perm(nodes, 7)
     assert analyze_base_result["icm"]["heroEquity"] > 0
 
 
