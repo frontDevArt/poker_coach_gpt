@@ -36,6 +36,7 @@ packages/poker-engine/.venv/Scripts/poker-engine.exe <команда> [опци�
 | Порог эквити по пот-оддсам | `poker-engine potodds --pot 100 --call 50` |
 | Порог эквити в PKO | `poker-engine bounty-ev --pot 100 --call 50 --villain-stack 50 --bounty 2.50 --chip-value 0.025` |
 | Эквити рук | `poker-engine equity --hands AsKs,7h7d --board Kc,8c,3d --trials 20000 --seed 1` |
+| Эквити руки против диапазона | `poker-engine equity --hero JhTh --vs-range TT+,AQs+ --board Kc,8c,3d --trials 20000 --seed 1` |
 
 ## Соглашения по аргументам
 
@@ -45,6 +46,7 @@ packages/poker-engine/.venv/Scripts/poker-engine.exe <команда> [опци�
 - `--payouts` — призовые по местам от первого; список короче поля добивается нулями.
 - `--chip-value` — доллары за одну фишку: призовой фонд, делённый на все фишки турнира.
 - `--seed` — обязателен, когда результат идёт в разбор: без него прогоны не воспроизводятся.
+- `equity` работает в одной из двух форм и не смешивает их: либо `--hands`, либо `--hero` вместе с `--vs-range`. `--hands` вместе с `--vs-range` отвергается, `--hero` без `--vs-range` — тоже.
 
 ## Как читать результат
 

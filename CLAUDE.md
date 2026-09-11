@@ -6,9 +6,10 @@ Nuxt-оболочка плюс Python-ядро `packages/poker-engine` (ICM, п�
 ## Текущее состояние
 
 План 1 (`feat/poker-engine-core`) закрыт и влит в `main`. План 2 «скриншот-коуч»
-(ветка `feat/screenshot-coach-engine`) исполнен целиком: Tasks 1–7 закрыты, оба ревью и
-мутационная приёмка пройдены, журнал написан, 296 тестов зелёные. Осталось финальное ревью
-всей ветки и merge.
+(ветка `feat/screenshot-coach-engine`) исполнен целиком: Tasks 1–7 закрыты, оба ревью на
+задачу, мутационная приёмка и финальное ревью всей ветки пройдены, находки починены, журнал
+написан, 304 теста зелёные. Осталось решение автора по `notes.txt` и двум коммитам с чужими
+сообщениями — и merge.
 
 **Перед работой прочитать `docs/superpowers/state/2026-09-10-screenshot-coach-execution-notes.md`**,
 разделы «Task 7» и «Дальше» — что решено против текста плана, мутационная таблица, ledger
@@ -38,7 +39,7 @@ Nuxt-оболочка плюс Python-ядро `packages/poker-engine` (ICM, п�
 ```bash
 # ядро
 cd packages/poker-engine
-.venv/Scripts/python -m pytest              # 296 passed, ~5.5 мин
+.venv/Scripts/python -m pytest              # 304 passed, ~5.5 мин
 
 # первый запуск на новой машине
 python -m venv .venv
