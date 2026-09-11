@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from ._checks import check_non_negative, check_positive
 from .equity import FULL_DECK
+from .profiles import check_vpip
 from .types import Position, positions_for
 
 BOARD_SIZE = {"preflop": 0, "flop": 3, "turn": 4, "river": 5}
@@ -449,6 +450,11 @@ def _validate_node(node: DecisionNode) -> None:
     for seat in node.seats:
         check_non_negative(seat.stack_bb, f"стек на месте {seat.seat_index}")
         check_non_negative(seat.invested_bb, f"вложение на месте {seat.seat_index}")
+        # Бейдж соперника проверяется здесь, а не откладывается до
+        # `range_for_vpip`: тот вызывается в самом конце `analyze`, уже
+        # после ICM, и мусорный процент стоил бы пользователю полного
+        # расчёта перед отказом. Правило одно на пакет — в `profiles`.
+        check_vpip(seat.vpip, seat.vpip_hands)
 
     check_positive(node.pot_bb, "банк")
     check_non_negative(node.to_call_bb, "размер колла")

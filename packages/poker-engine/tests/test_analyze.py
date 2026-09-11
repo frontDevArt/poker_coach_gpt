@@ -7,6 +7,7 @@
 import copy
 import json
 import math
+import re
 
 import pytest
 
@@ -402,6 +403,23 @@ def test_a_reduced_field_without_the_average_stack_is_rejected(
     del context["averageStackBb"]
     with pytest.raises(ValueError, match="нужен средний стек"):
         analyze(context, [analyze_node], trials=2_000, seed=11)
+
+
+def test_a_broken_vpip_is_rejected_before_any_computation(
+    analyze_context, analyze_node
+):
+    # Тот же порядок, что и у остального валидатора: бейдж соперника
+    # проверяется до расчёта. Лесенка здесь неподъёмная, и если бы VPIP
+    # проверялся только в `range_for_vpip` (последний шаг `analyze`),
+    # победило бы сообщение про перебор — после всего ICM.
+    context = copy.deepcopy(analyze_context)
+    context["payouts"] = [{"from": 1, "to": 165, "amount": 400.0}]
+    seats = copy.deepcopy(analyze_node["seats"])
+    seats[4]["vpip"] = 150.0
+    node = copy.deepcopy(analyze_node)
+    node["seats"] = seats
+    with pytest.raises(ValueError, match=re.escape("VPIP вне диапазона 0..100")):
+        analyze(context, [node], trials=2_000, seed=11)
 
 
 def test_a_prize_zone_of_zero_places_is_rejected(analyze_context, analyze_node):

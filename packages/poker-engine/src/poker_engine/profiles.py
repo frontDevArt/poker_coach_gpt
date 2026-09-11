@@ -27,6 +27,23 @@ DEFAULT_VPIP = 25.0
 MIN_VPIP_HANDS = 30
 
 
+def check_vpip(vpip: float | None, hands: int | None) -> None:
+    """Границы бейджа соперника: процент в 0..100, размер выборки не
+    отрицателен. Оба значения необязательны — клиент бейдж показывает не
+    всегда.
+
+    Публична не ради внешних вызывающих, а потому что проверять их обязан
+    валидатор раздачи, до любого расчёта, а применяет их `range_for_vpip`
+    уже после него. Вторая копия правила в `handstate.py` разошлась бы с
+    этой молча, и пользователь получал бы отказ то с одним текстом, то с
+    другим — либо не получал вовсе.
+    """
+    if vpip is not None and not 0 <= vpip <= 100:
+        raise ValueError(f"VPIP вне диапазона 0..100: {vpip}")
+    if hands is not None:
+        check_non_negative(hands, "число раздач")
+
+
 def range_for_vpip(vpip: float | None, hands: int | None) -> tuple[list[str], bool]:
     """Комбинации диапазона и признак того, что взят дефолт.
 
@@ -43,10 +60,7 @@ def range_for_vpip(vpip: float | None, hands: int | None) -> tuple[list[str], bo
     никогда — даже на VPIP 0 соперник держит карты, а нулевой диапазон
     сломал бы любой расчёт эквити против него.
     """
-    if vpip is not None and not 0 <= vpip <= 100:
-        raise ValueError(f"VPIP вне диапазона 0..100: {vpip}")
-    if hands is not None:
-        check_non_negative(hands, "число раздач")
+    check_vpip(vpip, hands)
 
     # `not hands >= ...`, а не `hands < ...`: NaN проваливает оба сравнения,
     # и выборку неизвестного размера полагается считать недостаточной.

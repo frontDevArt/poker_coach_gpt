@@ -425,6 +425,24 @@ def test_a_number_instead_of_a_boolean_is_rejected():
         context_from_dict(broken)
 
 
+def test_vpip_out_of_range_is_rejected():
+    # Правило живёт в `profiles`, но проверяется валидатором: иначе отказ
+    # придёт из `range_for_vpip` в самом конце `analyze`, после всего ICM.
+    seats = [_seat(i, 50.0, hero=(i == 7)) for i in range(8)]
+    seats[0]["vpip"] = 150.0
+    with pytest.raises(ValueError, match=re.escape("VPIP вне диапазона 0..100: 150.0")):
+        _validate([_node(seats=seats)])
+
+
+def test_negative_vpip_sample_is_rejected():
+    seats = [_seat(i, 50.0, hero=(i == 7)) for i in range(8)]
+    seats[0]["vpipHands"] = -1
+    with pytest.raises(
+        ValueError, match=re.escape("число раздач не может быть отрицательным")
+    ):
+        _validate([_node(seats=seats)])
+
+
 def test_a_prize_zone_of_zero_places_is_rejected():
     broken = dict(CONTEXT)
     broken["placesPaid"] = 0
