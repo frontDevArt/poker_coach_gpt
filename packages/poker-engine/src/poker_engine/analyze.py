@@ -137,6 +137,10 @@ def analyze(
         node.players_left,
         context.average_stack_bb,
         max_nodes=MAX_FIELD_NODES,
+        # Иначе отказ назовёт позицию в списке: `seatIndex` со скриншота
+        # идёт с пропусками, когда за столом есть пустые места, и
+        # `validate_hand` требует от него только уникальности.
+        seat_labels=[seat.seat_index for seat in seats],
     )
     ladder = payout_ladder(context, places=len(field))
     # Глубину перебора спрашиваем у самого `icm`, а не считаем заново:

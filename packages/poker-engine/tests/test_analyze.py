@@ -346,10 +346,19 @@ def test_all_in_opponent_is_rejected_by_the_field_reduction(run_analyze, analyze
     # стеков. Как вернуть в ICM уже вложенные выбывающим фишки — решение
     # о модели, оно этой задачей не принимается; тест пинит, что отказ
     # остаётся русским и адресным.
+    #
+    # Места нарочно перенумерованы с двойки: `validate_hand` требует от
+    # `seatIndex` только уникальности, а на скриншоте номера идут с
+    # пропусками, когда за столом есть пустые места. При нумерации 0..7
+    # номер места и позиция в списке — одно и то же число, и пин не
+    # отличил бы одно от другого; здесь виноватый стек стоит в списке
+    # пятым, а называться обязано место 6.
     seats = copy.deepcopy(analyze_node["seats"])
+    for seat in seats:
+        seat["seatIndex"] += 2
     seats[4]["stackBb"] = 0.0
-    with pytest.raises(ValueError, match="стек на месте 4 должен быть > 0"):
-        run_analyze(seats=seats)
+    with pytest.raises(ValueError, match="стек на месте 6 должен быть > 0"):
+        run_analyze(seats=seats, buttonSeat=6)
 
 
 def test_result_is_json_serialisable(analyze_base_result):

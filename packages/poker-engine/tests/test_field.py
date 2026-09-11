@@ -172,6 +172,36 @@ def test_average_leaving_exactly_zero_for_the_rest_is_rejected():
         reduce_field([10.0, 30.0], 0, players_left=4, average_stack_bb=10.0)
 
 
+def test_seat_labels_name_the_seat_instead_of_the_list_position():
+    # Список стеков анонимен, и без подписей отказ называет позицию в
+    # списке. Совпадает она с номером места только при нумерации подряд
+    # от нуля; за столом бывают пустые места, и `seatIndex` со скриншота
+    # идёт с пропусками. Подписи `[3, 7]` требуют «места 7», а позиция
+    # виноватого стека — 1: числа различны, поэтому тест не слепой.
+    with pytest.raises(ValueError, match="стек на месте 7 должен быть > 0"):
+        reduce_field(
+            [10.0, 0.0],
+            0,
+            players_left=2,
+            average_stack_bb=5.0,
+            seat_labels=[3, 7],
+        )
+
+
+def test_seat_labels_of_the_wrong_length_are_rejected():
+    # Короткий список подписей молча оставил бы часть стеков без проверки:
+    # `zip` обрывается по кратчайшему, и нулевой стек последнего места
+    # прошёл бы гард насквозь.
+    with pytest.raises(ValueError, match="подписей мест"):
+        reduce_field(
+            [10.0, 20.0],
+            0,
+            players_left=2,
+            average_stack_bb=15.0,
+            seat_labels=[3],
+        )
+
+
 def test_smallest_printable_stack_is_accepted():
     # 0.1 BB — минимум, который печатает клиент, и ровно 1 узел шкалы.
     # Отсечка «меньше 0.1 BB» обязана быть строгой, иначе легальный

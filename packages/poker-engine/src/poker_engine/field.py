@@ -25,16 +25,31 @@ def reduce_field(
     players_left: int,
     average_stack_bb: float,
     max_nodes: int = 15,
+    seat_labels: list[int] | None = None,
 ) -> list[int]:
     """Стеки поля в десятых долях BB: стол как есть, остальные схлопнуты.
 
     Индекс героя не меняется — стол всегда идёт первым.
+
+    `seat_labels` — номера мест за столом в том же порядке, что стеки.
+    Нужны только сообщениям об ошибках: список стеков анонимен, и без
+    подписей отказ называет позицию в списке. Совпадает она с номером
+    места лишь когда места пронумерованы подряд от нуля, а вызывающий
+    вправе передать любые уникальные номера — за столом бывают пустые
+    места, и `seatIndex` со скриншота идёт с пропусками. Тогда
+    пользователю называлось бы место, которого он на экране не видел.
     """
     if not table_stacks_bb:
         raise ValueError("за столом нет игроков")
     if not 0 <= hero_index < len(table_stacks_bb):
         raise ValueError(f"индекс героя вне стола: {hero_index}")
-    for seat, stack in enumerate(table_stacks_bb):
+    if seat_labels is not None and len(seat_labels) != len(table_stacks_bb):
+        raise ValueError(
+            f"подписей мест ({len(seat_labels)}) не столько, сколько стеков "
+            f"({len(table_stacks_bb)})"
+        )
+    labels = range(len(table_stacks_bb)) if seat_labels is None else seat_labels
+    for seat, stack in zip(labels, table_stacks_bb):
         check_positive(stack, f"стек на месте {seat}")
     if players_left < len(table_stacks_bb):
         raise ValueError(
