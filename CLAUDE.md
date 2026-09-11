@@ -5,14 +5,14 @@ Nuxt-оболочка плюс Python-ядро `packages/poker-engine` (ICM, п�
 
 ## Текущее состояние
 
-План 1 (`feat/poker-engine-core`) закрыт и влит в `main`. Текущая работа — план 2 «скриншот-коуч»,
-ветка `feat/screenshot-coach-engine`: Tasks 1–6 закрыты, Task 7 реализован и прошёл оба ревью
-плюс приёмку мутациями, но не закрыт — одна находка ревью ждёт решения автора, журнал не написан,
-288 тестов зелёные, ветка не влита.
+План 1 (`feat/poker-engine-core`) закрыт и влит в `main`. План 2 «скриншот-коуч»
+(ветка `feat/screenshot-coach-engine`) исполнен целиком: Tasks 1–7 закрыты, оба ревью и
+мутационная приёмка пройдены, журнал написан, 296 тестов зелёные. Осталось финальное ревью
+всей ветки и merge.
 
-**Перед работой прочитать `docs/superpowers/state/2026-09-11-task7-handoff-2.md`** — что осталось
-по Task 7, мутационная таблица, решения, принятые за автора, и пять открытых вопросов. Готовый
-промпт для новой сессии — `docs/superpowers/state/2026-09-11-next-session-prompt.md`.
+**Перед работой прочитать `docs/superpowers/state/2026-09-10-screenshot-coach-execution-notes.md`**,
+разделы «Task 7» и «Дальше» — что решено против текста плана, мутационная таблица, ledger
+отложенного и два открытых вопроса про модель ICM (оба — предмет отдельного плана).
 
 **Затем `docs/superpowers/state/HANDOFF.md`** — там сетап машины, что появилось
 в Tasks 7–12, восемь решений, принятых против текста плана (план требовал недоказуемых инвариантов),
@@ -26,10 +26,10 @@ Nuxt-оболочка плюс Python-ядро `packages/poker-engine` (ICM, п�
 | `docs/superpowers/state/2026-09-09-poker-engine-execution-notes.md` | полный журнал ревью Tasks 1–6 плана 1 |
 | `docs/superpowers/plans/2026-09-10-screenshot-coach-engine.md` | план 2, 7 задач |
 | `docs/superpowers/specs/2026-09-10-screenshot-coach-design.md` | спека плана 2 |
-| `docs/superpowers/state/2026-09-10-screenshot-coach-execution-notes.md` | журнал плана 2, Tasks 1–6 |
-| `docs/superpowers/state/2026-09-11-task7-handoff-2.md` | **точка входа**: что осталось по Task 7 |
-| `docs/superpowers/state/2026-09-11-task7-handoff.md` | первый handoff: Tasks 1–6 и решения первой сессии |
-| `docs/superpowers/state/2026-09-11-next-session-prompt.md` | готовый промпт для новой сессии |
+| `docs/superpowers/state/2026-09-10-screenshot-coach-execution-notes.md` | **точка входа**: журнал плана 2, Tasks 1–7 |
+| `docs/superpowers/state/2026-09-11-task7-handoff-2.md` | handoff второй сессии Task 7 (историческое) |
+| `docs/superpowers/state/2026-09-11-task7-handoff.md` | handoff первой сессии Task 7 (историческое) |
+| `docs/superpowers/state/2026-09-11-next-session-prompt.md` | промпт третьей сессии (историческое) |
 
 Плагины перечислены в `.claude/settings.json`.
 
@@ -38,7 +38,7 @@ Nuxt-оболочка плюс Python-ядро `packages/poker-engine` (ICM, п�
 ```bash
 # ядро
 cd packages/poker-engine
-.venv/Scripts/python -m pytest              # 288 passed, ~4 мин
+.venv/Scripts/python -m pytest              # 296 passed, ~5.5 мин
 
 # первый запуск на новой машине
 python -m venv .venv
