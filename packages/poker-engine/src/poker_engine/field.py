@@ -23,13 +23,18 @@ def reduce_field(
     table_stacks_bb: list[float],
     hero_index: int,
     players_left: int,
-    average_stack_bb: float,
+    average_stack_bb: float | None,
     max_nodes: int = 15,
     seat_labels: list[int] | None = None,
 ) -> list[int]:
     """Стеки поля в десятых долях BB: стол как есть, остальные схлопнуты.
 
     Индекс героя не меняется — стол всегда идёт первым.
+
+    `average_stack_bb` нужен только для схлопывания остального поля: когда
+    игроков ровно столько же, сколько за столом, схлопывать нечего, и
+    `None` здесь законен. Переданное значение проверяется в любом случае —
+    неучастие в расчёте не делает ноль или минус осмысленным вводом.
 
     `seat_labels` — номера мест за столом в том же порядке, что стеки.
     Нужны только сообщениям об ошибках: список стеков анонимен, и без
@@ -56,7 +61,8 @@ def reduce_field(
             f"осталось игроков ({players_left}) меньше, чем за столом "
             f"({len(table_stacks_bb)})"
         )
-    check_positive(average_stack_bb, "средний стек")
+    if average_stack_bb is not None:
+        check_positive(average_stack_bb, "средний стек")
     if max_nodes < len(table_stacks_bb):
         raise ValueError(
             f"предел узлов ({max_nodes}) меньше числа мест за столом "
@@ -69,6 +75,12 @@ def reduce_field(
     if rest_players > 0:
         if max_nodes == len(table_stacks_bb):
             raise ValueError("нет места под остальное поле: увеличьте предел узлов")
+        if average_stack_bb is None:
+            raise ValueError(
+                f"нужен средний стек: игроков ({players_left}) больше, чем за "
+                f"столом ({len(table_stacks_bb)}), и остальное поле нечем "
+                f"схлопнуть"
+            )
         rest_chips = players_left * average_stack_bb - sum(table_stacks_bb)
         if rest_chips <= 0:
             raise ValueError(

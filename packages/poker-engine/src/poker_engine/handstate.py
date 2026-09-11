@@ -104,7 +104,10 @@ class TournamentContext:
     players_left: int
     late_reg_open: bool
     seats_per_table: int
-    average_stack_bb: float
+    # `None` — законное отсутствие: средний стек участвует только в
+    # схлопывании остального поля (`field.reduce_field`), и на финальном
+    # столе требовать его означало бы требовать число ни для чего.
+    average_stack_bb: float | None
 
 
 def _present(raw, key: str) -> bool:
@@ -242,7 +245,7 @@ def context_from_dict(raw: dict) -> TournamentContext:
         players_left=_as_int(raw, "playersLeft"),
         late_reg_open=bool(_require(raw, "lateRegOpen")),
         seats_per_table=_as_int(raw, "seatsPerTable"),
-        average_stack_bb=_as_float(raw, "averageStackBb"),
+        average_stack_bb=_as_optional_float(raw, "averageStackBb"),
     )
 
 
@@ -374,7 +377,11 @@ def _validate_context(context: TournamentContext) -> None:
     # лесенки внутри модели. Ноль или отрицательное молча погасили бы
     # пометку, то есть занижение `heroEquity` перестало бы называться.
     check_positive(context.places_paid, "размер призовой зоны")
-    check_positive(context.average_stack_bb, "средний стек")
+    # Отсутствие среднего стека проверяет не валидатор, а `reduce_field`:
+    # обязателен он ровно тогда, когда поле больше стола, и это знает тот,
+    # кто поле сворачивает. Здесь проверяется только переданное значение.
+    if context.average_stack_bb is not None:
+        check_positive(context.average_stack_bb, "средний стек")
 
 
 def _validate_node(node: DecisionNode) -> None:

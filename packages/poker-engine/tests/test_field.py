@@ -5,6 +5,8 @@
 `test_icm.py`.
 """
 
+import re
+
 import pytest
 
 from poker_engine.field import SCALE, reduce_field
@@ -57,6 +59,35 @@ def test_field_equal_to_the_table_is_left_alone():
         TABLE, HERO, players_left=len(TABLE), average_stack_bb=TABLE_AVERAGE
     )
     assert reduced == [round(stack * SCALE) for stack in TABLE]
+
+
+def test_field_equal_to_the_table_needs_no_average_stack():
+    # Средний стек участвует только в схлопывании остального поля. Когда
+    # схлопывать нечего, требовать его означало бы требовать число, ни на
+    # что не влияющее: результат обязан совпасть с тем, что даёт
+    # согласованный средний стек.
+    reduced = reduce_field(
+        TABLE, HERO, players_left=len(TABLE), average_stack_bb=None
+    )
+    assert reduced == [round(stack * SCALE) for stack in TABLE]
+
+
+def test_a_field_larger_than_the_table_still_needs_the_average_stack():
+    # `match` обязателен: без среднего стека отказать обязан именно этот
+    # гард, а не `check_positive` ниже по ходу и не арифметика на `None`.
+    with pytest.raises(
+        ValueError,
+        match=re.escape("нужен средний стек: игроков (782) больше, чем за столом (8)"),
+    ):
+        reduce_field(TABLE, HERO, players_left=782, average_stack_bb=None)
+
+
+def test_a_useless_average_stack_is_still_rejected():
+    # Неучастие в расчёте не делает ноль осмысленным вводом: поле равно
+    # столу, средний стек не нужен, но переданное число обязано быть
+    # числом стека, а не мусором.
+    with pytest.raises(ValueError, match=re.escape("средний стек должен быть > 0")):
+        reduce_field(TABLE, HERO, players_left=len(TABLE), average_stack_bb=0.0)
 
 
 def test_every_stack_is_a_positive_integer():

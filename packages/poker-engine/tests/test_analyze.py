@@ -371,6 +371,30 @@ def test_the_truncation_flag_counts_places_paid_not_payout_edges(
     assert "ladder_truncated" in analyze(deep, [node], trials=2_000, seed=11)["flags"]
 
 
+def test_a_final_table_is_analysed_without_the_average_stack(
+    analyze_context, analyze_node
+):
+    # Средний стек нужен только свёртке поля: на финальном столе сворачивать
+    # нечего, и разбор обязан состояться без него.
+    context = copy.deepcopy(analyze_context)
+    del context["averageStackBb"]
+    node = copy.deepcopy(analyze_node)
+    node.update(playersLeft=8, heroRank=8)
+    result = analyze(context, [node], trials=2_000, seed=11)
+    assert result["icm"]["fieldNodes"] == 8
+
+
+def test_a_reduced_field_without_the_average_stack_is_rejected(
+    analyze_context, analyze_node
+):
+    # А пока поле больше стола, отсутствие среднего стека — отказ с русским
+    # текстом, а не арифметика на `None` внутри свёртки.
+    context = copy.deepcopy(analyze_context)
+    del context["averageStackBb"]
+    with pytest.raises(ValueError, match="нужен средний стек"):
+        analyze(context, [analyze_node], trials=2_000, seed=11)
+
+
 def test_a_prize_zone_of_zero_places_is_rejected(analyze_context, analyze_node):
     # `placesPaid` виден в ответе только через пометку `ladder_truncated`,
     # и мусорное значение погасило бы её молча — вместе с единственным

@@ -374,6 +374,18 @@ def test_entrants_equal_to_players_left_is_allowed():
     validate_hand(context_from_dict(equal), [node_from_dict(_node())])
 
 
+def test_context_without_the_average_stack_is_accepted():
+    # Поле `averageStackBb` необязательно: оно нужно только свёртке поля,
+    # и её гард (`field.reduce_field`) знает, когда именно. Валидатор
+    # раздачи требовать его не вправе — на финальном столе его нет и не
+    # должно быть.
+    quiet = dict(CONTEXT)
+    del quiet["averageStackBb"]
+    context = context_from_dict(quiet)
+    assert context.average_stack_bb is None
+    validate_hand(context, [node_from_dict(_node())])
+
+
 def test_a_prize_zone_of_zero_places_is_rejected():
     broken = dict(CONTEXT)
     broken["placesPaid"] = 0
