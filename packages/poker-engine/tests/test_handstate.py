@@ -386,6 +386,25 @@ def test_context_without_the_average_stack_is_accepted():
     validate_hand(context, [node_from_dict(_node())])
 
 
+def test_payouts_deeper_than_the_prize_zone_are_rejected():
+    # Противоречие в самих данных: выплата за место, которое турнир не
+    # оплачивает. Принять его значит считать ICM с призами, которых нет, —
+    # `heroEquity` завысится, и ни одна пометка об этом не скажет.
+    broken = dict(CONTEXT)
+    broken["placesPaid"] = 3
+    with pytest.raises(
+        ValueError,
+        match=re.escape("выплаты описаны до места 6, а призовых мест 3"),
+    ):
+        validate_hand(context_from_dict(broken), [node_from_dict(_node())])
+
+
+def test_prize_zone_wider_than_the_payouts_is_allowed():
+    # Обратное соотношение — норма реального турнира: лобби платит за 165
+    # мест, а на скриншоте видны выплаты только за первые шесть.
+    validate_hand(context_from_dict(dict(CONTEXT)), [node_from_dict(_node())])
+
+
 def test_a_string_instead_of_a_boolean_is_rejected():
     # `bool("false")` истинно: без гарда место, объявленное сфолдившим,
     # молча вернулось бы в раздачу, а ответ остался бы правдоподобным.
