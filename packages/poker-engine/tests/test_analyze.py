@@ -6,10 +6,11 @@
 
 import copy
 import json
+import math
 
 import pytest
 
-from poker_engine.analyze import analyze
+from poker_engine.analyze import MAX_FIELD_NODES, MAX_ICM_PREFIXES, analyze
 from poker_engine.potodds import required_equity
 from poker_engine.types import Position
 
@@ -277,6 +278,27 @@ def test_the_ladder_at_the_budget_edge_is_still_computed(analyze_base_result):
     # Разбор обязан состояться, а не быть отвергнут заодно с плотными.
     assert analyze_base_result["icm"]["fieldNodes"] == 15
     assert analyze_base_result["icm"]["heroEquity"] > 0
+
+
+def test_the_prefix_budget_is_never_hit_exactly():
+    # Гард сравнивает стоимость перебора строгим `>`, и `>` отличается от
+    # `>=` ровно на одном входе — дающем ровно `MAX_ICM_PREFIXES`
+    # префиксов. Такого входа не существует: число префиксов — падающий
+    # факториал `perm(узлы, места)` при узлах не больше `MAX_FIELD_NODES`,
+    # и значения 4 000 000 он не принимает (ближайшее снизу — 3 991 680
+    # при двенадцати узлах и семи местах). Проверять сам выбор знака
+    # поэтому нечем, и мутация `>` → `>=` тестами не убивается.
+    #
+    # Тест пинит причину этой безразличности, а не сам знак: подвиньте
+    # константу на достижимое число — например на 3 603 600, ровно
+    # стоимость плановой фикстуры, — и граница станет значимой, а разбор,
+    # который сегодня считается, начнёт молча отвергаться.
+    attainable = {
+        math.perm(nodes, paid)
+        for nodes in range(1, MAX_FIELD_NODES + 1)
+        for paid in range(nodes + 1)
+    }
+    assert MAX_ICM_PREFIXES not in attainable
 
 
 def test_a_prize_range_crossing_the_field_edge_is_flagged(
