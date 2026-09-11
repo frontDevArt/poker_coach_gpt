@@ -236,6 +236,49 @@ def test_prizes_deeper_than_the_field_are_flagged_as_truncated(
     assert "ladder_truncated" in result["flags"]
 
 
+def test_a_dense_prize_ladder_is_rejected_instead_of_hanging(
+    analyze_context, analyze_node
+):
+    # Реальный GG MTT: оплачиваемых мест больше, чем узлов поля, поэтому
+    # внутри свёрнутого поля оплачены все пятнадцать. Malmuth-Harville
+    # перебирает 15! порядков — это не «долго», это никогда, и отказ
+    # обязан прийти до первого расчёта. Тест поэтому мгновенный: гард
+    # стоит перед `icm_equities`, считать здесь нечего.
+    context = copy.deepcopy(analyze_context)
+    context["payouts"] = [{"from": 1, "to": 165, "amount": 400.0}]
+    with pytest.raises(
+        ValueError, match="оплачиваемых мест внутри свёрнутого поля 15 из 15"
+    ):
+        analyze(context, [analyze_node], trials=2_000, seed=11)
+
+
+def test_a_mid_sized_field_beyond_the_budget_is_also_rejected(
+    analyze_context, analyze_node
+):
+    # Поле из двенадцати узлов и восемь оплачиваемых мест — 19.9 млн
+    # префиксов: меньше, чем 15!, но всё равно за потолком. Порог
+    # проверяется по стоимости перебора, а не по числу мест самому по
+    # себе: восемь мест из восьми стоили бы 40 320 и считались бы.
+    context = copy.deepcopy(analyze_context)
+    context["payouts"] = context["payouts"][:3] + [
+        {"from": 4, "to": 8, "amount": 400.0}
+    ]
+    node = copy.deepcopy(analyze_node)
+    node.update(playersLeft=12, heroRank=12)
+    with pytest.raises(
+        ValueError, match="оплачиваемых мест внутри свёрнутого поля 8 из 12"
+    ):
+        analyze(context, [node], trials=2_000, seed=11)
+
+
+def test_the_ladder_at_the_budget_edge_is_still_computed(analyze_base_result):
+    # Плановая фикстура платит за шесть мест из пятнадцати — 3.6 млн
+    # префиксов против потолка в 4 млн, последняя переносимая глубина.
+    # Разбор обязан состояться, а не быть отвергнут заодно с плотными.
+    assert analyze_base_result["icm"]["fieldNodes"] == 15
+    assert analyze_base_result["icm"]["heroEquity"] > 0
+
+
 def test_a_prize_range_crossing_the_field_edge_is_flagged(
     analyze_context, analyze_node
 ):
