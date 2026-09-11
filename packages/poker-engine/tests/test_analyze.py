@@ -24,12 +24,12 @@ def run_analyze(analyze_context, analyze_node):
     return call
 
 
-def test_hero_position_comes_from_the_button(run_analyze):
-    assert run_analyze()["heroPosition"] == Position.UTG1.value
+def test_hero_position_comes_from_the_button(analyze_base_result):
+    assert analyze_base_result["heroPosition"] == Position.UTG1.value
 
 
-def test_villain_is_the_player_who_invested_most(run_analyze):
-    assert run_analyze()["villainPosition"] == Position.BTN.value
+def test_villain_is_the_player_who_invested_most(analyze_base_result):
+    assert analyze_base_result["villainPosition"] == Position.BTN.value
 
 
 def test_villain_is_chosen_by_investment_before_stack(run_analyze, analyze_node):
@@ -54,40 +54,41 @@ def test_equal_investments_are_broken_by_the_bigger_stack(run_analyze, analyze_n
     assert result["effectiveStackBb"] == pytest.approx(63.3)
 
 
-def test_effective_stack_is_the_smaller_of_the_two(run_analyze):
+def test_effective_stack_is_the_smaller_of_the_two(analyze_base_result):
     # Соперник на кнопке держит 23.2 BB, герой 63.3 BB.
-    assert run_analyze()["effectiveStackBb"] == pytest.approx(23.2)
+    assert analyze_base_result["effectiveStackBb"] == pytest.approx(23.2)
 
 
-def test_required_equity_matches_the_pot_odds_module(run_analyze):
-    result = run_analyze()
-    assert result["requiredEquity"] == pytest.approx(required_equity(9.4, 7.3))
+def test_required_equity_matches_the_pot_odds_module(analyze_base_result):
+    assert analyze_base_result["requiredEquity"] == pytest.approx(
+        required_equity(9.4, 7.3)
+    )
 
 
 def test_no_call_means_no_required_equity(run_analyze):
     assert "requiredEquity" not in run_analyze(toCallBb=0.0, raiseToBb=None)
 
 
-def test_icm_equity_is_within_the_prize_pool(run_analyze):
-    assert 0 < run_analyze()["icm"]["heroEquity"] < 1090.51
+def test_icm_equity_is_within_the_prize_pool(analyze_base_result):
+    assert 0 < analyze_base_result["icm"]["heroEquity"] < 1090.51
 
 
-def test_field_is_reduced_not_taken_whole(run_analyze):
+def test_field_is_reduced_not_taken_whole(analyze_base_result):
     # 496 игроков против 8 мест: стол сохраняется поимённо, остальное поле
     # занимает все оставшиеся узлы до предела, то есть ровно 8 + 7 = 15.
-    assert run_analyze()["icm"]["fieldNodes"] == 15
+    assert analyze_base_result["icm"]["fieldNodes"] == 15
 
 
-def test_equity_shares_sum_to_one(run_analyze):
-    equity = run_analyze()["equity"]
+def test_equity_shares_sum_to_one(analyze_base_result):
+    equity = analyze_base_result["equity"]
     assert equity["hero"] + equity["villain"] == pytest.approx(1.0)
     # Доли не взаимозаменяемы: JhTh против верхних 25% комбинаций —
     # андердог, потому что в этих 25% сидят все старшие пары и тузы.
     assert equity["hero"] < equity["villain"]
 
 
-def test_range_source_is_vpip_when_the_sample_suffices(run_analyze):
-    assert run_analyze()["equity"]["rangeSource"] == "vpip"
+def test_range_source_is_vpip_when_the_sample_suffices(analyze_base_result):
+    assert analyze_base_result["equity"]["rangeSource"] == "vpip"
 
 
 def test_small_vpip_sample_is_reported_as_default(run_analyze, analyze_node):
@@ -119,10 +120,10 @@ def test_hero_equity_belongs_to_the_hero_seat(run_analyze, analyze_node):
     )
 
 
-def test_risk_premium_is_reported_for_a_head_to_head_spot(run_analyze):
+def test_risk_premium_is_reported_for_a_head_to_head_spot(analyze_base_result):
     # Лесенка выплат убывает от места к месту, значит давление ICM есть:
     # проигрыш стоит дороже выигрыша, а порог эквити выше чипового.
-    pressure = run_analyze()["riskPremium"]
+    pressure = analyze_base_result["riskPremium"]
     assert pressure["bubbleFactor"] > 1.0
     assert pressure["riskPremium"] > 0.0
 
@@ -141,12 +142,12 @@ def test_prize_ladder_out_of_reach_leaves_icm_pressure_undefined(
     assert "equity" in result
 
 
-def test_open_late_registration_is_flagged(run_analyze):
-    assert "late_reg_open" in run_analyze()["flags"]
+def test_open_late_registration_is_flagged(analyze_base_result):
+    assert "late_reg_open" in analyze_base_result["flags"]
 
 
-def test_reduced_field_and_mh_bias_are_always_flagged(run_analyze):
-    flags = run_analyze()["flags"]
+def test_reduced_field_and_mh_bias_are_always_flagged(analyze_base_result):
+    flags = analyze_base_result["flags"]
     assert "reduced_field" in flags
     assert "mh_bias" in flags
 
@@ -159,10 +160,10 @@ def test_field_equal_to_the_table_is_not_flagged_as_reduced(run_analyze):
     assert result["icm"]["fieldNodes"] == 8
 
 
-def test_preflop_advice_is_flagged_as_not_computed(run_analyze):
+def test_preflop_advice_is_flagged_as_not_computed(analyze_base_result):
     # Ф2 (Nash push/fold) ещё нет: рекомендация действия на префлопе
     # расчётом не является и обязана это сообщать.
-    assert "no_pushfold" in run_analyze()["flags"]
+    assert "no_pushfold" in analyze_base_result["flags"]
 
 
 def test_postflop_is_not_flagged_as_missing_pushfold(analyze_context, analyze_node):
@@ -203,5 +204,88 @@ def test_nodes_must_be_a_list(analyze_context, analyze_node):
         analyze(analyze_context, analyze_node, trials=2_000, seed=11)
 
 
-def test_result_is_json_serialisable(run_analyze):
-    json.dumps(run_analyze())
+def test_context_must_be_an_object(analyze_node):
+    # Скаляр вместо объекта: без гарда `_require` падал бы внутренним
+    # TypeError («argument of type 'int' is not iterable»).
+    with pytest.raises(ValueError, match="поле 'context' должно быть объектом"):
+        analyze(5, [analyze_node], trials=2_000, seed=11)
+
+
+def test_every_node_must_be_an_object(analyze_context, analyze_node):
+    with pytest.raises(ValueError, match="узел решения 1 должен быть объектом"):
+        analyze(analyze_context, [analyze_node, None], trials=2_000, seed=11)
+
+
+def test_prizes_deeper_than_the_field_are_flagged_as_truncated(
+    analyze_context, analyze_node
+):
+    # Выплаты доходят до 25-го места, а в модели 15 узлов: призы за места
+    # с 16-го по 25-е в расчёт не попали, и ICM-эквити героя занижено.
+    #
+    # Лесенка нарочно с разрывом (места 7..19 не оплачены): сплошная
+    # лесенка до 25-го места дала бы пятнадцать ненулевых мест из
+    # пятнадцати, а Malmuth-Harville перебирает упорядоченные префиксы
+    # до последней ненулевой выплаты — 15! порядков, то есть тест,
+    # который не кончается. Это ровно та цена, из-за которой лесенка и
+    # обрезается, и ровно то, о чём обязана сообщать пометка.
+    context = copy.deepcopy(analyze_context)
+    context["payouts"] = context["payouts"] + [
+        {"from": 20, "to": 25, "amount": 100.0}
+    ]
+    result = analyze(context, [analyze_node], trials=2_000, seed=11)
+    assert "ladder_truncated" in result["flags"]
+
+
+def test_a_prize_range_crossing_the_field_edge_is_flagged(
+    analyze_context, analyze_node
+):
+    # Финальный стол: 8 мест и 8 узлов, свёртки нет. Интервал выплат
+    # 6..12 начинается внутри поля, а кончается за ним — обрезана часть
+    # лесенки, и это тот же случай, что и целиком выпавший приз.
+    context = copy.deepcopy(analyze_context)
+    context["payouts"] = context["payouts"][:3] + [
+        {"from": 4, "to": 5, "amount": 400.0},
+        {"from": 6, "to": 12, "amount": 200.0},
+    ]
+    node = copy.deepcopy(analyze_node)
+    node.update(playersLeft=8, heroRank=8)
+    result = analyze(context, [node], trials=2_000, seed=11)
+    assert "ladder_truncated" in result["flags"]
+
+
+def test_a_prize_range_ending_at_the_field_edge_is_not_truncated(
+    analyze_context, analyze_node
+):
+    # Финальный стол: 8 мест, 8 узлов, и последняя оплачиваемая позиция —
+    # ровно восьмая. Граница включительная: лесенка помещается в модель
+    # целиком, обрезать нечего.
+    context = copy.deepcopy(analyze_context)
+    context["payouts"] = context["payouts"][:3] + [
+        {"from": 4, "to": 8, "amount": 400.0}
+    ]
+    node = copy.deepcopy(analyze_node)
+    node.update(playersLeft=8, heroRank=8)
+    result = analyze(context, [node], trials=2_000, seed=11)
+    assert "ladder_truncated" not in result["flags"]
+
+
+def test_ladder_inside_the_field_is_not_flagged_as_truncated(analyze_base_result):
+    # В плановой фикстуре призы кончаются на шестом месте из пятнадцати:
+    # обрезать нечего, и пометка соврала бы.
+    assert "ladder_truncated" not in analyze_base_result["flags"]
+
+
+def test_all_in_opponent_is_rejected_by_the_field_reduction(run_analyze, analyze_node):
+    # Известное ограничение, а не дефект разбора: место с нулевым стеком
+    # проходит `validate_hand`, но `reduce_field` требует положительных
+    # стеков. Как вернуть в ICM уже вложенные выбывающим фишки — решение
+    # о модели, оно этой задачей не принимается; тест пинит, что отказ
+    # остаётся русским и адресным.
+    seats = copy.deepcopy(analyze_node["seats"])
+    seats[4]["stackBb"] = 0.0
+    with pytest.raises(ValueError, match="стек на месте 4 должен быть > 0"):
+        run_analyze(seats=seats)
+
+
+def test_result_is_json_serialisable(analyze_base_result):
+    json.dumps(analyze_base_result)

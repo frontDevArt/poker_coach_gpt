@@ -3,8 +3,7 @@
 import pytest
 
 
-@pytest.fixture
-def analyze_context():
+def _context():
     return {
         "payouts": [
             {"from": 1, "to": 1, "amount": 1090.51},
@@ -21,8 +20,7 @@ def analyze_context():
     }
 
 
-@pytest.fixture
-def analyze_node():
+def _node():
     def seat(index, stack, *, hero=False, in_hand=True, invested=0.0):
         return {
             "seatIndex": index,
@@ -58,3 +56,29 @@ def analyze_node():
         "toCallBb": 7.3,
         "raiseToBb": 14.5,
     }
+
+
+@pytest.fixture
+def analyze_context():
+    return _context()
+
+
+@pytest.fixture
+def analyze_node():
+    return _node()
+
+
+@pytest.fixture(scope="module")
+def analyze_base_result():
+    """Разбор плановой фикстуры без единой правки, посчитанный один раз на модуль.
+
+    Один вызов `analyze` на этих данных считает ICM по 15 узлам семь раз
+    (сам расчёт плюс по три ветви в `risk_premium` и `bubble_factor`) и
+    стоит десятки секунд. Тесты, которым нужен именно базовый ответ,
+    берут его отсюда и только читают: словарь общий на модуль, и правка
+    его в одном тесте испортила бы остальные. Тестам, меняющим вход,
+    остаётся фикстура `run_analyze`, считающая заново.
+    """
+    from poker_engine.analyze import analyze
+
+    return analyze(_context(), [_node()], trials=2_000, seed=11)

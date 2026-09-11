@@ -51,11 +51,38 @@ def analyze(
     снят раньше и живёт дольше (в фикстурах плана это 496 против 782).
     Расхождение между ними — норма, а не ошибка ввода, поэтому `handstate`
     их намеренно не сверяет.
+
+    `trials` — число прогонов Monte-Carlo для эквити против диапазона,
+    `seed` — сид его генератора. Ответ воспроизводим ровно при
+    фиксированном `seed`; без него доли эквити меняются от вызова к
+    вызову в пределах точности выборки. На ICM и пот-оддсы оба
+    параметра не влияют — те считаются точно.
+
+    Известное ограничение: соперник в олл-ине (стек 0 BB) разбору не
+    поддаётся — `reduce_field` требует положительных стеков и раздача
+    отвергается с сообщением про стек на его месте. Как учитывать уже
+    вложенные в банк фишки выбывающего — решение о модели ICM, и оно
+    этой задачей не принимается.
+
+    Форма входа проверяется до разбора: `context` — объект, `nodes` —
+    список объектов. Источник данных — vision-модель, и `null` либо
+    число вместо узла от неё так же реальны, как объект вместо списка;
+    без этих гардов наружу протекал бы внутренний `TypeError` вместо
+    русского сообщения.
     """
+    if not isinstance(context_raw, dict):
+        raise ValueError(
+            f"поле 'context' должно быть объектом, получено {context_raw!r}"
+        )
     if not isinstance(nodes_raw, list):
         raise ValueError(
             f"поле 'nodes' должно быть списком, получено {nodes_raw!r}"
         )
+    for number, raw in enumerate(nodes_raw):
+        if not isinstance(raw, dict):
+            raise ValueError(
+                f"узел решения {number} должен быть объектом, получено {raw!r}"
+            )
 
     context = context_from_dict(context_raw)
     nodes = [node_from_dict(raw) for raw in nodes_raw]
@@ -73,7 +100,7 @@ def analyze(
     }
 
     seats = sorted(node.seats, key=lambda seat: seat.seat_index)
-    hero_index = next(i for i, seat in enumerate(seats) if seat.is_hero)
+    hero_index = seats.index(hero)
     field = reduce_field(
         [seat.stack_bb for seat in seats],
         hero_index,
@@ -91,9 +118,16 @@ def analyze(
     # столе поле равно столу, число точное, и пометка о приближении
     # соврала бы. `flags` — канал честности ответа, флаг, который иногда
     # ложь, обесценивает весь канал.
+    # `ladder_truncated` — призы за места глубже свёрнутого поля в модель
+    # не попали: `payout_ladder` обрезает лесенку по числу узлов, и при
+    # 165 оплачиваемых местах против 15 узлов ICM-эквити героя занижено.
+    # Ни `mh_bias` (смещение Malmuth-Harville), ни `reduced_field`
+    # (схлопывание стеков) про призы не говорят.
     result["flags"].append("mh_bias")
     if len(field) > len(seats):
         result["flags"].append("reduced_field")
+    if any(payout.last > len(field) for payout in context.payouts):
+        result["flags"].append("ladder_truncated")
     if context.late_reg_open:
         result["flags"].append("late_reg_open")
     if node.street == "preflop":
@@ -105,9 +139,7 @@ def analyze(
     if villain is None:
         return result
 
-    villain_index = next(
-        i for i, seat in enumerate(seats) if seat.seat_index == villain.seat_index
-    )
+    villain_index = seats.index(villain)
     result["villainPosition"] = positions[villain.seat_index].value
     result["effectiveStackBb"] = min(hero.stack_bb, villain.stack_bb)
 
@@ -115,6 +147,15 @@ def analyze(
     # олл-ина не двигает ICM-эквити героя (winner-take-all, нулевые выплаты
     # вне свёрнутой лесенки). Это не ошибка ввода, а отсутствие давления
     # лесенки — сообщаем пометкой, а не падением всего разбора.
+    #
+    # Блок шире этой одной причины: `_icm_branches` бросает тем же
+    # `ValueError` ещё на «эффективный стек равен нулю», «hero и villain
+    # должны различаться» и «вне диапазона игроков». Последние два здесь
+    # недостижимы (индексы берутся из того же списка мест, а герой и
+    # соперник различны по построению `_pick_villain`), первый —
+    # достижим и будет помечен как отсутствие давления лесенки, хотя
+    # причина другая; самих нулевых стеков раздача с таким местом до
+    # сюда не доносит — её раньше отвергает `reduce_field`.
     try:
         result["riskPremium"] = {
             "riskPremium": risk_premium(field, ladder, hero_index, villain_index),

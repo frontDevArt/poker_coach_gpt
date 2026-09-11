@@ -138,9 +138,15 @@ def _dispatch(args: argparse.Namespace) -> dict:
 def _read_json(source: str) -> dict:
     text = sys.stdin.read() if source == "-" else _read_file(source)
     try:
-        return json.loads(text)
+        payload = json.loads(text)
     except json.JSONDecodeError as exc:
         raise ValueError(f"вход не является корректным JSON: {exc}") from exc
+    # Корректный JSON — это ещё и `5`, `null`, `true` и список: без этой
+    # проверки они уходили бы в движок и всплывали внутренним TypeError
+    # вместо разбираемого ответа с ключом `error`.
+    if not isinstance(payload, dict):
+        raise ValueError(f"во входном JSON ожидается объект, получено {payload!r}")
+    return payload
 
 
 def _read_file(path: str) -> str:

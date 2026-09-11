@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from poker_engine.analyze import analyze
 from poker_engine.cli import main
 
 
@@ -299,3 +300,49 @@ def test_analyze_without_the_required_keys_is_a_json_error(tmp_path, capsys):
     code, data = run(["analyze", "--input", str(path)], capsys)
     assert code == 1
     assert "нужны ключи 'context' и 'nodes'" in data["error"]
+
+
+def test_analyze_on_a_json_scalar_is_a_json_error(tmp_path, capsys):
+    # `5` — корректный JSON, но не объект: без проверки формы он уходил бы
+    # в движок и всплывал внутренним TypeError мимо ключа `error`.
+    path = tmp_path / "hand.json"
+    path.write_text("5", encoding="utf-8")
+    code, data = run(["analyze", "--input", str(path)], capsys)
+    assert code == 1
+    assert "во входном JSON ожидается объект" in data["error"]
+
+
+def test_analyze_on_an_all_in_opponent_is_a_json_error(
+    tmp_path, capsys, analyze_context, analyze_node
+):
+    # Известное ограничение модели (см. докстринг `analyze`): соперник с
+    # нулевым стеком отвергается. Наружу это обязано выходить разбираемым
+    # ответом с кодом 1, а не трейсбеком.
+    analyze_node["seats"][4]["stackBb"] = 0.0
+    path = tmp_path / "hand.json"
+    path.write_text(
+        json.dumps({"context": analyze_context, "nodes": [analyze_node]}),
+        encoding="utf-8",
+    )
+    code, data = run(["analyze", "--input", str(path)], capsys)
+    assert code == 1
+    assert "стек на месте 4 должен быть > 0" in data["error"]
+
+
+def test_analyze_passes_trials_and_seed_to_the_engine(
+    tmp_path, capsys, analyze_context, analyze_node
+):
+    # Оба параметра меняют результат Monte-Carlo, поэтому совпадение с
+    # прямым вызовом движка на тех же значениях — единственная проверка
+    # того, что CLI их действительно передаёт, а не роняет в умолчания.
+    path = tmp_path / "hand.json"
+    path.write_text(
+        json.dumps({"context": analyze_context, "nodes": [analyze_node]}),
+        encoding="utf-8",
+    )
+    code, data = run(
+        ["analyze", "--input", str(path), "--trials", "400", "--seed", "5"], capsys
+    )
+    direct = analyze(analyze_context, [analyze_node], trials=400, seed=5)
+    assert code == 0
+    assert data["equity"]["hero"] == direct["equity"]["hero"]
