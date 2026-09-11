@@ -301,12 +301,14 @@ def test_the_prefix_budget_is_never_hit_exactly():
     assert MAX_ICM_PREFIXES not in attainable
 
 
-def test_a_prize_range_crossing_the_field_edge_is_flagged(
+def test_a_prize_range_crossing_the_field_edge_is_not_truncation(
     analyze_context, analyze_node
 ):
     # Финальный стол: 8 мест и 8 узлов, свёртки нет. Интервал выплат
-    # 6..12 начинается внутри поля, а кончается за ним — обрезана часть
-    # лесенки, и это тот же случай, что и целиком выпавший приз.
+    # 6..12 кончается за полем, но игроков осталось восемь: места с
+    # девятого по двенадцатое уже заняты выбывшими, призы за них вручены,
+    # и терять модели нечего. Пометка по одному краю интервала соврала бы
+    # ровно так же, как безусловный `reduced_field` на финальном столе.
     context = copy.deepcopy(analyze_context)
     context["payouts"] = context["payouts"][:3] + [
         {"from": 4, "to": 5, "amount": 400.0},
@@ -315,15 +317,15 @@ def test_a_prize_range_crossing_the_field_edge_is_flagged(
     node = copy.deepcopy(analyze_node)
     node.update(playersLeft=8, heroRank=8)
     result = analyze(context, [node], trials=2_000, seed=11)
-    assert "ladder_truncated" in result["flags"]
+    assert "ladder_truncated" not in result["flags"]
 
 
-def test_a_prize_range_ending_at_the_field_edge_is_not_truncated(
+def test_a_ladder_as_deep_as_the_attainable_places_is_not_truncated(
     analyze_context, analyze_node
 ):
-    # Финальный стол: 8 мест, 8 узлов, и последняя оплачиваемая позиция —
-    # ровно восьмая. Граница включительная: лесенка помещается в модель
-    # целиком, обрезать нечего.
+    # Финальный стол: 8 мест, 8 узлов, достижимы ровно восемь мест, и все
+    # восемь оплачены внутри модели. Сравнение строгое: равенство глубин —
+    # ещё не обрезание, терять нечего.
     context = copy.deepcopy(analyze_context)
     context["payouts"] = context["payouts"][:3] + [
         {"from": 4, "to": 8, "amount": 400.0}
@@ -334,10 +336,49 @@ def test_a_prize_range_ending_at_the_field_edge_is_not_truncated(
     assert "ladder_truncated" not in result["flags"]
 
 
-def test_ladder_inside_the_field_is_not_flagged_as_truncated(analyze_base_result):
-    # В плановой фикстуре призы кончаются на шестом месте из пятнадцати:
-    # обрезать нечего, и пометка соврала бы.
-    assert "ladder_truncated" not in analyze_base_result["flags"]
+def test_a_prize_pool_deeper_than_the_model_is_flagged_as_truncated(
+    analyze_base_result,
+):
+    # Плановая фикстура: турнир платит за 165 мест, живых 496, а призы в
+    # модели кончаются на шестом месте из пятнадцати — глубже описанных
+    # выплат просто нет. Девять десятых лесенки в расчёт не попали, и
+    # `heroEquity` занижено; молчать об этом пометка не вправе, хотя ни
+    # один интервал выплат за поле не выходит.
+    assert "ladder_truncated" in analyze_base_result["flags"]
+
+
+def test_the_truncation_flag_counts_places_paid_not_payout_edges(
+    analyze_context, analyze_node
+):
+    # Тот же вход дважды, разница только в `placesPaid`. Призовая зона
+    # ровно по описанным выплатам (три места) помещается в модель
+    # целиком; призовая зона в 165 мест — нет, хотя ни одна выплата при
+    # этом не меняется. Поле нарочно мелкое (девять узлов, три платных
+    # места — 504 префикса), тест про пометку, а не про стоимость ICM.
+    context = copy.deepcopy(analyze_context)
+    context["payouts"] = context["payouts"][:3]
+    node = copy.deepcopy(analyze_node)
+    node.update(playersLeft=9, heroRank=9, toCallBb=0.0, raiseToBb=None)
+
+    whole = copy.deepcopy(context)
+    whole["placesPaid"] = 3
+    assert "ladder_truncated" not in analyze(
+        whole, [node], trials=2_000, seed=11
+    )["flags"]
+
+    deep = copy.deepcopy(context)
+    deep["placesPaid"] = 165
+    assert "ladder_truncated" in analyze(deep, [node], trials=2_000, seed=11)["flags"]
+
+
+def test_a_prize_zone_of_zero_places_is_rejected(analyze_context, analyze_node):
+    # `placesPaid` виден в ответе только через пометку `ladder_truncated`,
+    # и мусорное значение погасило бы её молча — вместе с единственным
+    # сообщением о том, что `heroEquity` занижено.
+    context = copy.deepcopy(analyze_context)
+    context["placesPaid"] = 0
+    with pytest.raises(ValueError, match="размер призовой зоны должен быть > 0"):
+        analyze(context, [analyze_node], trials=2_000, seed=11)
 
 
 def test_all_in_opponent_is_rejected_by_the_field_reduction(run_analyze, analyze_node):

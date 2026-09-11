@@ -374,6 +374,15 @@ def test_entrants_equal_to_players_left_is_allowed():
     validate_hand(context_from_dict(equal), [node_from_dict(_node())])
 
 
+def test_a_prize_zone_of_zero_places_is_rejected():
+    broken = dict(CONTEXT)
+    broken["placesPaid"] = 0
+    with pytest.raises(
+        ValueError, match=re.escape("размер призовой зоны должен быть > 0")
+    ):
+        validate_hand(context_from_dict(broken), [node_from_dict(_node())])
+
+
 def test_non_positive_average_stack_is_rejected():
     broken = dict(CONTEXT)
     broken["averageStackBb"] = 0.0

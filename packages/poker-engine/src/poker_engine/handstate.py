@@ -369,6 +369,11 @@ def _validate_context(context: TournamentContext) -> None:
             f"осталось игроков ({context.players_left}) больше, чем входов "
             f"({context.entrants})"
         )
+    # `places_paid` попадает в ответ не числом, а пометкой `ladder_truncated`
+    # (`analyze`): она сравнивает достижимые оплачиваемые места с глубиной
+    # лесенки внутри модели. Ноль или отрицательное молча погасили бы
+    # пометку, то есть занижение `heroEquity` перестало бы называться.
+    check_positive(context.places_paid, "размер призовой зоны")
     check_positive(context.average_stack_bb, "средний стек")
 
 
