@@ -28,7 +28,7 @@ from .handstate import (
     payout_ladder,
     validate_hand,
 )
-from .icm import bubble_factor, icm_equities, risk_premium
+from .icm import bubble_factor, icm_equities, risk_premium, significant_depth
 from .potodds import required_equity
 from .profiles import range_for_vpip
 
@@ -139,7 +139,10 @@ def analyze(
         max_nodes=MAX_FIELD_NODES,
     )
     ladder = payout_ladder(context, places=len(field))
-    paid = _paid_places(ladder)
+    # Глубину перебора спрашиваем у самого `icm`, а не считаем заново:
+    # стоимость определяется тем, до какого места рекурсирует `icm_equities`,
+    # и вторая копия этого правила разошлась бы с оригиналом молча.
+    paid = significant_depth(ladder)
     if _icm_prefixes(len(field), paid) > MAX_ICM_PREFIXES:
         raise ValueError(
             f"оплачиваемых мест внутри свёрнутого поля {paid} из {len(field)}: "
@@ -214,19 +217,6 @@ def analyze(
         result["flags"].append("vpip_default")
 
     return result
-
-
-def _paid_places(ladder: list[float]) -> int:
-    """Сколько мест лесенки реально оплачено, считая от первого.
-
-    Считается по последней ненулевой выплате, а не по числу ненулевых:
-    дыра в середине лесенки перебор не укорачивает — Malmuth-Harville
-    всё равно доходит до последнего оплачиваемого места.
-    """
-    for place in range(len(ladder), 0, -1):
-        if ladder[place - 1] != 0.0:
-            return place
-    return 0
 
 
 def _icm_prefixes(players: int, paid: int) -> int:

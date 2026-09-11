@@ -29,7 +29,7 @@ def icm_equities(stacks: list[int], payouts: list[float]) -> list[float]:
     _validate(stacks, payouts)
     n = len(stacks)
     padded = list(payouts) + [0.0] * (n - len(payouts))
-    depth = _significant_depth(padded)
+    depth = significant_depth(padded)
 
     total = float(sum(stacks))
     frozen = tuple(float(s) for s in stacks)
@@ -182,8 +182,18 @@ def _equity_with_busts(stacks: list[int], payouts: list[float], hero: int) -> fl
     return icm_equities(shifted_stacks, shifted_payouts)[hero_index]
 
 
-def _significant_depth(payouts: list[float]) -> int:
-    """Глубина рекурсии: дальше последней ненулевой выплаты считать нечего."""
+def significant_depth(payouts: list[float]) -> int:
+    """Глубина рекурсии: дальше последней ненулевой выплаты считать нечего.
+
+    Публична не ради вызывающих снаружи, а потому что от неё зависит
+    стоимость перебора: `icm_equities` перебирает упорядоченные префиксы
+    игроков ровно до этой глубины, то есть `perm(игроков, depth)` штук.
+    Кто хочет оценить стоимость вызова заранее — обязан спрашивать ту же
+    функцию, а не считать глубину повторно: вторая копия разойдётся с этой
+    молча (достаточно завести здесь эпсилон вместо `!= 0.0`, чтобы
+    копеечные выплаты не удлиняли перебор), и оценка начнёт врать в ту
+    сторону, где расчёт не возвращается.
+    """
     for i in range(len(payouts) - 1, -1, -1):
         if payouts[i] != 0.0:
             return i + 1
