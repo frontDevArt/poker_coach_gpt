@@ -263,3 +263,39 @@ def test_error_json_is_valid_utf8_on_subprocess_console():
     assert result.returncode == 1
     data = json.loads(result.stdout.decode("utf-8"))
     assert "error" in data
+
+
+def test_analyze_reads_a_file(tmp_path, capsys, analyze_context, analyze_node):
+    path = tmp_path / "hand.json"
+    path.write_text(
+        json.dumps({"context": analyze_context, "nodes": [analyze_node]}),
+        encoding="utf-8",
+    )
+    code, data = run(
+        ["analyze", "--input", str(path), "--trials", "500", "--seed", "3"], capsys
+    )
+    assert code == 0
+    assert data["street"] == "preflop"
+    assert "flags" in data
+
+
+def test_analyze_on_broken_json_is_a_json_error(tmp_path, capsys):
+    path = tmp_path / "hand.json"
+    path.write_text("{не json", encoding="utf-8")
+    code, data = run(["analyze", "--input", str(path)], capsys)
+    assert code == 1
+    assert "вход не является корректным JSON" in data["error"]
+
+
+def test_analyze_on_missing_file_is_a_json_error(capsys):
+    code, data = run(["analyze", "--input", "нет-такого.json"], capsys)
+    assert code == 1
+    assert "не удалось прочитать" in data["error"]
+
+
+def test_analyze_without_the_required_keys_is_a_json_error(tmp_path, capsys):
+    path = tmp_path / "hand.json"
+    path.write_text(json.dumps({"nodes": []}), encoding="utf-8")
+    code, data = run(["analyze", "--input", str(path)], capsys)
+    assert code == 1
+    assert "нужны ключи 'context' и 'nodes'" in data["error"]

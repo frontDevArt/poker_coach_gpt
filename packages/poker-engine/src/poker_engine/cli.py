@@ -11,6 +11,7 @@ import io
 import json
 import sys
 
+from .analyze import analyze
 from .bounty import DEFAULT_SPLIT, required_equity_with_bounty
 from .equity import equity_vs_range, hand_equity
 from .icm import bubble_factor, icm_equities, risk_premium
@@ -123,7 +124,31 @@ def _dispatch(args: argparse.Namespace) -> dict:
             )
         }
 
+    if args.command == "analyze":
+        payload = _read_json(args.input)
+        if "context" not in payload or "nodes" not in payload:
+            raise ValueError("во входном JSON нужны ключи 'context' и 'nodes'")
+        return analyze(
+            payload["context"], payload["nodes"], trials=args.trials, seed=args.seed
+        )
+
     raise ValueError(f"неизвестная команда: {args.command}")
+
+
+def _read_json(source: str) -> dict:
+    text = sys.stdin.read() if source == "-" else _read_file(source)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"вход не является корректным JSON: {exc}") from exc
+
+
+def _read_file(path: str) -> str:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return handle.read()
+    except OSError as exc:
+        raise ValueError(f"не удалось прочитать {path!r}: {exc}") from exc
 
 
 def _int_list(text: str) -> list[int]:
@@ -198,6 +223,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_eq.add_argument("--board", type=_str_list, default=[])
     p_eq.add_argument("--trials", type=int, default=10_000)
     p_eq.add_argument("--seed", type=int, default=None)
+
+    p_an = sub.add_parser("analyze", help="разбор состояния, снятого со скриншота")
+    p_an.add_argument("--input", required=True, help="файл с JSON или '-' для stdin")
+    p_an.add_argument("--trials", type=int, default=10_000)
+    p_an.add_argument("--seed", type=int, default=None)
 
     return parser
 
