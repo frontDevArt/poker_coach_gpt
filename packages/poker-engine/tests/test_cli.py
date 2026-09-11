@@ -244,6 +244,14 @@ def test_equity_rejects_hands_and_range_together(capsys):
     assert "error" in data
 
 
+def test_hero_without_vs_range_is_a_json_error(capsys):
+    # Зеркало теста ниже: --hero без --vs-range молча ушёл бы в hand_equity
+    # и упал бы там сообщением про --hands, которого пользователь не писал.
+    code, data = run(["equity", "--hero", "JhTh"], capsys)
+    assert code == 1
+    assert "--hero без --vs-range" in data["error"]
+
+
 def test_vs_range_without_hero_is_a_json_error(capsys):
     code, data = run(["equity", "--vs-range", "AA"], capsys)
     assert code == 1

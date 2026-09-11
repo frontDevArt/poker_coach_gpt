@@ -5,6 +5,8 @@
 (против одной пары тузов у тузов ровно половина — банк всегда делится).
 """
 
+import re
+
 import pytest
 
 from poker_engine.equity import equity_vs_range, hand_equity
@@ -99,15 +101,21 @@ def test_range_equity_is_the_mean_over_its_combos():
 
 
 def test_range_fully_blocked_by_known_cards_is_rejected():
-    with pytest.raises(ValueError):
+    # `match=` различает этот отказ от дубля карты и от пустого диапазона:
+    # в вызове ниже блокированы все комбинации соперника, а не карты героя.
+    with pytest.raises(
+        ValueError,
+        match=re.escape("диапазон соперника пуст после исключения известных карт"),
+    ):
         equity_vs_range("AsAh", parse_range("AA"), ["Ad", "Ac", "2s"], TRIALS, SEED)
 
 
 def test_hero_card_duplicated_on_board_is_rejected():
-    with pytest.raises(ValueError):
+    # Отвергнуть обязан гард дублей, а не пустой диапазон соперника.
+    with pytest.raises(ValueError, match=re.escape("карта 'As' встречается дважды")):
         equity_vs_range("AsAh", parse_range("KK"), ["As", "2s", "3d"], TRIALS, SEED)
 
 
 def test_non_positive_trials_rejected():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=re.escape("trials должен быть > 0")):
         equity_vs_range("JhTh", parse_range("AA"), [], 0, SEED)

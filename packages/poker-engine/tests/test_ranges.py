@@ -1,5 +1,7 @@
 """Инварианты разбора диапазонов. Числа здесь — комбинаторика, а не память."""
 
+import re
+
 import pytest
 
 from poker_engine.equity import FULL_DECK
@@ -68,9 +70,23 @@ def test_result_is_sorted_and_unique():
 
 
 @pytest.mark.parametrize(
-    "text",
-    ["", "AA,", "XX", "AAs", "AsKs+", "AsAs", "A", "AKx", "9Ts"],
+    ("text", "message"),
+    [
+        ("", "пустой элемент в диапазоне"),
+        ("AA,", "пустой элемент в диапазоне"),
+        ("XX", "неизвестный ранг в элементе"),
+        ("AAs", "пара не может быть"),
+        ("AsKs+", "неприменим к конкретной комбинации"),
+        ("AsAs", "дубль карты в комбинации"),
+        ("A", "нераспознанный элемент диапазона"),
+        ("AKx", "нераспознанный модификатор"),
+        ("9Ts", "старший ранг должен идти первым"),
+    ],
 )
-def test_bad_input_is_rejected(text):
-    with pytest.raises(ValueError):
+def test_bad_input_is_rejected(text, message):
+    # `match=` обязателен: `parse_range` бросает `ValueError` из семи разных
+    # мест, и каждый вход здесь обязан попасть в свой гард. Без пина "9Ts"
+    # остался бы зелёным, отвергнутый разбором модификатора вместо порядка
+    # рангов, то есть тест не отличил бы починку от смены поведения.
+    with pytest.raises(ValueError, match=re.escape(message)):
         parse_range(text)
