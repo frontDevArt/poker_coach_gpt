@@ -193,6 +193,33 @@ def _as_optional_float(
         ) from None
 
 
+def _as_bool(raw: dict, key: str) -> bool:
+    """Обязательное поле как булево. `bool(...)` здесь неприменим: строка
+    `"false"` от vision-модели истинна, и место, объявленное сфолдившим,
+    молча вернулось бы в раздачу. Наружу ушёл бы не отказ, а правдоподобный
+    неверный ответ — это хуже английского `TypeError`, ради которого писан
+    остальной слой разбора."""
+    value = _require(raw, key)
+    if not isinstance(value, bool):
+        raise ValueError(
+            f"поле {key!r} должно быть true или false, получено {value!r}"
+        )
+    return value
+
+
+def _as_optional_bool(raw: dict, key: str, default: bool = False) -> bool:
+    """Необязательное поле как булево, см. `_as_bool`. Отсутствие ключа и
+    `null` дают `default`."""
+    if not _present(raw, key):
+        return default
+    value = raw[key]
+    if not isinstance(value, bool):
+        raise ValueError(
+            f"поле {key!r} должно быть true или false, получено {value!r}"
+        )
+    return value
+
+
 def _as_list(raw: dict, key: str) -> list:
     """Обязательное поле как список. Форма — часть контракта, а не предмет
     интерпретации: `list(...)` на строке не бросает и молча разваливает её
@@ -243,7 +270,7 @@ def context_from_dict(raw: dict) -> TournamentContext:
         places_paid=_as_int(raw, "placesPaid"),
         entrants=_as_int(raw, "entrants"),
         players_left=_as_int(raw, "playersLeft"),
-        late_reg_open=bool(_require(raw, "lateRegOpen")),
+        late_reg_open=_as_bool(raw, "lateRegOpen"),
         seats_per_table=_as_int(raw, "seatsPerTable"),
         average_stack_bb=_as_optional_float(raw, "averageStackBb"),
     )
@@ -256,8 +283,8 @@ def node_from_dict(raw: dict) -> DecisionNode:
             name="" if entry.get("name") is None else str(entry["name"]),
             stack_bb=_as_float(entry, "stackBb"),
             invested_bb=_as_optional_float(entry, "investedBb", 0.0),
-            in_hand=bool(_require(entry, "inHand")),
-            is_hero=bool(entry.get("isHero", False)),
+            in_hand=_as_bool(entry, "inHand"),
+            is_hero=_as_optional_bool(entry, "isHero"),
             vpip=_as_optional_float(entry, "vpip"),
             vpip_hands=_as_optional_int(entry, "vpipHands"),
         )

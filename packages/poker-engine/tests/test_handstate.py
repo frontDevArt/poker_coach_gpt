@@ -386,6 +386,26 @@ def test_context_without_the_average_stack_is_accepted():
     validate_hand(context, [node_from_dict(_node())])
 
 
+def test_a_string_instead_of_a_boolean_is_rejected():
+    # `bool("false")` истинно: без гарда место, объявленное сфолдившим,
+    # молча вернулось бы в раздачу, а ответ остался бы правдоподобным.
+    seats = [_seat(i, 50.0, hero=(i == 7)) for i in range(8)]
+    seats[0]["inHand"] = "false"
+    with pytest.raises(
+        ValueError, match=re.escape("поле 'inHand' должно быть true или false")
+    ):
+        node_from_dict(_node(seats=seats))
+
+
+def test_a_number_instead_of_a_boolean_is_rejected():
+    broken = dict(CONTEXT)
+    broken["lateRegOpen"] = 0
+    with pytest.raises(
+        ValueError, match=re.escape("поле 'lateRegOpen' должно быть true или false")
+    ):
+        context_from_dict(broken)
+
+
 def test_a_prize_zone_of_zero_places_is_rejected():
     broken = dict(CONTEXT)
     broken["placesPaid"] = 0
