@@ -30,8 +30,8 @@ def test_non_integer_is_rejected_by_check_integer(value, shown):
 
 
 def test_nan_is_rejected_by_check_positive():
-    # `nan <= 0` ложно: прямое сравнение пропустило бы NaN.
-    with pytest.raises(ValueError, match="банк должен быть > 0, получено nan$"):
+    # `nan <= 0` ложно: без отдельной проверки NaN прошёл бы гард.
+    with pytest.raises(ValueError, match="банк не может быть нечислом: nan$"):
         check_positive(math.nan, "банк")
 
 
@@ -46,8 +46,9 @@ def test_infinity_is_rejected_by_check_positive():
 
 
 def test_nan_is_rejected_by_check_non_negative():
+    # Текст знака на NaN соврал бы: NaN не отрицателен.
     with pytest.raises(
-        ValueError, match="размер колла не может быть отрицательным: nan$"
+        ValueError, match="размер колла не может быть нечислом: nan$"
     ):
         check_non_negative(math.nan, "размер колла")
 
@@ -67,8 +68,9 @@ def test_infinity_is_rejected_by_check_non_negative():
 
 
 def test_huge_integer_is_finite_for_both_guards():
-    # `math.isfinite(10**400)` бросил бы OverflowError; гард сравнивает
-    # с `math.inf`, и огромное целое проходит как обычное число.
+    # `math.isfinite(10**400)` и `math.isnan(10**400)` бросили бы
+    # OverflowError; гарды сравнивают через `!=` и с `math.inf`, и огромное
+    # целое проходит как обычное число.
     check_positive(10**400, "размер призовой зоны")
     check_non_negative(10**400, "размер колла")
 

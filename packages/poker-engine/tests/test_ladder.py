@@ -269,3 +269,15 @@ def test_a_hole_between_intervals_pays_nothing_and_is_not_covered():
     assert ladder.prize(5) == 0.0
     assert ladder.places_covered == 6
     assert ladder.is_complete is False
+
+
+def test_nested_overlap_names_the_inner_interval_start():
+    # 2-3 лежит внутри 1-10. Интервалы обходятся по возрастанию `first`,
+    # поэтому первым принят 1-10, и наименьшее место, описанное дважды, —
+    # 2, как у `handstate._validate_context` (`min(places & seen)`). При
+    # обходе по `last` первым лёг бы 2-3, и отказ назвал бы место 1,
+    # описанное один раз. Порядок на входе обратный — сортировка обязана.
+    with pytest.raises(
+        ValueError, match="интервалы выплат пересекаются на месте 2$"
+    ):
+        PayoutLadder([(2, 3, 5.0), (1, 10, 10.0)], places_paid=10)

@@ -68,9 +68,15 @@ def required_equity_with_bounty(
     return required_equity(pot_before_call + extra, call_amount)
 
 
+# `bounty`, `chip_value` и `villain_stack` проверяются общими гардами: шаблоны у прежних копий
+# были те же, поэтому тексты не изменились, а NaN и `inf` теперь
+# отвергаются здесь же, до арифметики. Иначе `--bounty inf` доходил до
+# `required_equity` внутри сдвинутого банка и отказ называл
+# `pot_before_call`, а `--villain-stack nan` молча выключал баунти.
+
+
 def _check_bounty(value: float) -> None:
-    if value < 0:
-        raise ValueError(f"bounty не может быть отрицательным: {value}")
+    check_non_negative(value, "bounty")
 
 
 def _check_split(value: float) -> None:
@@ -79,10 +85,8 @@ def _check_split(value: float) -> None:
 
 
 def _check_chip_value(value: float) -> None:
-    if value <= 0:
-        raise ValueError(f"chip_value должен быть > 0, получено {value}")
+    check_positive(value, "chip_value")
 
 
 def _check_villain_stack(value: float) -> None:
-    if value <= 0:
-        raise ValueError(f"villain_stack должен быть > 0, получено {value}")
+    check_positive(value, "villain_stack")

@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from poker_engine.bounty import (
@@ -148,3 +150,48 @@ def test_split_reaches_the_threshold():
         chip_value=0.025,
         split=1.0,
     ) == pytest.approx(0.2)
+
+
+@pytest.mark.parametrize(
+    ("param", "value", "message"),
+    [
+        ("bounty", math.nan, "bounty не может быть нечислом: nan$"),
+        ("bounty", math.inf, "bounty не может быть бесконечным: inf$"),
+        ("villain_stack", math.nan, "villain_stack не может быть нечислом: nan$"),
+        ("villain_stack", math.inf, "villain_stack не может быть бесконечным: inf$"),
+        ("chip_value", math.nan, "chip_value не может быть нечислом: nan$"),
+        ("chip_value", math.inf, "chip_value не может быть бесконечным: inf$"),
+    ],
+)
+def test_non_finite_bounty_inputs_are_rejected_by_their_own_name(
+    param, value, message
+):
+    # Без гарда `bounty=inf` доходил до `required_equity` внутри сдвинутого
+    # банка, и отказ называл `pot_before_call`; `villain_stack=nan` молча
+    # выключал баунти, а `chip_value=inf` обнулял его.
+    args = dict(
+        pot_before_call=10.0,
+        call_amount=20.0,
+        villain_stack=20.0,
+        bounty=10.0,
+        chip_value=0.01,
+    )
+    args[param] = value
+    with pytest.raises(ValueError, match=message):
+        required_equity_with_bounty(**args)
+
+
+def test_prior_bounty_texts_are_unchanged():
+    # Копии гардов заменены общими: шаблоны совпадали, тексты — прежние.
+    with pytest.raises(ValueError, match="bounty не может быть отрицательным: -1.0$"):
+        knockout_cash(-1.0)
+    with pytest.raises(ValueError, match="chip_value должен быть > 0, получено 0.0$"):
+        bounty_in_chips(bounty=2.50, chip_value=0.0)
+    with pytest.raises(ValueError, match="villain_stack должен быть > 0, получено 0$"):
+        required_equity_with_bounty(
+            pot_before_call=100,
+            call_amount=50,
+            villain_stack=0,
+            bounty=2.50,
+            chip_value=0.025,
+        )

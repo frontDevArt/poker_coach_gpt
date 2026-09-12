@@ -16,25 +16,38 @@ from __future__ import annotations
 
 import math
 
-# Сравнения записаны как `not value > 0`, а не `value <= 0`: NaN проваливает
-# любое сравнение, и прямая форма молча пропускала бы его дальше — в сумму
-# лесенки, в эквити, в пот-оддсы. `float("nan")` не бросает, а
-# `handstate._as_float` и `argparse` принимают строку `"nan"`, так что путь
-# с пользовательского ввода есть. NaN и `-inf` уходят в прежний текст
-# нарушенного ограничения; `+inf` ограничение `> 0` честно выполняет, и
-# отвергается отдельным текстом `_check_finite`.
+# Нечисло и бесконечность отсекаются отдельными текстами, а не текстом
+# знака: NaN проваливает любое сравнение, и прямое `value <= 0` молча
+# пропускало бы его дальше — в сумму лесенки, в эквити, в пот-оддсы.
+# `float("nan")` не бросает, а `handstate._as_float` и `argparse`
+# принимают строку `"nan"`, так что путь с пользовательского ввода есть.
+# Текст знака на NaN соврал бы («не может быть отрицательным: nan» — NaN
+# не отрицателен), ровно как соврал бы на `+inf` («должен быть > 0,
+# получено inf»), поэтому у обоих нарушений свой текст. `-inf` нарушает
+# именно знак и уходит в прежний текст ограничения.
 
 
 def check_positive(value: float, name: str) -> None:
-    if not value > 0:
+    _check_number(value, name)
+    if value <= 0:
         raise ValueError(f"{name} должен быть > 0, получено {value}")
     _check_finite(value, name)
 
 
 def check_non_negative(value: float, name: str) -> None:
-    if not value >= 0:
+    _check_number(value, name)
+    if value < 0:
         raise ValueError(f"{name} не может быть отрицательным: {value}")
     _check_finite(value, name)
+
+
+def _check_number(value: float, name: str) -> None:
+    """NaN — единственное значение, не равное самому себе; `math.isnan`
+    здесь не годится по той же причине, что `isfinite` в `_check_finite`:
+    бросает `OverflowError` на огромных целых. Шаблон «не может быть …» —
+    имена бывают и среднего рода (`число раздач`)."""
+    if value != value:
+        raise ValueError(f"{name} не может быть нечислом: {value}")
 
 
 def _check_finite(value: float, name: str) -> None:
