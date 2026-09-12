@@ -123,14 +123,57 @@
   - `PayoutLadder.places_paid -> int`.
 
 **Почему интервалы, а не список призов.** Реальная лесенка — 144 места, описанные
-двенадцатью строками. Материализация нужна только внутри класса ради `prize` за O(1);
-наружу список не отдаётся никогда (спека §4.4).
+шестнадцатью строками (спека §4.4). Список призов по местам не материализуется ни
+наружу, ни внутри: приз ищется двоичным поиском по интервалам, которых меньше двадцати.
 
-**Предусловие, которое класс НЕ проверяет.** Непересечение интервалов и
-неувеличение призов к худшим местам уже проверяет `handstate._validate_context`. Второй
-гард на то же условие с другим текстом разошёлся бы с первым молча — это прямо запрещено
-конвенцией «общие гарды только в `_checks.py`». Класс документирует предусловие в
-docstring, как это сделано в `DecisionNode.hero`.
+**Решения по контракту (прогон A, 2026-09-12).** Ревью Задачи 1 показало, что класс
+завёл четыре собственных текста отказа на нарушения, для которых
+`handstate._validate_context` уже установил пользовательский контракт, а docstring при
+этом утверждал, что дублирования нет. Global Constraint «второй текст на одно нарушение»
+нарушен. Принято:
+
+1. **Тексты отказов берутся дословно из `handstate._validate_context`.** Там они уже
+   пользовательский контракт (`analyze` и CLI отдают их наружу), а `PayoutLadder`
+   никакого контракта пока не установил: класс ещё никем не вызывается.
+   Одно нарушение — одно сообщение, поэтому расходиться нечему:
+
+   | Нарушение | Текст | Источник |
+   |---|---|---|
+   | интервалов нет вовсе | `лесенка выплат пуста` | `handstate.py:379` |
+   | место < 1 или интервал задом наперёд | `неверный интервал мест в выплатах: {first}–{last}` | `handstate.py:383` |
+   | приз ≤ 0 | `check_positive(amount, f"приз за место {first}")` | `handstate.py:387` |
+   | интервалы пересекаются | `интервалы выплат пересекаются на месте {place}` | `handstate.py:391` |
+   | интервал глубже призовой зоны | `выплаты описаны до места {last}, а призовых мест {places_paid}` | `handstate.py:415` |
+   | `places_paid` ≤ 0 | `check_positive(places_paid, "размер призовой зоны")` | `handstate.py:407` |
+
+   Следствия: гарда «номер места должен быть > 0» в конструкторе больше нет (место < 1
+   ловит текст интервала), и этот текст остаётся за одним владельцем — `prize`.
+   Падежная кривизна «выходит за 144 оплачиваемых мест» уходит вместе со своим текстом.
+
+2. **Непересечение интервалов класс проверяет** — в отличие от первоначального текста
+   задачи. Без этого `places_covered` считает место дважды и `is_complete` лжёт на
+   покрытой лесенке; счёт различных мест без гарда требовал бы материализации всех мест.
+   Текст взят из `handstate` дословно, поэтому запрет на второй текст соблюдён.
+   Проверка монотонности призов (`выплата за более низкое место больше, чем за высокое`)
+   остаётся у `handstate`: лесенке она безразлична.
+
+3. **Второй моделью места владеет Задача 4.** Сейчас в пакете две несовместимые модели:
+   `handstate.payout_ladder` — 0-based список со скрытой обрезкой по `places`,
+   `PayoutLadder` — 1-based с нулём за пределами. Задача 4 снимает последний вызов
+   `payout_ladder`, поэтому она же удаляет функцию и переводит ладдер-блок
+   `_validate_context` на построение `PayoutLadder` (см. «Что убирается» Задачи 4).
+   До Задачи 4 обе модели живут рядом, и docstring каждой ссылается на другую.
+
+4. **Предел `places_paid` не вводится.** Пик 160 МБ на `places_paid=20_000_000` давала
+   не отсутствующая граница, а материализация списка на `places_paid + 1` элементов.
+   Материализация убрана — аллокации по `places_paid` больше нет, память O(числа
+   интервалов), и третья константа предела (журнал: «единый источник предела узлов»)
+   не появляется. `places_paid` при этом обязан быть целым: `2.5` раньше давал
+   `TypeError` из умножения списка.
+
+5. **Число строк реальной лесенки — шестнадцать, не двенадцать.** «Двенадцать»
+   стояло в спеке §4.4, в этой задаче и в имени тест-образца, а в самих данных всегда
+   было шестнадцать интервалов. Исправлено во всех трёх местах.
 
 - [ ] **Шаг 1: написать падающий тест**
 
@@ -163,7 +206,7 @@ def test_total_is_the_sum_over_every_paid_place():
     assert ladder.total() == pytest.approx(200.0)
 
 
-def test_real_ladder_is_twelve_lines_for_a_hundred_forty_four_places():
+def test_real_ladder_is_sixteen_lines_for_a_hundred_forty_four_places():
     # Лесенка Mini SUPER SIX Bounty Turbo, 1244 входа, 144 места (спека 4.1).
     ladder = PayoutLadder(
         [
@@ -188,21 +231,28 @@ def test_partial_coverage_is_visible_and_is_not_an_error():
     assert ladder.prize(7) == 0.0
 
 
-def test_place_below_one_is_rejected():
+def test_place_below_one_is_rejected_by_prize():
     ladder = PayoutLadder([(1, 1, 5.0)], places_paid=1)
     with pytest.raises(ValueError, match="номер места должен быть > 0"):
         ladder.prize(0)
 
 
 def test_non_positive_places_paid_is_rejected():
-    with pytest.raises(ValueError, match="размер лесенки выплат должен быть > 0"):
+    with pytest.raises(ValueError, match="размер призовой зоны должен быть > 0"):
         PayoutLadder([(1, 1, 5.0)], places_paid=0)
 
 
 def test_interval_outside_places_paid_is_rejected():
-    with pytest.raises(ValueError, match="интервал выплат 140–150 выходит за 144"):
+    with pytest.raises(
+        ValueError, match="выплаты описаны до места 150, а призовых мест 144"
+    ):
         PayoutLadder([(140, 150, 10.0)], places_paid=144)
 ```
+
+Тесты, добивающие мутантов каждого гарда (пустая лесенка, интервал задом наперёд,
+место < 1 в интервале, неположительный приз, пересечение, нецелые аргументы,
+`is_complete` на неполной лесенке) добавляет прогон починки по находкам ревью — по
+одному тесту на гард, каждый с `match=` на свой текст.
 
 - [ ] **Шаг 2: убедиться, что тест падает**
 
@@ -211,51 +261,90 @@ Expected: FAIL, `ModuleNotFoundError: No module named 'poker_engine.ladder'`
 
 - [ ] **Шаг 3: реализация**
 
+В `src/poker_engine/_checks.py` добавить общий гард целочисленности (общие гарды —
+только здесь, конвенция ядра):
+
+```python
+def check_integer(value: object, name: str) -> None:
+    if not isinstance(value, int):
+        raise ValueError(f"{name} должен быть целым, получено {value!r}")
+```
+
 Создать `src/poker_engine/ladder.py`:
 
 ```python
 """Лесенка выплат, адресуемая настоящим местом в турнире.
 
-Реальная лесенка GG — 144 оплачиваемых места, описанные двенадцатью
-интервалами. Наружу список призов по местам не отдаётся никогда: он
-материализуется внутри ради `prize` за O(1) и там же остаётся.
+Реальная лесенка GG — 144 оплачиваемых места, описанные шестнадцатью
+интервалами. Список призов по местам не материализуется ни наружу, ни
+внутри: приз ищется двоичным поиском по интервалам (спека §4.4), поэтому
+память не зависит от `places_paid`.
 
-Предусловие конструктора: интервалы не пересекаются и призы не растут к
-худшим местам. Это уже проверено `handstate._validate_context`, и второй
-гард на то же условие здесь не заводится — два текста на одно нарушение
-разошлись бы молча (конвенция «общие гарды только в `_checks.py`»).
+Тексты отказов взяты дословно из `handstate._validate_context`: там те же
+нарушения уже установили пользовательский контракт, и одно нарушение
+обязано давать одно сообщение. Пока живут две модели места — здешняя
+1-based и 0-based `handstate.payout_ladder`; вторую удаляет Задача 4
+плана `docs/superpowers/plans/2026-09-12-icm-field-model.md`, она же
+переводит ладдер-блок `_validate_context` на этот класс.
+
+Монотонность призов к худшим местам класс не проверяет: расчёту по
+лесенке она безразлична, и проверка остаётся у `handstate`.
 """
 
 from __future__ import annotations
 
-from ._checks import check_positive
+from bisect import bisect_left, bisect_right
+from collections.abc import Sequence
+
+from ._checks import check_integer, check_positive
+
+__all__ = ["PayoutLadder"]
 
 
 class PayoutLadder:
     def __init__(
-        self, intervals: list[tuple[int, int, float]], places_paid: int
+        self, intervals: Sequence[tuple[int, int, float]], places_paid: int
     ) -> None:
-        # «размер», а не «число»: шаблон `_checks` собирается как
-        # «{name} должен быть > 0» и требует мужского рода.
-        check_positive(places_paid, "размер лесенки выплат")
+        check_integer(places_paid, "размер призовой зоны")
+        check_positive(places_paid, "размер призовой зоны")
+        if not intervals:
+            raise ValueError("лесенка выплат пуста")
         self._places_paid = places_paid
-        self._prizes = [0.0] * (places_paid + 1)  # индекс 0 не используется
+        self._starts: list[int] = []
+        self._ends: list[int] = []
+        self._amounts: list[float] = []
         covered = 0
-        for first, last, amount in intervals:
-            check_positive(first, "номер места")
-            if last < first:
+        total = 0.0
+        for first, last, amount in sorted(intervals, key=lambda i: i[0]):
+            check_integer(first, "номер места")
+            check_integer(last, "номер места")
+            if first < 1 or last < first:
                 raise ValueError(
-                    f"интервал выплат {first}–{last} идёт в обратную сторону"
+                    f"неверный интервал мест в выплатах: {first}–{last}"
+                )
+            check_positive(amount, f"приз за место {first}")
+            # Уже принятые интервалы отсортированы и не пересекаются, поэтому
+            # первый кандидат на пересечение — тот, чей конец не левее начала
+            # нового. Место печатается то же, что у `handstate`: наименьшее
+            # из общих.
+            at = bisect_left(self._ends, first)
+            if at < len(self._ends) and self._starts[at] <= last:
+                raise ValueError(
+                    f"интервалы выплат пересекаются на месте "
+                    f"{max(first, self._starts[at])}"
                 )
             if last > places_paid:
                 raise ValueError(
-                    f"интервал выплат {first}–{last} выходит за {places_paid} "
-                    f"оплачиваемых мест"
+                    f"выплаты описаны до места {last}, а призовых мест "
+                    f"{places_paid}"
                 )
-            for place in range(first, last + 1):
-                self._prizes[place] = amount
-                covered += 1
+            self._starts.append(first)
+            self._ends.append(last)
+            self._amounts.append(amount)
+            covered += last - first + 1
+            total += amount * (last - first + 1)
         self._covered = covered
+        self._total = total
 
     @property
     def places_paid(self) -> int:
@@ -270,39 +359,52 @@ class PayoutLadder:
         return self._covered == self._places_paid
 
     def prize(self, place: int) -> float:
-        """Приз за место. Места глубже лесенки платят ноль."""
+        """Приз за место. Места вне описанных интервалов платят ноль."""
+        check_integer(place, "номер места")
         check_positive(place, "номер места")
-        if place > self._places_paid:
-            return 0.0
-        return self._prizes[place]
+        at = bisect_right(self._starts, place) - 1
+        if at >= 0 and place <= self._ends[at]:
+            return self._amounts[at]
+        return 0.0
 
     def total(self) -> float:
-        return sum(self._prizes)
+        """Сумма призов по всем покрытым местам. Считана в конструкторе:
+        бюджет двух секунд (Задача 8) не терпит O(places_paid) на вызов."""
+        return self._total
 ```
 
 - [ ] **Шаг 4: убедиться, что тесты проходят**
 
 Run: `.venv/Scripts/python -m pytest tests/test_ladder.py -v`
-Expected: 8 passed
+Expected: 9 passed
 
 - [ ] **Шаг 5: прогнать весь сьют**
 
 Run: `.venv/Scripts/python -m pytest`
-Expected: 312 passed (304 было + 8 новых)
+Expected: 304 прежних плюс тесты лесенки, все зелёные.
 
 - [ ] **Шаг 6: коммит**
 
 ```bash
-git add src/poker_engine/ladder.py tests/test_ladder.py
+git add src/poker_engine/ladder.py tests/test_ladder.py src/poker_engine/_checks.py
 git commit -m "feat(engine): лесенка выплат, адресуемая настоящим местом"
 ```
 
 **Приёмка задачи 1:**
 1. `prize` возвращает 0.0 за пределами лесенки, а не бросает.
-2. `total` равен сумме по всем оплачиваемым местам, а не по числу интервалов.
-3. Класс не дублирует гарды пересечения интервалов из `handstate`.
-4. Все сообщения об отказах пинятся через `match=`.
-5. 312 тестов зелёные.
+2. `total` равен сумме по всем покрытым местам, а не по числу интервалов, и не
+   пересчитывается на каждый вызов.
+3. Ни один текст отказа класса не расходится с `handstate._validate_context`:
+   каждый либо дословно оттуда, либо (`номер места`, `должен быть целым`) не имеет там
+   аналога. Docstring не утверждает об отсутствии проверок, которые есть.
+4. Все сообщения об отказах пинятся через `match=`, и ни один текст не бросается двумя
+   разными гардами модуля.
+5. `places_covered` считает различные места: пересечение отвергнуто гардом, поэтому
+   двойного счёта нет.
+6. Память не зависит от `places_paid`: списка на `places_paid + 1` элементов нет.
+7. Мутационная приёмка: снос любого гарда `ladder.py` целиком и разворот `==` в
+   `is_complete` краснят хотя бы один тест.
+8. Весь сьют зелёный.
 
 ---
 
@@ -924,6 +1026,14 @@ git commit -m "feat(engine): риск-премия и bubble factor на мод�
   «перебор Malmuth-Harville такого размера не считается»;
 - вызов `reduce_field` и импорт из `field`;
 - вызов `payout_ladder` и импорт `significant_depth`;
+- сама функция `handstate.payout_ladder` вместе с её тестами: после этой задачи у
+  неё не остаётся вызовов, а держать в пакете вторую модель места (0-based список со
+  скрытой обрезкой против 1-based `PayoutLadder`) — приглашение перепутать их.
+  Ладдер-блок `handstate._validate_context` переводится на построение
+  `PayoutLadder`: интервальные проверки (пусто, интервал задом наперёд, приз ≤ 0,
+  пересечение, глубже призовой зоны, `places_paid` ≤ 0) остаются в одной реализации,
+  тексты не меняются, у `handstate` остаётся своя только проверка монотонности
+  призов. Владение решено прогоном A Задачи 1 (решение 3);
 - пометки `ladder_truncated` и `reduced_field`.
 
 `field.py` и `tests/test_field.py` **не удаляются**: модуль перестаёт быть частью
