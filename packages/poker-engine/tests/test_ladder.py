@@ -80,16 +80,24 @@ def test_a_complete_ladder_always_pays_something():
     assert ladder.total() == pytest.approx(144.0)
 
 
-def test_memory_does_not_scale_with_places_paid():
-    # Список на places_paid + 1 элементов дал бы здесь ~160 МБ; двоичный
-    # поиск по интервалам держит память на числе интервалов.
+def measure_peak(places_paid):
     tracemalloc.start()
     try:
-        ladder = PayoutLadder([(1, 6, 400.0)], places_paid=20_000_000)
-        peak = tracemalloc.get_traced_memory()[1]
+        ladder = PayoutLadder([(1, 6, 400.0)], places_paid=places_paid)
+        return tracemalloc.get_traced_memory()[1], ladder
     finally:
         tracemalloc.stop()
-    assert peak < 100_000
+
+
+def test_memory_does_not_scale_with_places_paid():
+    # Список на places_paid + 1 элементов дал бы здесь ~160 МБ; двоичный
+    # поиск по интервалам держит память на числе интервалов. Утверждение
+    # сравнительное, а не абсолютное: порог в байтах пришлось бы брать с
+    # потолка, а миллионнократный рост places_paid при линейной памяти
+    # не уместился бы ни в какой множитель.
+    small, _ = measure_peak(10)
+    large, ladder = measure_peak(20_000_000)
+    assert large <= 2 * small
     assert ladder.prize(10_000_000) == 0.0
 
 
@@ -142,9 +150,15 @@ def test_interval_starting_below_place_one_is_rejected():
 
 
 def test_fractional_interval_bound_is_rejected():
-    with pytest.raises(ValueError, match="номер места должен быть целым"):
+    # Текст отличается от «номер места» в `prize`: там кривой запрос
+    # пользователя, здесь — кривая строка лесенки, и путать их нечего.
+    with pytest.raises(
+        ValueError, match="номер места в выплатах должен быть целым"
+    ):
         PayoutLadder([(1.5, 3, 10.0)], places_paid=144)
-    with pytest.raises(ValueError, match="номер места должен быть целым"):
+    with pytest.raises(
+        ValueError, match="номер места в выплатах должен быть целым"
+    ):
         PayoutLadder([(1, 2.5, 10.0)], places_paid=144)
 
 
@@ -172,3 +186,50 @@ def test_overlap_names_the_lowest_place_described_twice():
         PayoutLadder(
             [(1, 3, 10.0), (10, 20, 5.0), (5, 12, 7.0)], places_paid=20
         )
+
+
+def test_boolean_places_paid_is_rejected():
+    # `isinstance(True, int)` истинно: без отдельного гарда на bool
+    # places_paid=True прошёл бы за призовую зону в одно место, и
+    # is_complete на односегментной лесенке сказал бы True.
+    with pytest.raises(ValueError, match="размер призовой зоны должен быть целым"):
+        PayoutLadder([(1, 1, 5.0)], places_paid=True)
+
+
+def test_intervals_touching_on_a_shared_bound_are_rejected():
+    # Место 5 описано и последним в первом интервале, и первым во втором:
+    # places_covered насчитал бы 5 + 5 = 10 при 9 оплачиваемых местах,
+    # и is_complete солгал бы на лесенке с дырой.
+    with pytest.raises(
+        ValueError, match="интервалы выплат пересекаются на месте 5"
+    ):
+        PayoutLadder([(1, 5, 10.0), (5, 9, 5.0)], places_paid=9)
+
+
+def test_total_on_an_incomplete_ladder_counts_only_covered_places():
+    # Сняты места 1-6 из 144: 6 x 400 = 2400, а не 144 x 400 и не 400.
+    ladder = PayoutLadder([(1, 6, 400.0)], places_paid=144)
+    assert ladder.is_complete is False
+    assert ladder.total() == pytest.approx(2400.0)
+
+
+def test_prize_is_a_float_even_for_an_integer_amount():
+    # Сигнатура обещает float; со скриншота приз мог распознаться целым.
+    ladder = PayoutLadder([(1, 2, 5)], places_paid=2)
+    assert isinstance(ladder.prize(1), float)
+    assert isinstance(ladder.total(), float)
+
+
+def test_empty_ladder_outranks_a_broken_prize_pool_size():
+    # Нарушены сразу два правила. Приоритет тот же, что у
+    # `handstate._validate_context`: пустота лесенки раньше places_paid.
+    with pytest.raises(ValueError, match="лесенка выплат пуста"):
+        PayoutLadder([], places_paid=0)
+
+
+def test_a_broken_interval_outranks_a_broken_prize_pool_size():
+    # Тот же приоритет: цикл по интервалам раньше гарда places_paid.
+    with pytest.raises(
+        ValueError, match="неверный интервал мест в выплатах: 10–3"
+    ):
+        PayoutLadder([(10, 3, 10.0)], places_paid=0)

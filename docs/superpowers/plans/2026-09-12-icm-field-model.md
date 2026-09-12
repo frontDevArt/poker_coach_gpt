@@ -117,7 +117,8 @@
     `PayoutLadder(intervals: list[tuple[int, int, float]], places_paid: int)`,
     где `intervals` — тройки `(first, last, amount)`, места 1-based включительно.
   - `PayoutLadder.prize(place: int) -> float` — приз за место, 0.0 за местами лесенки.
-  - `PayoutLadder.total() -> float` — сумма призов по всем оплачиваемым местам.
+  - `PayoutLadder.total() -> float` — сумма призов по всем **покрытым** местам:
+    неописанные места призовой зоны платят ноль и в сумму не входят.
   - `PayoutLadder.places_covered -> int` — сколько мест покрыто интервалами.
   - `PayoutLadder.is_complete -> bool` — покрыты ли все `places_paid` мест.
   - `PayoutLadder.places_paid -> int`.
@@ -175,7 +176,38 @@
    стояло в спеке §4.4, в этой задаче и в имени тест-образца, а в самих данных всегда
    было шестнадцать интервалов. Исправлено во всех трёх местах.
 
+**Решения по находкам ревью (прогон B, 2026-09-12).** Второе ревью Задачи 1 нашло два
+неубиваемых мутанта и расхождение контракта с `handstate`. Принято:
+
+1. **`check_integer` отвергает `bool`.** `isinstance(True, int)` истинно, поэтому
+   `places_paid=True` строил лесенку с призовой зоной в одно место. Гард общий и уезжает
+   в Задачи 2/4/6/7 на `players_left` и число мест за столом, чинится поэтому в
+   `_checks.py`, а не в лесенке.
+2. **Гард пересечения сведён к `if at < len(self._ends)`.** Подусловие
+   `self._starts[at] <= last` и `max(first, self._starts[at])` были мертвы: интервалы
+   обходятся по возрастанию `first`, у каждого принятого `start <= first`, а `first <= last`
+   проверено выше. Оба мутанта выживали весь сьют. Наименьшее из общих мест всегда равно
+   `first`, поэтому текст `handstate` воспроизводится без `max`.
+3. **Порядок гардов повторяет `_validate_context`.** Пустота лесенки, затем цикл по
+   интервалам, затем `places_paid`, затем глубина лесенки. Задача 4 переводит ладдер-блок
+   валидатора на этот класс, и приоритет сообщений на данных, нарушающих сразу два
+   правила, обязан не поменяться. Проверка `last > places_paid` уехала из цикла в
+   одну проверку `max(ends) > places_paid` — тоже как у `_validate_context`.
+4. **Границы интервала отвергаются текстом `номер места в выплатах`,** а не `номер места`:
+   приёмка п.4 запрещает один текст из двух гардов модуля, и пользователю кривая строка
+   лесенки и кривой запрос в `prize` — разные ошибки. Расхождение текстов здесь дешевле
+   неразличимости, потому что обоих текстов нет в `handstate` и ничей контракт не ломается.
+5. **Форма строки лесенки остаётся программным контрактом**, оговорённым в docstring
+   модуля, без гарда. С Задачи 4 тройки собирает сам пакет из `TournamentContext.payouts`,
+   где `handstate._as_int`/`_as_float` уже привели поля к числам и выдали свои
+   пользовательские тексты; гард здесь завёл бы второй текст на нарушение, которого с
+   пользовательского пути не бывает. По той же причине в docstring `check_integer` записано,
+   что его текст — не часть контракта CLI.
+
 - [ ] **Шаг 1: написать падающий тест**
+
+Созданный `tests/test_ladder.py` шире приведённого ниже наброска: итог — 28 тестов,
+файл в репозитории и есть источник истины. Набросок оставлен как формулировка инвариантов.
 
 Создать `tests/test_ladder.py`:
 
@@ -266,7 +298,8 @@ Expected: FAIL, `ModuleNotFoundError: No module named 'poker_engine.ladder'`
 
 ```python
 def check_integer(value: object, name: str) -> None:
-    if not isinstance(value, int):
+    """..."""  # см. решение B.1: текст не часть контракта CLI
+    if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"{name} должен быть целым, получено {value!r}")
 ```
 
@@ -280,12 +313,25 @@ def check_integer(value: object, name: str) -> None:
 внутри: приз ищется двоичным поиском по интервалам (спека §4.4), поэтому
 память не зависит от `places_paid`.
 
+Форма строки лесенки — контракт вызывающего кода, а не пользовательский
+ввод: `intervals` — последовательность троек `(first, last, amount)` с
+целыми 1-based местами включительно и числовым призом. Тройки собирает
+пакет (с Задачи 4 — из `TournamentContext.payouts`, где `handstate`
+уже привёл поля к числам), поэтому строка не той длины или приз строкой
+— программная ошибка, и класс не заводит на неё пользовательского
+текста: наружу уходит сырой `ValueError`/`TypeError` распаковки или
+сравнения. Гард `check_integer` на границах интервала стоит там же по той
+же причине — он ловит конструкцию, а не ввод.
+
 Тексты отказов взяты дословно из `handstate._validate_context`: там те же
 нарушения уже установили пользовательский контракт, и одно нарушение
-обязано давать одно сообщение. Пока живут две модели места — здешняя
+обязано давать одно сообщение. Порядок гардов тоже повторяет
+`_validate_context`: пустота, затем интервалы, затем `places_paid` и
+глубина лесенки — Задача 4 переводит ладдер-блок валидатора на этот
+класс, и приоритет сообщений на данных, нарушающих сразу два правила,
+обязан остаться прежним. Пока живут две модели места — здешняя
 1-based и 0-based `handstate.payout_ladder`; вторую удаляет Задача 4
-плана `docs/superpowers/plans/2026-09-12-icm-field-model.md`, она же
-переводит ладдер-блок `_validate_context` на этот класс.
+плана `docs/superpowers/plans/2026-09-12-icm-field-model.md`.
 
 Монотонность призов к худшим местам класс не проверяет: расчёту по
 лесенке она безразлична, и проверка остаётся у `handstate`.
@@ -305,44 +351,48 @@ class PayoutLadder:
     def __init__(
         self, intervals: Sequence[tuple[int, int, float]], places_paid: int
     ) -> None:
-        check_integer(places_paid, "размер призовой зоны")
-        check_positive(places_paid, "размер призовой зоны")
         if not intervals:
             raise ValueError("лесенка выплат пуста")
-        self._places_paid = places_paid
         self._starts: list[int] = []
         self._ends: list[int] = []
         self._amounts: list[float] = []
         covered = 0
         total = 0.0
         for first, last, amount in sorted(intervals, key=lambda i: i[0]):
-            check_integer(first, "номер места")
-            check_integer(last, "номер места")
+            check_integer(first, "номер места в выплатах")
+            check_integer(last, "номер места в выплатах")
             if first < 1 or last < first:
                 raise ValueError(
                     f"неверный интервал мест в выплатах: {first}–{last}"
                 )
             check_positive(amount, f"приз за место {first}")
-            # Уже принятые интервалы отсортированы и не пересекаются, поэтому
-            # первый кандидат на пересечение — тот, чей конец не левее начала
-            # нового. Место печатается то же, что у `handstate`: наименьшее
-            # из общих.
+            # Со скриншота приз мог распознаться целым; `prize` и `total`
+            # обещают float, и обещание держится здесь, а не на выходе.
+            amount = float(amount)
+            # Интервалы обходятся по возрастанию `first`, а принятые между
+            # собой не пересекаются. Значит у каждого принятого start <= first,
+            # и любой принятый, чей конец не левее `first`, накрывает само
+            # место `first`, — проверять правую границу нового интервала
+            # незачем, а наименьшее из общих мест всегда равно `first`.
             at = bisect_left(self._ends, first)
-            if at < len(self._ends) and self._starts[at] <= last:
+            if at < len(self._ends):
                 raise ValueError(
-                    f"интервалы выплат пересекаются на месте "
-                    f"{max(first, self._starts[at])}"
-                )
-            if last > places_paid:
-                raise ValueError(
-                    f"выплаты описаны до места {last}, а призовых мест "
-                    f"{places_paid}"
+                    f"интервалы выплат пересекаются на месте {first}"
                 )
             self._starts.append(first)
             self._ends.append(last)
             self._amounts.append(amount)
             covered += last - first + 1
             total += amount * (last - first + 1)
+        check_integer(places_paid, "размер призовой зоны")
+        check_positive(places_paid, "размер призовой зоны")
+        deepest = max(self._ends)
+        if deepest > places_paid:
+            raise ValueError(
+                f"выплаты описаны до места {deepest}, а призовых мест "
+                f"{places_paid}"
+            )
+        self._places_paid = places_paid
         self._covered = covered
         self._total = total
 
@@ -376,12 +426,12 @@ class PayoutLadder:
 - [ ] **Шаг 4: убедиться, что тесты проходят**
 
 Run: `.venv/Scripts/python -m pytest tests/test_ladder.py -v`
-Expected: 9 passed
+Expected: 28 passed
 
 - [ ] **Шаг 5: прогнать весь сьют**
 
 Run: `.venv/Scripts/python -m pytest`
-Expected: 304 прежних плюс тесты лесенки, все зелёные.
+Expected: 332 passed — 304 прежних плюс 28 тестов лесенки.
 
 - [ ] **Шаг 6: коммит**
 
