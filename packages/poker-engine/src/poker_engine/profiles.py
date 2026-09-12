@@ -15,6 +15,8 @@ VPIP `v` — верхние `v%` комбинаций по порядку сил
 
 from __future__ import annotations
 
+import math
+
 from ._checks import check_non_negative
 from .preflop import preflop_order
 from .ranges import parse_range
@@ -40,7 +42,10 @@ def check_vpip(vpip: float | None, hands: int | None) -> None:
     """
     if vpip is not None and not 0 <= vpip <= 100:
         raise ValueError(f"VPIP вне диапазона 0..100: {vpip}")
-    if hands is not None:
+    # NaN — не нарушение, а выборка неизвестного размера: `range_for_vpip`
+    # сводит её к дефолту (см. там). Общий гард NaN отвергает, поэтому
+    # здесь он обходится явно, а не проскакивает мимо сравнения.
+    if hands is not None and not (isinstance(hands, float) and math.isnan(hands)):
         check_non_negative(hands, "число раздач")
 
 

@@ -14,15 +14,40 @@
 
 from __future__ import annotations
 
+import math
+
+# Сравнения записаны как `not value > 0`, а не `value <= 0`: NaN проваливает
+# любое сравнение, и прямая форма молча пропускала бы его дальше — в сумму
+# лесенки, в эквити, в пот-оддсы. `float("nan")` не бросает, а
+# `handstate._as_float` и `argparse` принимают строку `"nan"`, так что путь
+# с пользовательского ввода есть. NaN и `-inf` уходят в прежний текст
+# нарушенного ограничения; `+inf` ограничение `> 0` честно выполняет, и
+# отвергается отдельным текстом `_check_finite`.
+
 
 def check_positive(value: float, name: str) -> None:
-    if value <= 0:
+    if not value > 0:
         raise ValueError(f"{name} должен быть > 0, получено {value}")
+    _check_finite(value, name)
 
 
 def check_non_negative(value: float, name: str) -> None:
-    if value < 0:
+    if not value >= 0:
         raise ValueError(f"{name} не может быть отрицательным: {value}")
+    _check_finite(value, name)
+
+
+def _check_finite(value: float, name: str) -> None:
+    """Бесконечный приз, стек или банк — не число, с которым можно считать:
+    дальше он даёт `inf` или `inf * 0 = nan` без единого отказа.
+
+    Сравнение с `math.inf`, а не `math.isfinite`: целые сюда тоже приходят
+    (`places_paid`, `trials`), и `isfinite(10**400)` бросил бы
+    `OverflowError`. Шаблон «не может быть …», как у `check_non_negative`,
+    потому что имена здесь бывают и среднего рода (`число раздач`).
+    """
+    if value == math.inf:
+        raise ValueError(f"{name} не может быть бесконечным: {value}")
 
 
 def check_integer(value: object, name: str) -> None:

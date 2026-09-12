@@ -31,7 +31,7 @@
 
 from __future__ import annotations
 
-from bisect import bisect_left, bisect_right
+from bisect import bisect_right
 from collections.abc import Sequence
 
 from ._checks import check_integer, check_positive
@@ -61,13 +61,16 @@ class PayoutLadder:
             # Со скриншота приз мог распознаться целым; `prize` и `total`
             # обещают float, и обещание держится здесь, а не на выходе.
             amount = float(amount)
-            # Интервалы обходятся по возрастанию `first`, а принятые между
-            # собой не пересекаются. Значит у каждого принятого start <= first,
-            # и любой принятый, чей конец не левее `first`, накрывает само
-            # место `first`, — проверять правую границу нового интервала
-            # незачем, а наименьшее из общих мест всегда равно `first`.
-            at = bisect_left(self._ends, first)
-            if at < len(self._ends):
+            # Инвариант, на котором стоит весь класс: `_starts` и `_ends`
+            # строго возрастают. Интервалы обходятся по возрастанию `first`,
+            # `first <= last` проверено выше, а новый принимается, только
+            # если начинается правее конца последнего принятого. Отсюда же
+            # гард пересечения: у каждого принятого start <= first, конец
+            # самый правый — у хвоста, и если он не левее `first`, хвост
+            # накрывает само место `first`. Правую границу нового интервала
+            # проверять незачем, наименьшее из общих мест всегда `first`.
+            # На возрастании `_ends` держится и `bisect_right` в `prize`.
+            if self._ends and first <= self._ends[-1]:
                 raise ValueError(
                     f"интервалы выплат пересекаются на месте {first}"
                 )
@@ -98,10 +101,17 @@ class PayoutLadder:
 
     @property
     def is_complete(self) -> bool:
+        # `==`, а не `>=`, и мутант `>=` эквивалентен: covered > places_paid
+        # невозможен, пока живы гарды first >= 1, непересечения и
+        # deepest <= places_paid — различные места лежат в 1..places_paid.
         return self._covered == self._places_paid
 
     def prize(self, place: int) -> float:
-        """Приз за место. Места вне описанных интервалов платят ноль."""
+        """Приз за место. Места вне описанных интервалов платят ноль —
+        и за призовой зоной, и в дырах между интервалами, и до первого
+        описанного места. Место меньше 1 отвергается текстом
+        `номер места должен быть > 0`, нецелое (в том числе `bool`) —
+        `номер места должен быть целым`."""
         check_integer(place, "номер места")
         check_positive(place, "номер места")
         at = bisect_right(self._starts, place) - 1

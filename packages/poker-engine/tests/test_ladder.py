@@ -80,24 +80,22 @@ def test_a_complete_ladder_always_pays_something():
     assert ladder.total() == pytest.approx(144.0)
 
 
-def measure_peak(places_paid):
-    tracemalloc.start()
-    try:
-        ladder = PayoutLadder([(1, 6, 400.0)], places_paid=places_paid)
-        return tracemalloc.get_traced_memory()[1], ladder
-    finally:
-        tracemalloc.stop()
-
-
 def test_memory_does_not_scale_with_places_paid():
     # Список на places_paid + 1 элементов дал бы здесь ~160 МБ; двоичный
-    # поиск по интервалам держит память на числе интервалов. Утверждение
-    # сравнительное, а не абсолютное: порог в байтах пришлось бы брать с
-    # потолка, а миллионнократный рост places_paid при линейной памяти
-    # не уместился бы ни в какой множитель.
-    small, _ = measure_peak(10)
-    large, ladder = measure_peak(20_000_000)
-    assert large <= 2 * small
+    # поиск по интервалам держит память на числе интервалов — у одного
+    # интервала это сотни байт. Потолок 100 КБ абсолютный: на три порядка
+    # выше честной постройки и на три порядка ниже регрессии, поэтому шум
+    # аллокатора его не задевает. Окно одно: прогревочная постройка
+    # забирает одноразовые аллокации, `reset_peak` их отсекает.
+    tracemalloc.start()
+    try:
+        PayoutLadder([(1, 6, 400.0)], places_paid=10)
+        tracemalloc.reset_peak()
+        ladder = PayoutLadder([(1, 6, 400.0)], places_paid=20_000_000)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak <= 100_000
     assert ladder.prize(10_000_000) == 0.0
 
 
@@ -233,3 +231,41 @@ def test_a_broken_interval_outranks_a_broken_prize_pool_size():
         ValueError, match="неверный интервал мест в выплатах: 10–3"
     ):
         PayoutLadder([(10, 3, 10.0)], places_paid=0)
+
+
+def test_a_ladder_described_past_the_prize_pool_by_its_last_interval_is_rejected():
+    # Глубина лесенки — конец последнего интервала, а не первого: при
+    # min вместо max здесь приняли бы места 1 и 3-7 (6 мест) при
+    # places_paid=6, и is_complete сказал бы True при непокрытом месте 2
+    # и месте 7 вне призовой зоны.
+    with pytest.raises(
+        ValueError, match="выплаты описаны до места 7, а призовых мест 6"
+    ):
+        PayoutLadder([(1, 1, 10.0), (3, 7, 5.0)], places_paid=6)
+
+
+def test_places_above_the_first_described_place_pay_nothing():
+    # Снят второй экран лобби: описаны места 9-144. Места 1-8 не описаны,
+    # и приз за них — ноль, а не приз ближайшего интервала снизу.
+    ladder = PayoutLadder([(9, 144, 16.06)], places_paid=144)
+    assert ladder.prize(1) == 0.0
+    assert ladder.prize(8) == 0.0
+    assert ladder.prize(9) == 16.06
+
+
+def test_interval_ending_one_place_before_it_starts_is_rejected():
+    # Вырожденный интервал 5-4 покрыл бы ноль мест, но лёг бы в список
+    # концов и сломал его возрастание, на котором стоят гард пересечения
+    # и поиск в `prize`.
+    with pytest.raises(
+        ValueError, match="неверный интервал мест в выплатах: 5–4"
+    ):
+        PayoutLadder([(5, 4, 10.0)], places_paid=144)
+
+
+def test_a_hole_between_intervals_pays_nothing_and_is_not_covered():
+    # Места 4-9 не описаны: 3 + 3 = 6 покрытых из 12.
+    ladder = PayoutLadder([(1, 3, 10.0), (10, 12, 5.0)], places_paid=12)
+    assert ladder.prize(5) == 0.0
+    assert ladder.places_covered == 6
+    assert ladder.is_complete is False
