@@ -25,6 +25,11 @@ def check_non_negative(value: float, name: str) -> None:
         raise ValueError(f"{name} не может быть отрицательным: {value}")
 
 
+def check_integer(value: object, name: str) -> None:
+    if not isinstance(value, int):
+        raise ValueError(f"{name} должен быть целым, получено {value!r}")
+
+
 def check_probability(value: float, name: str) -> None:
     if not 0.0 <= value <= 1.0:
         raise ValueError(f"{name} должен быть в [0, 1], получено {value}")

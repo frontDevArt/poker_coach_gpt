@@ -351,7 +351,13 @@ def assign_positions(node: DecisionNode) -> dict[int, Position]:
 def payout_ladder(context: TournamentContext, places: int) -> list[float]:
     """Призовые по местам от первого, добитые нулями до `places`. Если
     `places` меньше числа оплачиваемых мест, лесенка молча обрезается по
-    `places` — призы за более дальние места в результат не попадают."""
+    `places` — призы за более дальние места в результат не попадают.
+
+    Это вторая, уходящая модель места: 0-based список со скрытой обрезкой
+    против 1-based `ladder.PayoutLadder`. Функцию вместе с её тестами
+    удаляет Задача 4 плана
+    `docs/superpowers/plans/2026-09-12-icm-field-model.md` — она снимает
+    последний вызов из `analyze`."""
     ladder = [0.0] * places
     for payout in context.payouts:
         for place in range(payout.first, payout.last + 1):
