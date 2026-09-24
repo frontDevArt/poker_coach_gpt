@@ -1579,7 +1579,27 @@ $1.50). Текущий код считает `knockout_cash = bounty × 0.5` и 
 намеренное: правильного значения у этого флага нет — доля не настраивается, она следует
 из того, что показано на экране. Изменение обязано быть видно в README и тестах.
 
-- [ ] **Шаг 1: переписать тесты под верную модель**
+**Решения при реализации (Фаза 4, 2026-09-24).** Код и тесты ниже — набросок; источник
+истины — `bounty.py`, `cli.py` и тесты. Против наброска принято:
+
+1. **Файлов больше, чем в списке:** `tests/test_cli.py` (порог `bounty-ev` пересчитан, пин
+   отказа `--split`) и `.claude/skills/poker-math/SKILL.md` (долг D8).
+2. **Под новую модель переписано больше двух тестов.** Кроме двух названных, старую долю
+   `0.5` зашивали ещё три: `test_knockout_pays_half_by_default` (заменён
+   `test_cash_equals_the_price_shown_on_screen`), `test_bounty_in_chips_converts_by_chip_value`
+   (50 → 100 фишек) и `test_required_equity_with_bounty_is_analytic` (порог 0.25 → 0.2), плюс
+   `test_cli.py::test_bounty_command` (0.25 → 0.2). `test_split_reaches_the_threshold` удалён по
+   плану: его число 0.2 теперь даёт аналитический тест без флага.
+3. **Добавлено сверх плана:** инвариант §9.9 параметризованным тестом на пяти ценниках
+   (наличные плюс прирост полного баунти выбившего равны полному баунти выбитого — вдвое
+   больше показанного); `$4.87` из спеки §5.2 в тесте арифметики скриншота (точно 4.875);
+   пин текста гарда в `own_bounty_growth`; `test_bounty_command_no_longer_takes_a_split` —
+   шаг 6 предлагал удалить тест CLI на `--split`, но такого не было, а ломающее изменение
+   обязано быть видно в тестах: теперь пинится ответ `unrecognized arguments: --split 0.5`.
+4. **README.** Примера `bounty-ev` с `--split` в README не было; строка про `--bounty` и
+   абзац про убранный флаг встали после описания `equity`, в разделе «Команды».
+
+- [x] **Шаг 1: переписать тесты под верную модель**
 
 В `tests/test_bounty.py` заменить `test_knockout_split_is_configurable` и
 `test_split_reaches_the_threshold` на:
@@ -1611,12 +1631,12 @@ def test_the_bounty_pool_is_conserved():
     assert cash + winner_total == pytest.approx(pool)
 ```
 
-- [ ] **Шаг 2: убедиться, что тесты падают**
+- [x] **Шаг 2: убедиться, что тесты падают**
 
 Run: `.venv/Scripts/python -m pytest tests/test_bounty.py -v`
 Expected: FAIL — `knockout_cash(1.50)` возвращает 0.75, ожидается 1.50.
 
-- [ ] **Шаг 3: реализация**
+- [x] **Шаг 3: реализация**
 
 В `src/poker_engine/bounty.py` заменить шапку и первые три функции:
 
@@ -1667,24 +1687,24 @@ def bounty_in_chips(bounty: float, chip_value: float) -> float:
 передачу в `bounty_in_chips`. Удалить `DEFAULT_SPLIT` и `_check_split`, если после этого
 они больше нигде не используются.
 
-- [ ] **Шаг 4: убрать `--split` из CLI**
+- [x] **Шаг 4: убрать `--split` из CLI**
 
 В `src/poker_engine/cli.py` удалить строку `p_b.add_argument("--split", ...)`, строку
 `split=args.split,` и импорт `DEFAULT_SPLIT`.
 
-- [ ] **Шаг 5: обновить README**
+- [x] **Шаг 5: обновить README**
 
 В `packages/poker-engine/README.md` найти описание `bounty-ev`, убрать `--split` из
 примера и добавить строку: «`--bounty` — число, показанное над игроком на экране; оно
 и есть наличные за нокаут».
 
-- [ ] **Шаг 6: прогнать весь сьют**
+- [x] **Шаг 6: прогнать весь сьют**
 
 Run: `.venv/Scripts/python -m pytest`
 Expected: все зелёные. Если падает тест CLI на `--split` — удалить его, это и есть
-намеренное ломающее изменение.
+намеренное ломающее изменение. (Факт — 413 passed, журнал Фазы 4, D1.)
 
-- [ ] **Шаг 7: коммит**
+- [x] **Шаг 7: коммит**
 
 ```bash
 git add src/poker_engine/bounty.py src/poker_engine/cli.py tests/test_bounty.py \

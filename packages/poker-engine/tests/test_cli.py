@@ -42,7 +42,27 @@ def test_bounty_command(capsys):
         capsys,
     )
     assert code == 0
-    assert data["required_equity"] == pytest.approx(0.25)
+    # Ценник 2.50 — наличные целиком: 100 фишек, порог 50 / (100 + 100 + 50).
+    assert data["required_equity"] == pytest.approx(0.2)
+
+
+def test_bounty_command_no_longer_takes_a_split(capsys):
+    # Ломающее изменение контракта, сделанное намеренно (план 3, Задача 5):
+    # доля не настраивается, она следует из того, что показано на экране.
+    code, data = run(
+        [
+            "bounty-ev",
+            "--pot", "100",
+            "--call", "50",
+            "--villain-stack", "50",
+            "--bounty", "2.50",
+            "--chip-value", "0.025",
+            "--split", "0.5",
+        ],
+        capsys,
+    )
+    assert code == 1
+    assert data == {"error": "unrecognized arguments: --split 0.5"}
 
 
 def test_riskpremium_command(capsys):

@@ -3,24 +3,65 @@ import math
 import pytest
 
 from poker_engine.bounty import (
+    PROGRESSIVE_SHARE,
     bounty_in_chips,
     knockout_cash,
+    own_bounty_growth,
     required_equity_with_bounty,
 )
 from poker_engine.potodds import required_equity
 
 
-def test_knockout_pays_half_by_default():
-    assert knockout_cash(bounty=2.50) == pytest.approx(1.25)
+def test_cash_equals_the_price_shown_on_screen():
+    # Экран показывает $1.50 — это и есть наличные выбившему (спека 5.2).
+    assert knockout_cash(bounty=1.50) == pytest.approx(1.50)
 
 
-def test_knockout_split_is_configurable():
-    assert knockout_cash(bounty=2.50, split=1.0) == pytest.approx(2.50)
+def test_own_price_grows_by_half_of_what_was_taken():
+    # Ценник 1.50 плюс половина взятого 1.50 = 2.25 — ровно как на скриншоте.
+    assert own_bounty_growth(bounty=1.50) == pytest.approx(0.75)
+
+
+def test_the_screenshot_arithmetic_reproduces():
+    # damdreiQ3 = $2.25: стартовые 1.50 плюс половина одного выбитого новичка.
+    assert 1.50 + own_bounty_growth(1.50) == pytest.approx(2.25)
+    # LRDAM = $3.00: двое выбитых новичков.
+    assert 1.50 + 2 * own_bounty_growth(1.50) == pytest.approx(3.00)
+    # $4.87 ≈ 1.50 + три новичка по 0.75 + один с ценником 2.25 (спека 5.2):
+    # точно 4.875, на экране округлено вниз до цента.
+    assert 1.50 + 3 * own_bounty_growth(1.50) + own_bounty_growth(2.25) == (
+        pytest.approx(4.875)
+    )
+
+
+def test_the_bounty_pool_is_conserved():
+    # Двое по $3.00 в фонде. A выбивает B: берёт 1.50 наличными, его полный
+    # баунти становится 3.00 + 1.50 = 4.50 и достаётся ему при победе.
+    pool = 2 * 3.00
+    cash = knockout_cash(1.50)
+    winner_total = 3.00 + 2 * own_bounty_growth(1.50)
+    assert cash + winner_total == pytest.approx(pool)
+
+
+@pytest.mark.parametrize("shown", [0.0, 1.50, 2.25, 4.875, 37.0])
+def test_a_knockout_moves_the_whole_bounty_of_the_busted(shown):
+    # Инвариант спеки §9.9. Полный баунти игрока вдвое больше показанного
+    # ценника (внёс $3.00 — показано $1.50). При нокауте он целиком уходит
+    # выбившему: наличными плюс прирост его полного баунти, который тоже
+    # вдвое больше прироста показанного ценника.
+    full_bounty = shown / PROGRESSIVE_SHARE
+    full_growth = own_bounty_growth(shown) / PROGRESSIVE_SHARE
+    assert knockout_cash(shown) + full_growth == pytest.approx(full_bounty)
+
+
+def test_own_price_growth_rejects_a_negative_price():
+    with pytest.raises(ValueError, match="^bounty не может быть отрицательным: -1.0$"):
+        own_bounty_growth(-1.0)
 
 
 def test_bounty_in_chips_converts_by_chip_value():
-    # 1.25 наличными при цене фишки 0.025 = 50 фишек.
-    assert bounty_in_chips(bounty=2.50, chip_value=0.025) == pytest.approx(50.0)
+    # 2.50 наличными при цене фишки 0.025 = 100 фишек.
+    assert bounty_in_chips(bounty=2.50, chip_value=0.025) == pytest.approx(100.0)
 
 
 def test_required_equity_with_zero_bounty_matches_plain_pot_odds():
@@ -36,8 +77,8 @@ def test_required_equity_with_zero_bounty_matches_plain_pot_odds():
 
 
 def test_required_equity_with_bounty_is_analytic():
-    # Голова 2.50, сплит 0.5, цена фишки 0.025 -> 50 фишек добавки.
-    # Порог = 50 / (100 + 50 + 50) = 0.25
+    # Ценник 2.50 — наличные целиком, цена фишки 0.025 -> 100 фишек добавки.
+    # Порог = 50 / (100 + 100 + 50) = 0.2
     q = required_equity_with_bounty(
         pot_before_call=100,
         call_amount=50,
@@ -45,7 +86,7 @@ def test_required_equity_with_bounty_is_analytic():
         bounty=2.50,
         chip_value=0.025,
     )
-    assert q == pytest.approx(0.25)
+    assert q == pytest.approx(0.2)
 
 
 def test_bounty_lowers_the_bar():
@@ -137,19 +178,6 @@ def test_rejects_nonpositive_call_amount():
             bounty=2.50,
             chip_value=0.025,
         )
-
-
-def test_split_reaches_the_threshold():
-    # split=1.0 -> вся голова 2.50 наличными -> 2.50/0.025 = 100 фишек.
-    # Порог = 50 / (100 + 100 + 50) = 0.2
-    assert required_equity_with_bounty(
-        pot_before_call=100,
-        call_amount=50,
-        villain_stack=50,
-        bounty=2.50,
-        chip_value=0.025,
-        split=1.0,
-    ) == pytest.approx(0.2)
 
 
 @pytest.mark.parametrize(

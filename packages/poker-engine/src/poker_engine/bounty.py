@@ -1,9 +1,16 @@
 """Progressive Knockout: перевод головы в фишки и порог колла с учётом баунти.
 
-В стандартном PKO половина головы выбитого выплачивается наличными,
-половина увеличивает собственную голову героя. В EV конкретной руки
-считается только наличная половина: прирост своей головы обналичится
-лишь при последующих нокаутах и здесь не моделируется.
+Число на экране клиента — это **наличные, которые получит выбивший**, то
+есть половина полного баунти игрока: участник вносит $3.00 на голову, а
+над ним висит $1.50. При нокауте выбивший получает показанное число
+целиком и вдобавок наращивает собственный ценник на его половину.
+
+Проверено сохранением фонда: двое по $3.00, итого $6.00. A выбивает B,
+берёт $1.50, его полный баунти становится $4.50 и достаётся ему при
+победе. Выплачено $6.00 (спека 2026-09-12, раздел 5.2).
+
+В EV конкретной руки считается только наличная часть: прирост своего
+ценника обналичится лишь при последующих нокаутах и здесь не моделируется.
 """
 
 from __future__ import annotations
@@ -11,26 +18,35 @@ from __future__ import annotations
 from ._checks import check_non_negative, check_positive
 from .potodds import required_equity
 
-DEFAULT_SPLIT = 0.5
+# Доля показанного ценника, которая садится на голову выбившего. Наличные
+# при этом равны показанному числу целиком, а не его доле — см. шапку.
+PROGRESSIVE_SHARE = 0.5
 
 
-def knockout_cash(bounty: float, split: float = DEFAULT_SPLIT) -> float:
-    """Наличные, которые герой получает сразу за нокаут."""
+def knockout_cash(bounty: float) -> float:
+    """Наличные, которые герой получает сразу за нокаут.
+
+    Равны показанному на экране числу. Это не половина — половиной оно уже
+    является по отношению к полному баунти выбитого.
+    """
     _check_bounty(bounty)
-    _check_split(split)
-    return bounty * split
+    return bounty
 
 
-def bounty_in_chips(
-    bounty: float, chip_value: float, split: float = DEFAULT_SPLIT
-) -> float:
-    """Наличная половина головы, выраженная в фишках.
+def own_bounty_growth(bounty: float) -> float:
+    """На сколько вырастет собственный ценник героя после нокаута."""
+    _check_bounty(bounty)
+    return bounty * PROGRESSIVE_SHARE
+
+
+def bounty_in_chips(bounty: float, chip_value: float) -> float:
+    """Наличные за нокаут, выраженные в фишках.
 
     chip_value — сколько долларов стоит одна фишка на текущей стадии.
     Берётся как призовой фонд, делённый на общее число фишек в турнире.
     """
     _check_chip_value(chip_value)
-    return knockout_cash(bounty, split) / chip_value
+    return knockout_cash(bounty) / chip_value
 
 
 def required_equity_with_bounty(
@@ -39,15 +55,16 @@ def required_equity_with_bounty(
     villain_stack: float,
     bounty: float,
     chip_value: float,
-    split: float = DEFAULT_SPLIT,
 ) -> float:
     """Порог эквити для колла в PKO.
 
-    Голова засчитывается только если колл героя покрывает стек соперника,
-    то есть нокаут действительно возможен в этой раздаче.
+    `bounty` — ценник над соперником, как показан на экране: наличные за
+    нокаут равны ему целиком. Голова засчитывается только если колл героя
+    покрывает стек соперника, то есть нокаут действительно возможен в
+    этой раздаче.
 
     Валидация всех параметров — `bounty`, `villain_stack`, `chip_value`,
-    `split`, `call_amount`, `pot_before_call` — выполняется безусловно,
+    `call_amount`, `pot_before_call` — выполняется безусловно,
     до вычисления `covers_villain`: валидность одного аргумента не должна
     зависеть от значения другого. В частности `chip_value` — обязательный
     позиционный параметр без "неприменимого" значения, а этот модуль и
@@ -57,14 +74,13 @@ def required_equity_with_bounty(
     _check_bounty(bounty)
     _check_villain_stack(villain_stack)
     _check_chip_value(chip_value)
-    _check_split(split)
     check_positive(call_amount, "call_amount")
     check_non_negative(pot_before_call, "pot_before_call")
 
     covers_villain = call_amount >= villain_stack
     if not (covers_villain and bounty > 0):
         return required_equity(pot_before_call, call_amount)
-    extra = bounty_in_chips(bounty, chip_value, split)
+    extra = bounty_in_chips(bounty, chip_value)
     return required_equity(pot_before_call + extra, call_amount)
 
 
@@ -77,11 +93,6 @@ def required_equity_with_bounty(
 
 def _check_bounty(value: float) -> None:
     check_non_negative(value, "bounty")
-
-
-def _check_split(value: float) -> None:
-    if not 0.0 < value <= 1.0:
-        raise ValueError(f"split должен быть в (0, 1], получено {value}")
 
 
 def _check_chip_value(value: float) -> None:

@@ -12,7 +12,7 @@ import json
 import sys
 
 from .analyze import analyze
-from .bounty import DEFAULT_SPLIT, required_equity_with_bounty
+from .bounty import required_equity_with_bounty
 from .equity import equity_vs_range, hand_equity
 from .icm import bubble_factor, icm_equities, risk_premium
 from .potodds import required_equity
@@ -82,7 +82,6 @@ def _dispatch(args: argparse.Namespace) -> dict:
                 villain_stack=args.villain_stack,
                 bounty=args.bounty,
                 chip_value=args.chip_value,
-                split=args.split,
             )
         }
 
@@ -195,7 +194,6 @@ def _build_parser() -> argparse.ArgumentParser:
     p_b.add_argument("--villain-stack", type=float, required=True)
     p_b.add_argument("--bounty", type=float, required=True)
     p_b.add_argument("--chip-value", type=float, required=True)
-    p_b.add_argument("--split", type=float, default=DEFAULT_SPLIT)
 
     p_rp = sub.add_parser("risk-premium", help="risk premium и bubble factor")
     p_rp.add_argument("--stacks", type=_int_list, required=True)
