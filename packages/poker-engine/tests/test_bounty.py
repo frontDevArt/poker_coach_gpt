@@ -114,8 +114,23 @@ def test_no_bounty_credit_when_villain_is_not_covered():
 
 
 def test_rejects_nonpositive_chip_value():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="^chip_value должен быть > 0, получено 0.0$"):
         bounty_in_chips(bounty=2.50, chip_value=0.0)
+
+
+def test_rejects_nonpositive_chip_value_even_when_villain_not_covered():
+    # Соперник не покрыт — цена фишки в арифметику не входит, и без
+    # собственного гарда функции ноль прошёл бы молча: `bounty_in_chips`,
+    # где стоит второй гард, на этом пути не вызывается. Docstring обещает
+    # проверку всех параметров до `covers_villain`.
+    with pytest.raises(ValueError, match="^chip_value должен быть > 0, получено 0.0$"):
+        required_equity_with_bounty(
+            pot_before_call=100,
+            call_amount=50,
+            villain_stack=500,
+            bounty=2.50,
+            chip_value=0.0,
+        )
 
 
 def test_rejects_negative_bounty_even_when_villain_not_covered():
@@ -125,7 +140,7 @@ def test_rejects_negative_bounty_even_when_villain_not_covered():
     # отклонять семантически бессмысленный ввод на любом пути одинаково,
     # а не только там, где он случайно влияет на результат, — так же,
     # как knockout_cash уже отклоняет отрицательный bounty сам по себе.
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="^bounty не может быть отрицательным: -1.0$"):
         required_equity_with_bounty(
             pot_before_call=100,
             call_amount=50,
@@ -138,7 +153,7 @@ def test_rejects_negative_bounty_even_when_villain_not_covered():
 def test_rejects_nonpositive_villain_stack():
     # villain_stack <= 0 не может произойти в реальной раздаче и не должен
     # молча трактоваться как "герой покрывает соперника".
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="^villain_stack должен быть > 0, получено 0$"):
         required_equity_with_bounty(
             pot_before_call=100,
             call_amount=50,
@@ -154,7 +169,9 @@ def test_rejects_negative_pot_even_when_bounty_applies():
     # extra >= 0), так что отрицательный pot_before_call может поймать
     # только собственный eager-guard этой функции. Тест фиксирует, что
     # этот guard действительно есть и не обходится веткой с баунти.
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match="^pot_before_call не может быть отрицательным: -10$"
+    ):
         required_equity_with_bounty(
             pot_before_call=-10,
             call_amount=50,
@@ -170,7 +187,7 @@ def test_rejects_nonpositive_call_amount():
     # сообщением, что и potodds.required_equity — так что контракт ошибки
     # для вызывающей стороны (в частности, будущего CLI) одинаков вне
     # зависимости от того, задействован ли путь с баунти.
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="^call_amount должен быть > 0, получено 0$"):
         required_equity_with_bounty(
             pot_before_call=100,
             call_amount=0,
