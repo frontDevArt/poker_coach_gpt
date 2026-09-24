@@ -16,8 +16,8 @@ Nuxt-оболочка плюс Python-ядро `packages/poker-engine` (ICM, п�
 и промпт следующей фазы в `docs/superpowers/state/plan3-next-prompt.md`.
 
 - Задача 1 (лесенка выплат, `ladder.py`) — в `main`, прогоны ревью A–D (`472021d` … `d686089`).
-- **Следующая — Фаза 1:** ревью Задачи 1 (прогон E), затем Задача 2, на ветке
-  `feat/icm-field-model`. Промпт — `docs/superpowers/state/plan3-next-prompt.md`.
+- Фаза 1 сделана (ветка `claude/serene-bell-yni6li`): прогон E Задачи 1, Задача 2 (`icm_field.py`), 376 passed.
+- **Следующая — Фаза 2:** ревью Задачи 2, затем Задача 3. Промпт — `docs/superpowers/state/plan3-next-prompt.md`.
 
 Планы 1 (`feat/poker-engine-core`) и 2 (`feat/screenshot-coach-engine`) закрыты и влиты
 в `main` (обе ветки удалены 2026-09-24, история целиком в `main`): оба ревью на задачу, мутационная приёмка, финальное ревью ветки, 304 теста зелёные.
