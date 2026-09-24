@@ -391,6 +391,21 @@ def test_a_complete_ladder_is_not_flagged(run_analyze, analyze_context):
     assert "ladder_incomplete" not in result["flags"]
 
 
+def test_an_incomplete_ladder_out_of_reach_is_flagged_but_costs_nothing(
+    run_analyze, analyze_context
+):
+    # Финальный стол из шести, выплаты за места 1-6, призовая зона 165:
+    # места 7-165 уже вручены выбывшим. Пометка — про вход (лобби снято не
+    # целиком) и стоит, но число от неё не страдает: то же эквити, что и
+    # при призовой зоне ровно по выплатам.
+    complete = copy.deepcopy(analyze_context)
+    complete["placesPaid"] = 6
+    flagged = run_analyze()
+    exact = run_analyze(context=complete)
+    assert "ladder_incomplete" in flagged["flags"]
+    assert flagged["icm"]["heroEquity"] == exact["icm"]["heroEquity"]
+
+
 def test_a_deeper_ladder_is_computed_instead_of_refused(run_analyze, analyze_context):
     # Лесенка на все 165 мест при поле из 490: раньше это падало с
     # «перебор Malmuth-Harville такого размера не считается».
