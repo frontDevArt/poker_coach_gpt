@@ -584,6 +584,19 @@ def test_no_credit_when_the_hero_cannot_cover_the_villain(run_analyze, analyze_n
     assert result["bounty"]["requiredEquityWithBounty"] == result["requiredEquity"]
 
 
+def test_a_hero_covering_the_villain_exactly_with_invested_gets_the_head(
+    run_analyze, analyze_node
+):
+    # Граница условия: у героя 11.3 + 1.0 вложенных = 12.3, ровно 5.0 + 7.3 у
+    # соперника (в float равенство точное). Оба в олл-ине, герой выигрывает —
+    # соперник выбит, голова засчитана. Без вложенного героя (11.3 < 12.3) или
+    # при строгом сравнении голова бы потерялась.
+    node = bounty_node(analyze_node, priced(5.00, 1.50), seat4=5.0, seat7=11.3)
+    block = run_analyze(node=node)["bounty"]
+    extra = block["knockoutCashUsd"] / block["bbValueUsd"]
+    assert block["requiredEquityWithBounty"] == pytest.approx(7.3 / (9.4 + extra + 7.3))
+
+
 def test_no_threshold_when_there_is_nothing_to_call(run_analyze, analyze_node):
     # Колла нет — нет и порога, ни обычного, ни с головой; остальной блок на месте.
     node = bounty_node(analyze_node, priced(5.00, 1.50), seat4=5.0)
