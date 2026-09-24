@@ -264,7 +264,10 @@ def test_error_json_is_valid_utf8_on_subprocess_console():
     # том же процессе pytest. Русские сообщения об ошибках из движка
     # должны безопасно сериализоваться в JSON независимо от кодировки
     # консоли вызывающей стороны.
-    exe = Path(sys.executable).with_name("poker-engine.exe")
+    # Консольный скрипт лежит рядом с интерпретатором venv: на Windows —
+    # `poker-engine.exe`, на Linux и macOS — `poker-engine` без суффикса.
+    script = "poker-engine.exe" if sys.platform == "win32" else "poker-engine"
+    exe = Path(sys.executable).with_name(script)
     result = subprocess.run(
         [str(exe), "icm", "--stacks", "50", "--payouts", "100"],
         capture_output=True,
