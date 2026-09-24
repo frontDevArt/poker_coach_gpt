@@ -150,12 +150,14 @@ def test_interval_starting_below_place_one_is_rejected():
 def test_fractional_interval_bound_is_rejected():
     # Текст отличается от «номер места» в `prize`: там кривой запрос
     # пользователя, здесь — кривая строка лесенки, и путать их нечего.
+    # Гардов на этот текст два — на `first` и на `last`, — и различает их
+    # только значение, поэтому оно пинится вместе с текстом.
     with pytest.raises(
-        ValueError, match="номер места в выплатах должен быть целым"
+        ValueError, match="номер места в выплатах должен быть целым, получено 1.5$"
     ):
         PayoutLadder([(1.5, 3, 10.0)], places_paid=144)
     with pytest.raises(
-        ValueError, match="номер места в выплатах должен быть целым"
+        ValueError, match="номер места в выплатах должен быть целым, получено 2.5$"
     ):
         PayoutLadder([(1, 2.5, 10.0)], places_paid=144)
 
