@@ -1983,7 +1983,39 @@ git commit -m "feat(engine): PKO в разборе — ценники голов
 Здесь принимается простейшее прочтение: компенсация действует на всех местах хуже
 последнего оплачиваемого. Это допущение записывается в docstring и в журнал.
 
-- [ ] **Шаг 1: написать падающий тест**
+**Решения при реализации (Фаза 6, 2026-09-24).** Код и тесты ниже — набросок; источник
+истины — `handstate.py`, `analyze.py` и тесты. Против наброска принято:
+
+1. **D9 закрыт ответом пользователя** (2026-09-24, до реализации): возврат получает каждый,
+   кто вылетел вне денег (движок не знает, кто из живых ранняя пташка), на любом месте хуже
+   последнего оплачиваемого; открыта ли регистрация, не важно. Это ровно прочтение плана;
+   записано в docstring `TournamentContext.protected_ladder` и в README.
+2. **Удлинение — только когда ему есть куда встать:** возврат больше нуля и живых больше, чем
+   оплачиваемых мест. Набросок удлинял при любом ненулевом возврате, и на ITM
+   (`playersLeft <= placesPaid`) `PayoutLadder` падал бы на интервале `7–6`. Когда поправки нет,
+   нет ни пометки, ни блока, и ответ тот же, что без поля (пометка — только когда правда).
+3. **Удлинённая лесенка строится в `TournamentContext.protected_ladder`**, а не в `analyze`:
+   интервалы из `payouts` собирает один `_intervals()` для обеих лесенок.
+4. **Форма блока.** `bubbleProtection` = `refundUsd`, `places` (`from`/`to`) и
+   `riskPremiumWithoutRefund` — словарь той же формы, что `result["riskPremium"]`
+   (`riskPremium`, `bubbleFactor`). Тесты наброска сравнивали словарь `riskPremium` с числом
+   (`TypeError`) — переписаны на `["riskPremium"]["riskPremium"]`. Две риск-премии считает
+   общий `_pressure`. Без соперника блок без `riskPremiumWithoutRefund`; неопределённое давление
+   без возврата — ключа нет, `icm_pressure_undefined` — про основной расчёт.
+5. **`ladder_incomplete` и `bbValueUsd` — по лесенке лобби.** Возврат платит рум, а не фонд, и от
+   фишек он не зависит; пометка — про вход. Для `ladder_incomplete` это эквивалентно полноте
+   удлинённой (мутант эквивалентный).
+6. **Возврат больше минимального приза не отвергается** — противоречия в данных нет. Тогда
+   давление с возвратом может быть не определено (вылет выгоднее места в деньгах): пометка
+   `icm_pressure_undefined`, давление без возврата в блоке остаётся.
+7. **Сверх списка файлов:** README (вход, пометка, блок) и `test_handstate.py` (+5: разбор,
+   умолчание, мусор, NaN, ноль). Сверх плана в `test_analyze.py`: аналитический инвариант
+   «возврат c ≡ все оплачиваемые призы на c ниже плюс c на каждом месте» (эквити сдвигается
+   ровно на c, риск-премия и bubble factor те же), ITM, ноль, граница `playersLeft ==
+   placesPaid`, неполная и полная лесенка, без соперника, цена блайнда, возврат больше
+   минимального приза, подложенное неопределённое давление без возврата.
+
+- [x] **Шаг 1: написать падающий тест**
 
 Добавить в `tests/test_analyze.py`:
 
@@ -2027,19 +2059,19 @@ def test_a_negative_refund_is_rejected(run_analyze, analyze_context):
         run_analyze(context=bad)
 ```
 
-- [ ] **Шаг 2: убедиться, что тесты падают**
+- [x] **Шаг 2: убедиться, что тесты падают**
 
 Run: `.venv/Scripts/python -m pytest tests/test_analyze.py -k bubble -v`
 Expected: FAIL, `KeyError: 'bubbleProtection'`
 
-- [ ] **Шаг 3: поле в контексте**
+- [x] **Шаг 3: поле в контексте**
 
 В `handstate.py` добавить в `TournamentContext` поле `bubble_refund_usd: float | None`,
 в `context_from_dict` — `bubble_refund_usd=_as_optional_float(raw, "bubbleRefundUsd")`,
 в `_validate_context` — `check_non_negative(context.bubble_refund_usd, "возврат бай-ина")`
 под условием `is not None`.
 
-- [ ] **Шаг 4: удлинить лесенку в `analyze`**
+- [x] **Шаг 4: удлинить лесенку в `analyze`**
 
 ```python
     intervals = [(p.first, p.last, p.amount) for p in context.payouts]
@@ -2057,12 +2089,12 @@ Expected: FAIL, `KeyError: 'bubbleProtection'`
 Риск-премию без поправки считать по лесенке, построенной из исходных интервалов, и
 класть в `result["bubbleProtection"]`.
 
-- [ ] **Шаг 5: прогнать весь сьют**
+- [x] **Шаг 5: прогнать весь сьют**
 
 Run: `.venv/Scripts/python -m pytest`
-Expected: все зелёные.
+Expected: все зелёные. (Факт — 459 passed, журнал Фазы 6, D1.)
 
-- [ ] **Шаг 6: коммит**
+- [x] **Шаг 6: коммит**
 
 ```bash
 git add src/poker_engine/handstate.py src/poker_engine/analyze.py tests/test_analyze.py

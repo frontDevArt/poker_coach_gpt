@@ -650,3 +650,201 @@ def test_the_two_halves_of_equity_stay_separate(run_analyze, analyze_node):
     rich = run_analyze(node=bounty_node(analyze_node, priced(3.00, 3.00)))
     assert rich["icm"] == cheap["icm"]
     assert rich["bounty"]["knockoutCashUsd"] > cheap["bounty"]["knockoutCashUsd"]
+
+
+# --- защита на баббле (Задача 7) ---------------------------------------------
+#
+# Бабл: девять живых на шесть оплачиваемых мест, лесенка фикстуры покрывает
+# места 1-6 целиком. Возврат бай-ина — приз за места 7-9.
+
+def bubble_context(base, refund=None):
+    """Контекст фикстуры на баббле: `placesPaid=6`, возврат — если передан."""
+    context = copy.deepcopy(base)
+    context["placesPaid"] = 6
+    if refund is not None:
+        context["bubbleRefundUsd"] = refund
+    return context
+
+
+def test_bubble_protection_is_absent_by_default(analyze_base_result):
+    assert "bubble_protection" not in analyze_base_result["flags"]
+    assert "bubbleProtection" not in analyze_base_result
+
+
+def test_a_refund_softens_the_ladder_pressure(run_analyze, analyze_context):
+    without = run_analyze(context=bubble_context(analyze_context), playersLeft=9, heroRank=9)
+    with_refund = run_analyze(
+        context=bubble_context(analyze_context, 6.60), playersLeft=9, heroRank=9
+    )
+    assert "bubble_protection" in with_refund["flags"]
+    assert "bubble_protection" not in without["flags"]
+    assert (
+        with_refund["riskPremium"]["riskPremium"] < without["riskPremium"]["riskPremium"]
+    )
+    assert (
+        with_refund["riskPremium"]["bubbleFactor"] < without["riskPremium"]["bubbleFactor"]
+    )
+
+
+def test_both_risk_premiums_are_reported(run_analyze, analyze_context):
+    without = run_analyze(context=bubble_context(analyze_context), playersLeft=9, heroRank=9)
+    result = run_analyze(
+        context=bubble_context(analyze_context, 6.60), playersLeft=9, heroRank=9
+    )
+    block = result["bubbleProtection"]
+    assert block["refundUsd"] == pytest.approx(6.60)
+    assert block["places"] == {"from": 7, "to": 9}
+    assert block["riskPremiumWithoutRefund"] == without["riskPremium"]
+    assert block["riskPremiumWithoutRefund"]["riskPremium"] > (
+        result["riskPremium"]["riskPremium"]
+    )
+
+
+def test_a_refund_is_the_same_as_every_paid_prize_lowered_by_it(
+    run_analyze, analyze_context
+):
+    # Возврат c платят все места хуже оплачиваемых. Это та же лесенка, что
+    # «все оплачиваемые призы на c ниже, вылет — ноль», плюс c на каждом
+    # месте: каждый игрок где-то финиширует, поэтому эквити каждого сдвигается
+    # ровно на c, а риск-премия и bubble factor — разности эквити — не
+    # меняются.
+    refund = 6.60
+    lowered = bubble_context(analyze_context)
+    for payout in lowered["payouts"]:
+        payout["amount"] -= refund
+    shifted = run_analyze(context=lowered, playersLeft=9, heroRank=9)
+    protected = run_analyze(
+        context=bubble_context(analyze_context, refund), playersLeft=9, heroRank=9
+    )
+    assert protected["icm"]["heroEquity"] == pytest.approx(
+        shifted["icm"]["heroEquity"] + refund
+    )
+    assert protected["riskPremium"]["riskPremium"] == pytest.approx(
+        shifted["riskPremium"]["riskPremium"]
+    )
+    assert protected["riskPremium"]["bubbleFactor"] == pytest.approx(
+        shifted["riskPremium"]["bubbleFactor"]
+    )
+
+
+def test_no_protection_once_everyone_left_is_in_the_money(run_analyze, analyze_context):
+    # Шестеро живых на 165 оплачиваемых: вылет на баббле уже невозможен,
+    # поправке некуда встать — ни пометки, ни блока, числа как без возврата.
+    protected = copy.deepcopy(analyze_context)
+    protected["bubbleRefundUsd"] = 6.60
+    result = run_analyze(context=protected)
+    assert result == run_analyze()
+
+
+def test_a_zero_refund_changes_nothing(run_analyze, analyze_context):
+    context = bubble_context(analyze_context, 0.0)
+    result = run_analyze(context=context, playersLeft=9, heroRank=9)
+    assert result == run_analyze(
+        context=bubble_context(analyze_context), playersLeft=9, heroRank=9
+    )
+
+
+def test_the_refund_does_not_fake_a_complete_ladder(run_analyze, analyze_context):
+    # Лобби описывает места 1-6 из 165: удлинение до 496 живых закрывает
+    # места 166-496, но дыра 7-165 остаётся, и пометка обязана остаться.
+    protected = copy.deepcopy(analyze_context)
+    protected["bubbleRefundUsd"] = 6.60
+    result = run_analyze(context=protected, playersLeft=496, heroRank=90)
+    assert "bubble_protection" in result["flags"]
+    assert "ladder_incomplete" in result["flags"]
+    assert result["bubbleProtection"]["places"] == {"from": 166, "to": 496}
+
+
+def test_a_refund_on_a_complete_ladder_is_not_an_incomplete_one(
+    run_analyze, analyze_context
+):
+    result = run_analyze(
+        context=bubble_context(analyze_context, 6.60), playersLeft=9, heroRank=9
+    )
+    assert "ladder_incomplete" not in result["flags"]
+
+
+def test_protection_without_a_villain_has_no_pressure_to_compare(
+    run_analyze, analyze_context, analyze_node
+):
+    node = copy.deepcopy(analyze_node)
+    for seat in node["seats"]:
+        seat["inHand"] = seat["isHero"]
+    result = run_analyze(
+        context=bubble_context(analyze_context, 6.60), node=node, playersLeft=9, heroRank=9
+    )
+    assert "bubble_protection" in result["flags"]
+    assert result["bubbleProtection"] == {
+        "refundUsd": pytest.approx(6.60),
+        "places": {"from": 7, "to": 9},
+    }
+
+
+def test_the_refund_does_not_enter_the_price_of_a_blind(
+    run_analyze, analyze_context, analyze_node
+):
+    # Возврат платит рум, а не фонд, и от фишек он не зависит: цена блайнда
+    # в PKO считается по призам лобби.
+    node = bounty_node(analyze_node, priced(1.50, 1.50))
+    plain = run_analyze(
+        context=bubble_context(analyze_context), node=node, playersLeft=9, heroRank=9
+    )
+    protected = run_analyze(
+        context=bubble_context(analyze_context, 6.60), node=node, playersLeft=9, heroRank=9
+    )
+    assert protected["bounty"] == plain["bounty"]
+
+
+def test_a_negative_refund_is_rejected(run_analyze, analyze_context):
+    bad = copy.deepcopy(analyze_context)
+    bad["bubbleRefundUsd"] = -1.0
+    with pytest.raises(
+        ValueError, match="^возврат бай-ина не может быть отрицательным: -1.0$"
+    ):
+        run_analyze(context=bad)
+
+
+def test_no_protection_when_everyone_left_is_paid_exactly(run_analyze, analyze_context):
+    # Граница: живых ровно столько, сколько оплачиваемых мест, — вылет вне
+    # денег уже невозможен, удлинять лесенку некуда.
+    context = bubble_context(analyze_context, 6.60)
+    result = run_analyze(context=context)
+    assert "bubble_protection" not in result["flags"]
+    assert result == run_analyze(context=bubble_context(analyze_context))
+
+
+def test_a_refund_above_the_min_cash_leaves_only_the_plain_pressure(
+    run_analyze, analyze_context
+):
+    # Все шесть мест платят по $5, возврат $6.60 больше: с возвратом вылет
+    # выгоднее, чем место в деньгах, выигрыш олл-ина не прибавляет эквити, и
+    # давление не определено. Без возврата лесенка обычная — её давление
+    # в блоке есть, а пометка остаётся про основной расчёт.
+    context = bubble_context(analyze_context, 6.60)
+    context["payouts"] = [{"from": 1, "to": 6, "amount": 5.0}]
+    result = run_analyze(context=context, playersLeft=9, heroRank=9)
+    assert "icm_pressure_undefined" in result["flags"]
+    assert "riskPremium" not in result
+    assert result["bubbleProtection"]["riskPremiumWithoutRefund"]["bubbleFactor"] > 1.0
+
+
+def test_undefined_pressure_without_the_refund_drops_only_its_key(
+    run_analyze, analyze_context, monkeypatch
+):
+    # Входа, где давление не определено без возврата, а с ним определено,
+    # тут не построено, поэтому отказ подложен: только для лесенки лобби
+    # (6 оплачиваемых мест против 9 у удлинённой).
+    real = analyze_module.risk_premium
+
+    def undefined_on_the_lobby_ladder(table, field_count, field_stack, ladder, *seats):
+        if ladder.places_paid == 6:
+            raise analyze_module.PressureUndefined("подложено")
+        return real(table, field_count, field_stack, ladder, *seats)
+
+    monkeypatch.setattr(analyze_module, "risk_premium", undefined_on_the_lobby_ladder)
+    result = run_analyze(
+        context=bubble_context(analyze_context, 6.60), playersLeft=9, heroRank=9
+    )
+    assert "icm_pressure_undefined" not in result["flags"]
+    assert "riskPremium" in result
+    assert "riskPremiumWithoutRefund" not in result["bubbleProtection"]

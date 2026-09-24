@@ -950,3 +950,38 @@ def test_the_missing_hero_price_is_named_before_a_missing_rival_price():
     prices = {2: 1.50}
     with pytest.raises(ValueError, match="ценник героя не прочитан"):
         _validate([_node(seats=_priced_seats(prices))])
+
+
+# --- защита на баббле (план 3, Задача 7) -------------------------------------
+
+
+def test_a_bubble_refund_defaults_to_none():
+    assert context_from_dict(CONTEXT).bubble_refund_usd is None
+
+
+def test_a_bubble_refund_is_read_from_the_context():
+    protected = dict(CONTEXT)
+    protected["bubbleRefundUsd"] = 6.60
+    assert context_from_dict(protected).bubble_refund_usd == 6.60
+
+
+def test_garbage_bubble_refund_is_rejected():
+    broken = dict(CONTEXT)
+    broken["bubbleRefundUsd"] = "n/a"
+    with pytest.raises(
+        ValueError, match=re.escape("поле 'bubbleRefundUsd' должно быть числом")
+    ):
+        context_from_dict(broken)
+
+
+def test_a_nan_bubble_refund_is_rejected():
+    broken = dict(CONTEXT)
+    broken["bubbleRefundUsd"] = float("nan")
+    with pytest.raises(ValueError, match="^возврат бай-ина не может быть нечислом: nan$"):
+        validate_hand(context_from_dict(broken), [node_from_dict(_node())])
+
+
+def test_a_zero_bubble_refund_is_accepted():
+    quiet = dict(CONTEXT)
+    quiet["bubbleRefundUsd"] = 0.0
+    validate_hand(context_from_dict(quiet), [node_from_dict(_node())])

@@ -81,6 +81,14 @@ def analyze(
     Уже взятые баунти в расчёт не входят никогда: они на балансе. Без
     ценников `bounty.py` не вызывается вовсе.
 
+    Защита на баббле (`bubbleRefundUsd` в контексте) — возврат бай-ина за
+    вылет вне денег — входит в ICM призом за места `placesPaid + 1 ..
+    playersLeft` (`TournamentContext.protected_ladder`, там же допущение о
+    границах бабла). Применена — пометка `bubble_protection` и блок
+    `bubbleProtection`: размер возврата, места, которым он платится, и
+    риск-премия без него. `ladder_incomplete` и цена блайнда в блоке
+    `bounty` считаются по лесенке лобби: возврат платит рум, а не фонд.
+
     Известное ограничение: соперник в олл-ине (стек 0 BB) разбору не
     поддаётся — раздача отвергается сообщением про стек на его месте
     (`seatIndex`, как на скриншоте). Как учитывать уже вложенные в банк
@@ -138,7 +146,12 @@ def analyze(
         check_positive(seat.stack_bb, f"стек на месте {seat.seat_index}")
     table = [seat.stack_bb for seat in seats]
 
-    ladder = context.ladder()
+    # `prizes` — лесенка лобби; `ladder` — та, по которой считается ICM: с
+    # защитой на баббле это `prizes`, удлинённая возвратом бай-ина за места
+    # вне денег (`TournamentContext.protected_ladder`).
+    prizes = context.ladder()
+    protected = context.protected_ladder(node.players_left)
+    ladder = prizes if protected is None else protected
     field_count = node.players_left - len(table)
     field_stack = _field_stack(node, context, table, field_count)
 
@@ -155,12 +168,22 @@ def analyze(
     result["flags"].append("mh_bias")
     if field_count > 0:
         result["flags"].append("field_homogeneous")
-    if not ladder.is_complete:
+    # Полнота — о лесенке лобби. По значению это то же, что полнота
+    # удлинённой (интервал возврата покрывает ровно места, на которые
+    # удлинена зона, и дыру внутри призовой зоны не закрывает), но пометка
+    # про вход и читается по входу.
+    if not prizes.is_complete:
         result["flags"].append("ladder_incomplete")
     if context.late_reg_open:
         result["flags"].append("late_reg_open")
     if node.street == "preflop":
         result["flags"].append("no_pushfold")
+    if protected is not None:
+        result["flags"].append("bubble_protection")
+        result["bubbleProtection"] = {
+            "refundUsd": context.bubble_refund_usd,
+            "places": {"from": context.places_paid + 1, "to": node.players_left},
+        }
     is_pko = any(seat.bounty_usd is not None for seat in seats)
     if is_pko:
         result["flags"].append("pko")
@@ -181,20 +204,26 @@ def analyze(
     # `PressureUndefined`: прочие отказы этих функций — ошибки вызова, и
     # под пометкой они бы спрятались (долг D4).
     try:
-        result["riskPremium"] = {
-            "riskPremium": risk_premium(
-                table, field_count, field_stack, ladder, hero_index, villain_index
-            ),
-            "bubbleFactor": bubble_factor(
-                table, field_count, field_stack, ladder, hero_index, villain_index
-            ),
-        }
+        result["riskPremium"] = _pressure(
+            table, field_count, field_stack, ladder, hero_index, villain_index
+        )
     except PressureUndefined:
         result["flags"].append("icm_pressure_undefined")
+    # Обе риск-премии — с возвратом и без: пользователь обязан видеть, что
+    # именно смягчило давление (спека §6). Неопределённое давление без
+    # возврата — то же свойство лесенки, что и в основном расчёте: ключа
+    # тогда нет, а пометка `icm_pressure_undefined` остаётся про основной.
+    if protected is not None:
+        try:
+            result["bubbleProtection"]["riskPremiumWithoutRefund"] = _pressure(
+                table, field_count, field_stack, prizes, hero_index, villain_index
+            )
+        except PressureUndefined:
+            pass
 
     if is_pko:
         result["bounty"] = _bounty_block(
-            node, hero, villain, ladder, sum(table) + field_count * field_stack
+            node, hero, villain, prizes, sum(table) + field_count * field_stack
         )
 
     combos, used_default = range_for_vpip(villain.vpip, villain.vpip_hands)
@@ -239,6 +268,25 @@ def _field_stack(
     return chips / field_count
 
 
+def _pressure(
+    table: list[float],
+    field_count: int,
+    field_stack: float,
+    ladder: PayoutLadder,
+    hero: int,
+    villain: int,
+) -> dict:
+    """Риск-премия и bubble factor героя против соперника на лесенке `ladder`."""
+    return {
+        "riskPremium": risk_premium(
+            table, field_count, field_stack, ladder, hero, villain
+        ),
+        "bubbleFactor": bubble_factor(
+            table, field_count, field_stack, ladder, hero, villain
+        ),
+    }
+
+
 def _bounty_block(
     node: DecisionNode,
     hero: Seat,
@@ -255,7 +303,9 @@ def _bounty_block(
     `bbValueUsd` — доллары за большой блайнд: деньги, которые ещё
     разыгрываются, делённые на фишки в игре. Разыгрываются призы мест
     `1..playersLeft` — те, что глубже, уже вручены выбывшим, и сумма всей
-    лесенки на глубоком ITM завысила бы цену блайнда. Фишки в игре — стол
+    лесенки на глубоком ITM завысила бы цену блайнда. `ladder` — лесенка
+    лобби, без возврата бай-ина на баббле: он не из фонда и от фишек не
+    зависит. Фишки в игре — стол
     плюс поле ровно в той модели, по которой считан ICM. Если лесенка не
     знает ни одного приза в пределах `playersLeft`, цену блайнда считать
     нечем, и ключей `bbValueUsd` и `requiredEquityWithBounty` нет.

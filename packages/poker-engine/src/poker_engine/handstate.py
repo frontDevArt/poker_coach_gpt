@@ -115,13 +115,43 @@ class TournamentContext:
     # населить поле вне стола (`analyze._field_stack`), и на финальном
     # столе требовать его означало бы требовать число ни для чего.
     average_stack_bb: float | None
+    # Защита на баббле GG («ранняя пташка»): бай-ин, который рум вернёт
+    # вылетевшему на баббле. `None` — защиты нет. Как она входит в модель —
+    # `protected_ladder`.
+    bubble_refund_usd: float | None
 
     def ladder(self) -> PayoutLadder:
         """Лесенка выплат контекста. Её гарды — у `PayoutLadder`."""
+        return PayoutLadder(self._intervals(), places_paid=self.places_paid)
+
+    def protected_ladder(self, players_left: int) -> PayoutLadder | None:
+        """Лесенка с возвратом бай-ина как призом за места вне денег.
+
+        Возврат — приз за места `places_paid + 1 .. players_left`: лесенка
+        удлиняется одним интервалом, и модель ICM учитывает его сама, без
+        отдельного расчёта (спека плана 3, §6).
+
+        Допущение о границах бабла (спека §11.2, долг D9; подтверждено
+        пользователем 2026-09-24): возврат получает каждый, кто вылетел на
+        любом месте хуже последнего оплачиваемого, пока живых больше, чем
+        оплачиваемых мест; открыта ли регистрация, не важно. Кто из живых
+        ранняя пташка, движок не знает — возврат считается у всех.
+
+        `None`, когда поправке некуда встать: возврата нет, он нулевой или
+        живых не больше, чем оплачиваемых мест (вылет вне денег уже
+        невозможен). Возврат больше самого низкого приза не отвергается:
+        противоречия в данных тут нет — возврат платит рум, а не фонд.
+        """
+        refund = self.bubble_refund_usd
+        if not refund or players_left <= self.places_paid:
+            return None
         return PayoutLadder(
-            [(payout.first, payout.last, payout.amount) for payout in self.payouts],
-            places_paid=self.places_paid,
+            [*self._intervals(), (self.places_paid + 1, players_left, refund)],
+            places_paid=players_left,
         )
+
+    def _intervals(self) -> list[tuple[int, int, float]]:
+        return [(payout.first, payout.last, payout.amount) for payout in self.payouts]
 
 
 def _present(raw, key: str) -> bool:
@@ -287,6 +317,7 @@ def context_from_dict(raw: dict) -> TournamentContext:
         late_reg_open=_as_bool(raw, "lateRegOpen"),
         seats_per_table=_as_int(raw, "seatsPerTable"),
         average_stack_bb=_as_optional_float(raw, "averageStackBb"),
+        bubble_refund_usd=_as_optional_float(raw, "bubbleRefundUsd"),
     )
 
 
@@ -403,6 +434,8 @@ def _validate_context(context: TournamentContext) -> None:
     # кто поле населяет. Здесь проверяется только переданное значение.
     if context.average_stack_bb is not None:
         check_positive(context.average_stack_bb, "средний стек")
+    if context.bubble_refund_usd is not None:
+        check_non_negative(context.bubble_refund_usd, "возврат бай-ина")
 
 
 def _validate_node(node: DecisionNode) -> None:
