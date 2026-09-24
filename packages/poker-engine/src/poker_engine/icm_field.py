@@ -28,16 +28,31 @@
 
 from __future__ import annotations
 
+import math
+
 from ._checks import check_integer, check_non_negative, check_positive
 from .ladder import PayoutLadder
 
-__all__ = ["MAX_TABLE_SEATS", "table_equities"]
+__all__ = [
+    "MAX_TABLE_SEATS",
+    "bubble_factor",
+    "hero_equity",
+    "risk_premium",
+    "table_equities",
+]
 
 # Стоимость растёт как 2^t. Замеры прототипа на этой машине: 8 мест —
 # 0.23 с, 9 — 0.53 с, 10 — 1.18 с за вызов. Одиннадцать не оставляют
 # места под бюджет двух секунд на весь разбор, поэтому потолок здесь.
 # Это единственный предел в расчётном пути ICM.
 MAX_TABLE_SEATS = 10
+
+# Порог безубыточности олл-ина в фишках. При двустороннем олл-ине на
+# эффективный стек `e` герой со стеком `s` выигрывает `e` и проигрывает
+# `e`: порог `(s − (s − e)) / ((s + e) − (s − e)) = e / 2e` тождественно
+# равен 1/2. `icm.py` вычислял это выражение каждый раз; здесь оно
+# записано константой, чтобы не делать вид, что оно от чего-то зависит.
+_CHIP_THRESHOLD = 0.5
 
 
 def table_equities(
@@ -139,3 +154,145 @@ def _validate(table: list[float], field_count: int, field_stack: float) -> None:
     check_non_negative(field_count, "размер поля")
     if field_count > 0:
         check_positive(field_stack, "стек игрока поля")
+
+
+def hero_equity(
+    table: list[float],
+    field_count: int,
+    field_stack: float,
+    ladder: PayoutLadder,
+    hero: int,
+) -> float:
+    """ICM-эквити одного места за столом."""
+    _check_seat(table, hero, "hero")
+    seats, _ = table_equities(table, field_count, field_stack, ladder)
+    return seats[hero]
+
+
+def risk_premium(
+    table: list[float],
+    field_count: int,
+    field_stack: float,
+    ladder: PayoutLadder,
+    hero: int,
+    villain: int,
+) -> float:
+    """Насколько выше должно быть эквити героя из-за денежной лесенки.
+
+    Разница между порогом безубыточности в деньгах и в фишках.
+    Ноль при winner-take-all, положительно при лесенке выплат.
+    """
+    now, win, lose = _branches(table, field_count, field_stack, ladder, hero, villain)
+    if math.isclose(win, lose, abs_tol=1e-9):
+        # Плоская лесенка выплат (сателлиты): win и lose равны математически,
+        # но приходят к значению разными ветвями перебора и расходятся на
+        # ~1e-15 — точное сравнение (win == lose) это пропускает.
+        # Если деньги реально на кону (now != 0), лесенка не давит и risk
+        # premium определён — ровно 0. Если все достижимые места стоят
+        # ноль, деньги не на кону вовсе, и это остаётся неопределённым.
+        if not math.isclose(now, 0.0, abs_tol=1e-9):
+            return 0.0
+        raise ValueError(
+            "исход олл-ина не меняет ICM-эквити героя, risk premium не определён"
+        )
+    money_threshold = (now - lose) / (win - lose)
+    return money_threshold - _CHIP_THRESHOLD
+
+
+def bubble_factor(
+    table: list[float],
+    field_count: int,
+    field_stack: float,
+    ladder: PayoutLadder,
+    hero: int,
+    villain: int,
+) -> float:
+    """Во сколько раз проигрыш дороже выигрыша в деньгах против фишек.
+
+    1.0 — денежная лесенка не давит (winner-take-all).
+    Больше 1.0 — герой рискует деньгами сильнее, чем фишками.
+    """
+    now, win, lose = _branches(table, field_count, field_stack, ladder, hero, villain)
+    if math.isclose(win, now, abs_tol=1e-9) and not math.isclose(now, 0.0, abs_tol=1e-9):
+        # Плоская лесенка (сателлиты): win и now совпадают математически,
+        # но расходятся на ~1e-15 — без допуска это ловится как
+        # money_up <= 0. Деньги при этом на кону (now != 0), давления нет,
+        # bubble factor определён — ровно 1.0.
+        return 1.0
+    money_up = win - now
+    if money_up <= 0 or math.isclose(money_up, 0.0, abs_tol=1e-9):
+        raise ValueError("выигрыш не увеличивает ICM-эквити, bubble factor не определён")
+    # Фишковое отношение (проигранное к выигранному) тождественно равно 1:
+    # при двустороннем олл-ине на кону одинаковые фишки в обе стороны.
+    # `icm.py` делил на него явно; здесь деление на единицу опущено.
+    return (now - lose) / money_up
+
+
+def _branches(
+    table: list[float],
+    field_count: int,
+    field_stack: float,
+    ladder: PayoutLadder,
+    hero: int,
+    villain: int,
+) -> tuple[float, float, float]:
+    """Эквити героя сейчас, после выигрыша и после проигрыша олл-ина.
+
+    Гарды и их порядок — как в `icm._icm_branches`: места, различие,
+    эффективный стек, и только потом гарды `table_equities`. Поэтому
+    соперник со стеком 0 получает текст про эффективный стек, а не про
+    стек места.
+    """
+    _check_seat(table, hero, "hero")
+    _check_seat(table, villain, "villain")
+    if hero == villain:
+        raise ValueError("hero и villain должны различаться")
+    stake = min(table[hero], table[villain])
+    if stake <= 0:
+        raise ValueError("эффективный стек равен нулю")
+
+    now = table_equities(table, field_count, field_stack, ladder)[0][hero]
+
+    won = list(table)
+    won[hero] += stake
+    won[villain] -= stake
+    win = _equity_after(won, field_count, field_stack, ladder, hero)
+
+    lost = list(table)
+    lost[hero] -= stake
+    lost[villain] += stake
+    lose = _equity_after(lost, field_count, field_stack, ladder, hero)
+
+    return now, win, lose
+
+
+def _equity_after(
+    table: list[float],
+    field_count: int,
+    field_stack: float,
+    ladder: PayoutLadder,
+    hero: int,
+) -> float:
+    """Эквити героя после олл-ина, в котором один из двоих мог вылететь.
+
+    Место в этой модели абсолютное, поэтому лесенку сдвигать не нужно (в
+    отличие от `icm._equity_with_busts`, индексировавшего выплаты позицией
+    среди выживших). Вылетевший занимает последнее место среди всех, кто
+    ещё в турнире, а места выше не меняются: достаточно убрать его со стола
+    и посчитать заново. `min` в `_branches` возвращает один из двух стеков
+    как есть, поэтому вылетевший получает ровно ноль, без погрешности.
+    """
+    if table[hero] <= 0:
+        # Живые — остальные за столом, всё поле и сам герой: его место
+        # последнее из них.
+        alive = sum(1 for stack in table if stack > 0)
+        return ladder.prize(alive + field_count + 1)
+    seats = [index for index, stack in enumerate(table) if stack > 0]
+    shrunk = [table[index] for index in seats]
+    equities, _ = table_equities(shrunk, field_count, field_stack, ladder)
+    return equities[seats.index(hero)]
+
+
+def _check_seat(table: list[float], seat: int, name: str) -> None:
+    if not 0 <= seat < len(table):
+        raise ValueError(f"{name}={seat} вне диапазона игроков [0, {len(table) - 1}]")
