@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 from ._checks import check_positive
+from .bounty import knockout_cash, own_bounty_growth, required_equity_with_bounty
 from .equity import equity_vs_range
 from .handstate import (
     DecisionNode,
@@ -29,6 +30,7 @@ from .handstate import (
     validate_hand,
 )
 from .icm_field import PressureUndefined, bubble_factor, hero_equity, risk_premium
+from .ladder import PayoutLadder
 from .potodds import required_equity
 from .profiles import range_for_vpip
 
@@ -70,6 +72,14 @@ def analyze(
     `playersLeft`. Места глубже уже вручены выбывшим и в расчёт не входят,
     и на финальном столе с выплатами за места 1–6 из 165 число точное, а
     пометка всё равно стоит.
+
+    PKO узнаётся по ценникам голов (`Seat.bounty_usd`), а не по настройке:
+    есть хоть один — пометка `pko`, и при определённом сопернике ответ
+    получает блок `bounty`. Он лежит отдельно от `icm` и ни с чем не
+    складывается: деньги лесенки и деньги голов — два разных куска, и
+    пользователь обязан видеть, что тянет решение (спека плана 3, §8.2).
+    Уже взятые баунти в расчёт не входят никогда: они на балансе. Без
+    ценников `bounty.py` не вызывается вовсе.
 
     Известное ограничение: соперник в олл-ине (стек 0 BB) разбору не
     поддаётся — раздача отвергается сообщением про стек на его месте
@@ -151,6 +161,9 @@ def analyze(
         result["flags"].append("late_reg_open")
     if node.street == "preflop":
         result["flags"].append("no_pushfold")
+    is_pko = any(seat.bounty_usd is not None for seat in seats)
+    if is_pko:
+        result["flags"].append("pko")
 
     if node.to_call_bb > 0:
         result["requiredEquity"] = required_equity(node.pot_bb, node.to_call_bb)
@@ -178,6 +191,11 @@ def analyze(
         }
     except PressureUndefined:
         result["flags"].append("icm_pressure_undefined")
+
+    if is_pko:
+        result["bounty"] = _bounty_block(
+            node, hero, villain, ladder, sum(table) + field_count * field_stack
+        )
 
     combos, used_default = range_for_vpip(villain.vpip, villain.vpip_hands)
     shares = equity_vs_range(
@@ -219,6 +237,65 @@ def _field_stack(
             "на остальное поле не остаётся фишек"
         )
     return chips / field_count
+
+
+def _bounty_block(
+    node: DecisionNode,
+    hero: Seat,
+    villain: Seat,
+    ladder: PayoutLadder,
+    chips_in_play: float,
+) -> dict:
+    """Головы PKO: что можно выиграть и что потерять в этой раздаче.
+
+    Ценники обоим гарантирует `handstate`: в PKO он обязателен у героя и у
+    каждого в раздаче. Наличные за нокаут — показанный ценник соперника
+    целиком (`bounty.py`, спека §5.2).
+
+    `bbValueUsd` — доллары за большой блайнд: деньги, которые ещё
+    разыгрываются, делённые на фишки в игре. Разыгрываются призы мест
+    `1..playersLeft` — те, что глубже, уже вручены выбывшим, и сумма всей
+    лесенки на глубоком ITM завысила бы цену блайнда. Фишки в игре — стол
+    плюс поле ровно в той модели, по которой считан ICM. Если лесенка не
+    знает ни одного приза в пределах `playersLeft`, цену блайнда считать
+    нечем, и ключей `bbValueUsd` и `requiredEquityWithBounty` нет.
+
+    Голова засчитывается в порог, только если нокаут в этой раздаче
+    возможен: колл героя накрывает остаток соперника (правило
+    `required_equity_with_bounty`) и у героя фишек не меньше, чем у
+    соперника вместе с вложенным. Иначе порог — обычный пот-оддс.
+    Колл против олл-ина (остаток 0 BB) пока до сюда не доходит —
+    ограничение ICM, см. docstring `analyze`.
+    """
+    block: dict = {
+        "villainPriceUsd": villain.bounty_usd,
+        "knockoutCashUsd": knockout_cash(villain.bounty_usd),
+        "ownPriceGrowthUsd": own_bounty_growth(villain.bounty_usd),
+        "heroPriceAtRiskUsd": hero.bounty_usd,
+    }
+    in_play = min(node.players_left, ladder.places_paid)
+    money_in_play = sum(ladder.prize(place) for place in range(1, in_play + 1))
+    if money_in_play <= 0:
+        return block
+    bb_value = money_in_play / chips_in_play
+    block["bbValueUsd"] = bb_value
+    if node.to_call_bb > 0:
+        can_bust = (
+            hero.stack_bb + hero.invested_bb
+            >= villain.stack_bb + villain.invested_bb
+        )
+        block["requiredEquityWithBounty"] = (
+            required_equity_with_bounty(
+                node.pot_bb,
+                node.to_call_bb,
+                villain.stack_bb,
+                villain.bounty_usd,
+                bb_value,
+            )
+            if can_bust
+            else required_equity(node.pot_bb, node.to_call_bb)
+        )
+    return block
 
 
 def _pick_villain(node: DecisionNode) -> Seat | None:

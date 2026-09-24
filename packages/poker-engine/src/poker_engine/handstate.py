@@ -38,6 +38,10 @@ class Seat:
     когда клиент бейдж не показал. `invested_bb` — уже вложенное этим местом
     в текущую улицу; `DecisionNode.pot_bb` (см. ниже) подразумевается уже
     учитывающим эти вложения, отдельно они к банку не прибавляются.
+
+    `bounty_usd` — ценник головы PKO, как показан над игроком: наличные,
+    которые получит выбивший (`bounty.py`). `None` — ценника на экране нет;
+    ни одного ценника за столом — классический турнир.
     """
 
     seat_index: int
@@ -48,6 +52,7 @@ class Seat:
     is_hero: bool
     vpip: float | None
     vpip_hands: int | None
+    bounty_usd: float | None
 
 
 @dataclass(frozen=True)
@@ -296,6 +301,7 @@ def node_from_dict(raw: dict) -> DecisionNode:
             is_hero=_as_optional_bool(entry, "isHero"),
             vpip=_as_optional_float(entry, "vpip"),
             vpip_hands=_as_optional_int(entry, "vpipHands"),
+            bounty_usd=_as_optional_float(entry, "bountyUsd"),
         )
         for entry in _as_list(raw, "seats")
     ]
@@ -431,6 +437,8 @@ def _validate_node(node: DecisionNode) -> None:
         # расчёта перед отказом. Правило одно на пакет — в `profiles`.
         check_vpip(seat.vpip, seat.vpip_hands)
 
+    _validate_prices(node)
+
     check_positive(node.pot_bb, "банк")
     check_non_negative(node.to_call_bb, "размер колла")
     if node.raise_to_bb is not None and node.raise_to_bb <= node.to_call_bb:
@@ -459,6 +467,34 @@ def _validate_node(node: DecisionNode) -> None:
             raise ValueError(f"неизвестная карта: {card!r}")
     if len(set(cards)) != len(cards):
         raise ValueError(f"карта встречается дважды: {sorted(cards)}")
+
+
+def _validate_prices(node: DecisionNode) -> None:
+    """Ценники голов PKO: признак турнира — их наличие (спека плана 3, §5.1).
+
+    Сначала мусор в прочитанном, потом пропуски. Ценник обязателен у
+    героя — без него неизвестно, что он теряет при вылете, — и у каждого,
+    кто в раздаче: без ценника соперника порог колла посчитался бы без
+    головы, и наружу ушло бы правдоподобное неверное число вместо отказа.
+    Сфолдившему ценник не нужен: в этой раздаче он не выбывает и не
+    выбивает.
+    """
+    priced = [seat for seat in node.seats if seat.bounty_usd is not None]
+    for seat in priced:
+        check_non_negative(seat.bounty_usd, f"ценник на месте {seat.seat_index}")
+    if not priced:
+        return
+    if node.hero.bounty_usd is None:
+        raise ValueError(
+            "у соперников есть ценники голов, а ценник героя не прочитан: "
+            "без него неизвестно, что герой теряет при вылете"
+        )
+    for seat in node.seats:
+        if seat.in_hand and seat.bounty_usd is None:
+            raise ValueError(
+                f"ценник на месте {seat.seat_index} не прочитан, а у других мест "
+                "он есть: без него неизвестно, чего стоит нокаут"
+            )
 
 
 def _validate_transition(earlier: DecisionNode, later: DecisionNode) -> None:

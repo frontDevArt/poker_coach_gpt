@@ -858,3 +858,95 @@ def test_a_payout_that_is_not_an_object_is_rejected_by_shape():
     broken["payouts"] = [5]
     with pytest.raises(ValueError, match=re.escape("ожидался объект с полем 'from'")):
         context_from_dict(broken)
+
+
+# --- ценники голов PKO (план 3, Задача 6) ------------------------------------
+
+
+def _priced_seats(prices):
+    """Места базового узла с ценниками: `prices` — `seatIndex -> доллары`."""
+    seats = _node()["seats"]
+    for seat in seats:
+        seat["bountyUsd"] = prices.get(seat["seatIndex"])
+    return seats
+
+
+def test_a_price_defaults_to_none_when_absent_or_null():
+    seats = _node()["seats"]
+    seats[3]["bountyUsd"] = None
+    node = node_from_dict(_node(seats=seats))
+    assert node.seats[3].bounty_usd is None
+    assert node.seats[4].bounty_usd is None
+
+
+def test_a_price_is_read_from_the_seat():
+    node = node_from_dict(_node(seats=_priced_seats({4: 2.25, 7: 1.50})))
+    assert node.seats[4].bounty_usd == 2.25
+    assert node.seats[7].bounty_usd == 1.50
+
+
+def test_garbage_price_is_rejected():
+    seats = _node()["seats"]
+    seats[4]["bountyUsd"] = "n/a"
+    with pytest.raises(ValueError, match=re.escape("поле 'bountyUsd' должно быть числом")):
+        node_from_dict(_node(seats=seats))
+
+
+def test_a_table_where_everyone_in_hand_has_a_price_passes():
+    # Вне раздачи ценник не нужен: сфолдивший не выбывает и не выбивает.
+    everyone_in_hand = {index: 1.50 for index in range(8)}
+    _validate([_node(seats=_priced_seats(everyone_in_hand))])
+    seats = _priced_seats(everyone_in_hand)
+    for seat in seats:
+        seat["inHand"] = seat["seatIndex"] in (4, 7)
+        if not seat["inHand"]:
+            seat["bountyUsd"] = None
+    _validate([_node(seats=seats)])
+
+
+def test_a_negative_price_is_rejected():
+    everyone = {index: 1.50 for index in range(8)}
+    everyone[2] = -0.5
+    with pytest.raises(
+        ValueError, match="^ценник на месте 2 не может быть отрицательным: -0.5$"
+    ):
+        _validate([_node(seats=_priced_seats(everyone))])
+
+
+def test_a_price_on_a_rival_without_one_on_the_hero_is_rejected():
+    everyone_but_hero = {index: 1.50 for index in range(7)}
+    with pytest.raises(
+        ValueError,
+        match=(
+            "^у соперников есть ценники голов, а ценник героя не прочитан: "
+            "без него неизвестно, что герой теряет при вылете$"
+        ),
+    ):
+        _validate([_node(seats=_priced_seats(everyone_but_hero))])
+
+
+def test_a_player_in_the_hand_without_a_price_on_a_priced_table_is_rejected():
+    # Без ценника соперника порог колла посчитался бы без головы — правдоподобное
+    # неверное число вместо отказа.
+    everyone_but_seat_4 = {index: 1.50 for index in range(8) if index != 4}
+    with pytest.raises(
+        ValueError,
+        match=(
+            "^ценник на месте 4 не прочитан, а у других мест он есть: "
+            "без него неизвестно, чего стоит нокаут$"
+        ),
+    ):
+        _validate([_node(seats=_priced_seats(everyone_but_seat_4))])
+
+
+def test_the_negative_price_is_named_before_the_missing_hero_price():
+    # Оба нарушения сразу: сначала мусор в прочитанном, потом пропуски.
+    prices = {2: -0.5, 4: 1.50}
+    with pytest.raises(ValueError, match="^ценник на месте 2 не может быть"):
+        _validate([_node(seats=_priced_seats(prices))])
+
+
+def test_the_missing_hero_price_is_named_before_a_missing_rival_price():
+    prices = {2: 1.50}
+    with pytest.raises(ValueError, match="ценник героя не прочитан"):
+        _validate([_node(seats=_priced_seats(prices))])

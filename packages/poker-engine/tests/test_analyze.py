@@ -445,3 +445,195 @@ def test_only_undefined_pressure_is_turned_into_a_flag(run_analyze, monkeypatch)
 
 def test_result_is_json_serialisable(analyze_base_result):
     json.dumps(analyze_base_result)
+
+
+# --- PKO: ценники голов со стола (Задача 6) ---------------------------------
+#
+# На финальном столе `run_analyze` живы шесть мест фикстуры: 2 (94.4), 3 (35.3),
+# 4 (23.2, вложил 7.3 — соперник), 5 (39.2), 6 (35.7), 7 (63.3, герой, вложил
+# 1.0). Призы мест 1-6 по лесенке фикстуры — 1090.51 + 840.37 + 648.01 +
+# 3 × 400 = 3778.89.
+
+FINAL_TABLE_PRIZES = 1090.51 + 840.37 + 648.01 + 3 * 400.0
+
+
+def bounty_node(base, prices, **stacks):
+    """Узел с ценниками голов.
+
+    `prices` — словарь `seatIndex -> цена в долларах`, передаётся позиционно:
+    номера мест целые, а через `**kwargs` целые ключи не проходят. Место без
+    цены в словаре остаётся без ценника. `stacks` — правка стеков вида
+    `seat4=5.0`.
+    """
+    node = copy.deepcopy(base)
+    node["seats"] = [
+        {**seat, "bountyUsd": prices.get(seat["seatIndex"])}
+        for seat in node["seats"]
+    ]
+    for key, stack in stacks.items():
+        index = int(key.removeprefix("seat"))
+        for seat in node["seats"]:
+            if seat["seatIndex"] == index:
+                seat["stackBb"] = stack
+    return node
+
+
+# Все места стола с ценником: соперник и герой — по аргументам, прочие по 1.50.
+def priced(villain, hero):
+    prices = {2: 1.50, 3: 1.50, 5: 1.50, 6: 1.50}
+    prices.update({4: villain, 7: hero})
+    return prices
+
+
+def test_a_table_without_prices_is_not_a_pko(analyze_base_result):
+    assert "pko" not in analyze_base_result["flags"]
+    assert "bounty" not in analyze_base_result
+
+
+def test_a_classic_table_never_touches_the_bounty_module(run_analyze, monkeypatch):
+    # Инвариант 11 спеки: без единого ценника ни одна функция `bounty.py`
+    # при разборе не вызывается.
+    def forbidden(*args, **kwargs):
+        raise AssertionError("классика дошла до bounty.py")
+
+    for name in ("knockout_cash", "own_bounty_growth", "required_equity_with_bounty"):
+        monkeypatch.setattr(analyze_module, name, forbidden)
+    result = run_analyze()
+    assert "bounty" not in result
+
+
+def test_prices_on_the_table_make_it_a_pko(run_analyze, analyze_node):
+    result = run_analyze(node=bounty_node(analyze_node, priced(1.50, 1.50)))
+    assert "pko" in result["flags"]
+
+
+def test_a_pko_without_a_villain_is_still_a_pko(run_analyze, analyze_node):
+    # Все сфолдили до героя: головы на кону нет, блока нет, но турнир — PKO,
+    # и пометка про турнир остаётся правдой (спека §5.1).
+    node = bounty_node(analyze_node, {7: 1.50})
+    for seat in node["seats"]:
+        seat["inHand"] = seat["isHero"]
+    result = run_analyze(node=node)
+    assert "pko" in result["flags"]
+    assert "bounty" not in result
+
+
+def test_the_cash_for_a_knockout_is_the_price_shown(run_analyze, analyze_node):
+    result = run_analyze(node=bounty_node(analyze_node, priced(2.25, 1.50)))
+    assert result["bounty"]["villainPriceUsd"] == pytest.approx(2.25)
+    assert result["bounty"]["knockoutCashUsd"] == pytest.approx(2.25)
+    assert result["bounty"]["ownPriceGrowthUsd"] == pytest.approx(1.125)
+
+
+def test_the_hero_own_price_is_reported_as_at_risk(run_analyze, analyze_node):
+    result = run_analyze(node=bounty_node(analyze_node, priced(1.50, 3.00)))
+    assert result["bounty"]["heroPriceAtRiskUsd"] == pytest.approx(3.00)
+
+
+def test_a_bb_costs_the_money_still_in_play_over_the_chips_in_play(
+    run_analyze, analyze_node, analyze_context
+):
+    # Лесенка на все 165 мест, но живы шестеро: места 7-165 уже вручены
+    # выбывшим, и в цене большого блайнда их призов нет.
+    context = copy.deepcopy(analyze_context)
+    context["payouts"].append({"from": 7, "to": 165, "amount": 10.0})
+    result = run_analyze(context=context, node=bounty_node(analyze_node, priced(1.50, 1.50)))
+    table = 94.4 + 35.3 + 23.2 + 39.2 + 35.7 + 63.3
+    assert result["bounty"]["bbValueUsd"] == pytest.approx(FINAL_TABLE_PRIZES / table)
+
+
+def test_a_bb_costs_the_prize_pool_over_the_tournament_chips_with_a_field(
+    run_analyze, analyze_node
+):
+    # Поле из 490: фишек в игре — стол плюс поле, то есть 496 × средний стек.
+    result = run_analyze(
+        node=bounty_node(analyze_node, priced(1.50, 1.50)), playersLeft=496, heroRank=90
+    )
+    assert result["bounty"]["bbValueUsd"] == pytest.approx(
+        FINAL_TABLE_PRIZES / (496 * 50.5)
+    )
+
+
+def test_a_bounty_lowers_the_required_equity(run_analyze, analyze_node):
+    # У соперника за спиной 5.0 BB — меньше колла 7.3: колл героя его
+    # накрывает, нокаут возможен в этой раздаче. Голова идёт в банк
+    # наличными, переведёнными в большие блайнды.
+    result = run_analyze(node=bounty_node(analyze_node, priced(5.00, 1.50), seat4=5.0))
+    block = result["bounty"]
+    table = 94.4 + 35.3 + 5.0 + 39.2 + 35.7 + 63.3
+    assert block["bbValueUsd"] == pytest.approx(FINAL_TABLE_PRIZES / table)
+    extra = block["knockoutCashUsd"] / block["bbValueUsd"]
+    assert block["requiredEquityWithBounty"] == pytest.approx(7.3 / (9.4 + extra + 7.3))
+    assert block["requiredEquityWithBounty"] < result["requiredEquity"]
+
+
+def test_no_credit_for_a_head_the_call_does_not_take(run_analyze, analyze_node):
+    # У соперника за спиной 23.2 BB, колл 7.3 его не накрывает — головы в
+    # этой раздаче на кону нет, порог обычный.
+    result = run_analyze(node=bounty_node(analyze_node, priced(5.00, 1.50)))
+    assert result["bounty"]["requiredEquityWithBounty"] == result["requiredEquity"]
+
+
+def test_no_credit_when_the_hero_cannot_cover_the_villain(run_analyze, analyze_node):
+    # Колл накрывает остаток соперника (5.0 < 7.3), но у героя 8.0 + 1.0
+    # вложенных против 5.0 + 7.3 у соперника: выбить его герой не может,
+    # голову не засчитывать. Стек героя больше остатка соперника — сравнивать
+    # надо с вложенным, иначе голова засчиталась бы.
+    node = bounty_node(analyze_node, priced(5.00, 1.50), seat4=5.0, seat7=8.0)
+    result = run_analyze(node=node)
+    assert result["bounty"]["requiredEquityWithBounty"] == result["requiredEquity"]
+
+
+def test_no_threshold_when_there_is_nothing_to_call(run_analyze, analyze_node):
+    # Колла нет — нет и порога, ни обычного, ни с головой; остальной блок на месте.
+    node = bounty_node(analyze_node, priced(5.00, 1.50), seat4=5.0)
+    result = run_analyze(node=node, toCallBb=0.0)
+    assert "requiredEquity" not in result
+    assert "requiredEquityWithBounty" not in result["bounty"]
+    assert "bbValueUsd" in result["bounty"]
+
+
+def test_no_bb_value_when_no_prize_is_left_in_play(
+    run_analyze, analyze_node, analyze_context
+):
+    # Лобби снято только с 7-го места, живы шестеро: денег, которые ещё
+    # разыгрываются, лесенка не знает. Цену блайнда посчитать нечем — ключей
+    # нет, а не ноль и не отказ всего разбора.
+    context = copy.deepcopy(analyze_context)
+    context["payouts"] = [{"from": 7, "to": 165, "amount": 10.0}]
+    result = run_analyze(
+        context=context, node=bounty_node(analyze_node, priced(5.00, 1.50), seat4=5.0)
+    )
+    assert "ladder_incomplete" in result["flags"]
+    assert result["bounty"]["knockoutCashUsd"] == pytest.approx(5.00)
+    assert "bbValueUsd" not in result["bounty"]
+    assert "requiredEquityWithBounty" not in result["bounty"]
+
+
+def test_a_price_on_the_villain_but_not_on_the_hero_is_rejected(
+    run_analyze, analyze_node
+):
+    with pytest.raises(ValueError, match="ценник героя не прочитан"):
+        run_analyze(node=bounty_node(analyze_node, {4: 1.50}))
+
+
+def test_a_negative_price_is_rejected(run_analyze, analyze_node):
+    with pytest.raises(
+        ValueError, match="^ценник на месте 4 не может быть отрицательным: -1.0$"
+    ):
+        run_analyze(node=bounty_node(analyze_node, priced(-1.0, 1.50)))
+
+
+def test_the_two_halves_of_equity_stay_separate(run_analyze, analyze_node):
+    """Инварианты 10 и «раздельно» спеки (§5.3, §8.2).
+
+    Эквити в лесенке не зависит от ценников голов ни в одну сторону: это
+    два разных куска денег, и складывать их в одно число запрещено. При
+    выросших вдвое ценниках `icm` обязано остаться тем же, а меняться
+    обязан только блок `bounty`. Уже взятых баунти в контракте нет: ответ
+    зависит только от того, что висит на экране сейчас.
+    """
+    cheap = run_analyze(node=bounty_node(analyze_node, priced(1.50, 1.50)))
+    rich = run_analyze(node=bounty_node(analyze_node, priced(3.00, 3.00)))
+    assert rich["icm"] == cheap["icm"]
+    assert rich["bounty"]["knockoutCashUsd"] > cheap["bounty"]["knockoutCashUsd"]
