@@ -14,7 +14,6 @@ from poker_engine.handstate import (
     assign_positions,
     context_from_dict,
     node_from_dict,
-    payout_ladder,
     validate_hand,
 )
 from poker_engine.types import Position, positions_for
@@ -250,26 +249,6 @@ def test_rounding_between_nodes_is_tolerated():
     _validate([first, second])
 
 
-def test_payout_ladder_expands_ranges():
-    # Интервал 4–6 разворачивается в три одинаковых места.
-    ladder = payout_ladder(context_from_dict(CONTEXT), places=12)
-    assert ladder[0] == pytest.approx(1090.51)
-    assert ladder[3] == pytest.approx(400.0)
-    assert ladder[5] == pytest.approx(400.0)
-
-
-def test_payout_ladder_pads_unpaid_places_with_zero():
-    ladder = payout_ladder(context_from_dict(CONTEXT), places=15)
-    assert len(ladder) == 15
-    assert ladder[6] == 0.0
-    assert ladder[14] == 0.0
-
-
-def test_payout_ladder_must_not_increase_with_place():
-    ladder = payout_ladder(context_from_dict(CONTEXT), places=12)
-    assert ladder == sorted(ladder, reverse=True)
-
-
 def test_overlapping_payout_ranges_are_rejected():
     broken = dict(CONTEXT)
     broken["payouts"] = [
@@ -357,6 +336,14 @@ def test_payout_amounts_may_tie_between_places():
     validate_hand(context_from_dict(tied), [node_from_dict(_node())])
 
 
+def test_payouts_listed_from_the_worst_place_are_accepted():
+    # Порядок интервалов во входе — порядок распознавания, а не мест:
+    # монотонность сравнивает призы по возрастанию места, а не по списку.
+    reversed_order = dict(CONTEXT)
+    reversed_order["payouts"] = list(reversed(CONTEXT["payouts"]))
+    validate_hand(context_from_dict(reversed_order), [node_from_dict(_node())])
+
+
 def test_entrants_below_players_left_is_rejected():
     broken = dict(CONTEXT)
     broken["entrants"] = 100
@@ -374,9 +361,77 @@ def test_entrants_equal_to_players_left_is_allowed():
     validate_hand(context_from_dict(equal), [node_from_dict(_node())])
 
 
+def test_the_context_ladder_covers_the_described_places():
+    # Лесенка контекста — `PayoutLadder` по тем же интервалам: 1-based
+    # место, интервал 4–6 платит одинаково, глубже описанного — ноль, а
+    # покрытых мест шесть при призовой зоне в 165.
+    ladder = context_from_dict(CONTEXT).ladder()
+    assert ladder.prize(1) == pytest.approx(1090.51)
+    assert ladder.prize(4) == ladder.prize(6) == pytest.approx(400.0)
+    assert ladder.prize(7) == 0.0
+    assert ladder.places_covered == 6
+    assert ladder.places_paid == 165
+    assert not ladder.is_complete
+
+
+def _rejected_with(text, **changes):
+    broken = dict(CONTEXT)
+    broken.update(changes)
+    with pytest.raises(ValueError, match="^" + re.escape(text)):
+        validate_hand(context_from_dict(broken), [node_from_dict(_node())])
+
+
+# Приоритет отказов после перевода ладдер-блока на `PayoutLadder` (долг
+# D17, решение Задачи 4): конструктор неделим, монотонность и
+# `entrants < players_left` встают после него. Меняется ровно три класса
+# пар, и одна пара обязана сохраниться; каждый вход нарушает два правила.
+RISING = [
+    {"from": 1, "to": 1, "amount": 100.0},
+    {"from": 2, "to": 2, "amount": 200.0},
+]
+
+
+def test_a_broken_later_interval_beats_rising_prizes():
+    # Раньше монотонность ловилась на втором интервале, до третьего.
+    _rejected_with(
+        "неверный интервал мест в выплатах: 4–3",
+        payouts=RISING + [{"from": 4, "to": 3, "amount": 50.0}],
+    )
+
+
+def test_a_zero_prize_zone_beats_rising_prizes():
+    _rejected_with("размер призовой зоны должен быть > 0", payouts=RISING, placesPaid=0)
+
+
+def test_a_ladder_deeper_than_the_prize_zone_beats_rising_prizes():
+    _rejected_with(
+        "выплаты описаны до места 2, а призовых мест 1", payouts=RISING, placesPaid=1
+    )
+
+
+def test_a_zero_prize_zone_beats_entrants_below_players_left():
+    _rejected_with("размер призовой зоны должен быть > 0", entrants=100, placesPaid=0)
+
+
+def test_a_ladder_deeper_than_the_prize_zone_beats_entrants_below_players_left():
+    _rejected_with(
+        "выплаты описаны до места 6, а призовых мест 3", entrants=100, placesPaid=3
+    )
+
+
+def test_rising_prizes_still_beat_entrants_below_players_left():
+    # Эта пара обязана сохраниться: обе проверки у `handstate`, и
+    # монотонность по-прежнему раньше.
+    _rejected_with(
+        "выплата за более низкое место больше, чем за высокое",
+        payouts=RISING,
+        entrants=100,
+    )
+
+
 def test_context_without_the_average_stack_is_accepted():
-    # Поле `averageStackBb` необязательно: оно нужно только свёртке поля,
-    # и её гард (`field.reduce_field`) знает, когда именно. Валидатор
+    # Поле `averageStackBb` необязательно: оно нужно только, чтобы населить
+    # поле вне стола, и `analyze` знает, когда именно. Валидатор
     # раздачи требовать его не вправе — на финальном столе его нет и не
     # должно быть.
     quiet = dict(CONTEXT)

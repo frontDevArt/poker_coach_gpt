@@ -3,6 +3,7 @@
 import pytest
 
 from poker_engine.icm_field import (
+    PressureUndefined,
     bubble_factor,
     hero_equity,
     risk_premium,
@@ -180,12 +181,12 @@ def test_money_out_of_reach_leaves_both_measures_undefined():
     # стоят, и ни одна ветвь олл-ина денег не меняет — все три эквити нули.
     ladder = PayoutLadder([(3, 3, 10.0)], places_paid=3)
     with pytest.raises(
-        ValueError,
+        PressureUndefined,
         match="^исход олл-ина не меняет ICM-эквити героя, risk premium не определён$",
     ):
         risk_premium([50.0, 30.0], 0, 0.0, ladder, 0, 1)
     with pytest.raises(
-        ValueError,
+        PressureUndefined,
         match="^выигрыш не увеличивает ICM-эквити, bubble factor не определён$",
     ):
         bubble_factor([50.0, 30.0], 0, 0.0, ladder, 0, 1)
@@ -199,10 +200,41 @@ def test_a_ladder_that_rewards_busting_leaves_bubble_factor_undefined():
     # определён. Риск-премия при этом определена: (30 - 90) / (0 - 90) - 1/2.
     ladder = PayoutLadder([(3, 3, 90.0)], places_paid=3)
     with pytest.raises(
-        ValueError,
+        PressureUndefined,
         match="^выигрыш не увеличивает ICM-эквити, bubble factor не определён$",
     ):
         bubble_factor([10.0, 10.0], 1, 10.0, ladder, 0, 1)
     assert risk_premium([10.0, 10.0], 1, 10.0, ladder, 0, 1) == pytest.approx(
         1.0 / 6.0, abs=1e-12
     )
+
+
+@pytest.mark.parametrize(
+    "call, text",
+    [
+        (
+            lambda: risk_premium([50.0, 50.0], 0, 0.0, winner_take_all(), 0, 0),
+            "^hero и villain должны различаться$",
+        ),
+        (
+            lambda: risk_premium([50.0, 50.0], 0, 0.0, winner_take_all(), 5, 1),
+            r"^hero=5 вне диапазона игроков \[0, 1\]$",
+        ),
+        (
+            lambda: bubble_factor([50.0, 0.0], 0, 0.0, winner_take_all(), 0, 1),
+            "^эффективный стек равен нулю$",
+        ),
+        (
+            lambda: bubble_factor([50.0, 50.0, 0.0], 0, 0.0, winner_take_all(), 0, 1),
+            "^стек на месте 2 должен быть > 0",
+        ),
+    ],
+    ids=["same seat", "seat outside", "zero effective stack", "zero third stack"],
+)
+def test_call_errors_are_not_undefined_pressure(call, text):
+    # `analyze` превращает в пометку только `PressureUndefined` (долг D4):
+    # ошибки вызова обязаны оставаться обычным `ValueError`, иначе пометка
+    # «давление не определено» спрятала бы их.
+    with pytest.raises(ValueError, match=text) as caught:
+        call()
+    assert not isinstance(caught.value, PressureUndefined)

@@ -35,6 +35,7 @@ from .ladder import PayoutLadder
 
 __all__ = [
     "MAX_TABLE_SEATS",
+    "PressureUndefined",
     "bubble_factor",
     "hero_equity",
     "risk_premium",
@@ -53,6 +54,17 @@ MAX_TABLE_SEATS = 10
 # равен 1/2. `icm.py` вычислял это выражение каждый раз; здесь оно
 # записано константой, чтобы не делать вид, что оно от чего-то зависит.
 _CHIP_THRESHOLD = 0.5
+
+
+class PressureUndefined(ValueError):
+    """Исход олл-ина не двигает деньги героя так, чтобы давление имело смысл.
+
+    Не ошибка ввода, а свойство лесенки: `analyze` сообщает о нём пометкой
+    `icm_pressure_undefined` и продолжает разбор. Остальные отказы
+    `risk_premium` и `bubble_factor` — обычный `ValueError`: это ошибки
+    вызова, и прятать их за той же пометкой нельзя. Подкласс, а не новый
+    тип: CLI ловит `ValueError`, и тексты остаются контрактом.
+    """
 
 
 def table_equities(
@@ -192,7 +204,7 @@ def risk_premium(
         # ноль, деньги не на кону вовсе, и это остаётся неопределённым.
         if not math.isclose(now, 0.0, abs_tol=1e-9):
             return 0.0
-        raise ValueError(
+        raise PressureUndefined(
             "исход олл-ина не меняет ICM-эквити героя, risk premium не определён"
         )
     money_threshold = (now - lose) / (win - lose)
@@ -221,7 +233,9 @@ def bubble_factor(
         return 1.0
     money_up = win - now
     if money_up <= 0 or math.isclose(money_up, 0.0, abs_tol=1e-9):
-        raise ValueError("выигрыш не увеличивает ICM-эквити, bubble factor не определён")
+        raise PressureUndefined(
+            "выигрыш не увеличивает ICM-эквити, bubble factor не определён"
+        )
     # Фишковое отношение (проигранное к выигранному) тождественно равно 1:
     # при двустороннем олл-ине на кону одинаковые фишки в обе стороны.
     # `icm.py` делил на него явно; здесь деление на единицу опущено.

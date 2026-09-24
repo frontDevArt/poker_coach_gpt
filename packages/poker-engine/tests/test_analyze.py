@@ -6,41 +6,46 @@
 
 import copy
 import json
-import math
 import re
 
 import pytest
 
-from poker_engine.analyze import MAX_FIELD_NODES, MAX_ICM_PREFIXES, analyze
+from poker_engine import analyze as analyze_module
+from poker_engine.analyze import analyze
+from poker_engine.icm_field import bubble_factor, hero_equity, risk_premium
+from poker_engine.ladder import PayoutLadder
 from poker_engine.potodds import required_equity
 from poker_engine.types import Position
 
 
 @pytest.fixture
 def run_analyze(analyze_context, analyze_node):
-    """Разбор плановой раздачи с правками узла — по умолчанию на финальном столе.
+    """Разбор плановой раздачи с правками — по умолчанию на финальном столе.
 
-    Умолчание `playersLeft=8, heroRank=8` — не упрощение проверяемого, а
-    цена прогона: свёртки поля при восьми живых нет, ICM считает восемь
-    узлов вместо пятнадцати, то есть 40 320 упорядоченных префиксов
-    вместо 3.6 млн — около секунды против одиннадцати на вызов. Ни один
-    ключ ответа при этом не пропадает.
-
-    Тесту, которому нужна именно свёртка, передавать `playersLeft` явно;
-    базовый ответ на неправленой фикстуре живёт в `analyze_base_result`.
+    Умолчание `playersLeft=6, heroRank=6` — поля вне стола нет: шесть мест
+    и шесть живых. Тесту, которому нужно поле, передавать `playersLeft`
+    явно; базовый ответ на неправленой фикстуре живёт в
+    `analyze_base_result`. `context` и `node` подменяют фикстуры целиком,
+    `overrides` правят узел.
     """
 
-    def call(**overrides):
-        node = copy.deepcopy(analyze_node)
-        node.update(playersLeft=8, heroRank=8)
-        node.update(overrides)
-        return analyze(analyze_context, [node], trials=2_000, seed=11)
+    def call(*, context=None, node=None, **overrides):
+        base = copy.deepcopy(node if node is not None else analyze_node)
+        base.update(playersLeft=6, heroRank=6)
+        base.update(overrides)
+        return analyze(
+            context if context is not None else analyze_context,
+            [base],
+            trials=2_000,
+            seed=11,
+        )
 
     return call
 
 
 def test_hero_position_comes_from_the_button(analyze_base_result):
-    assert analyze_base_result["heroPosition"] == Position.UTG1.value
+    # 6-max, кнопка на месте 4: 5 — SB, 6 — BB, герой на месте 7 — UTG.
+    assert analyze_base_result["heroPosition"] == Position.UTG.value
 
 
 def test_villain_is_the_player_who_invested_most(analyze_base_result):
@@ -52,7 +57,7 @@ def test_villain_is_chosen_by_investment_before_stack(run_analyze, analyze_node)
     seats[0]["inHand"] = True
     seats[1]["inHand"] = True
     result = run_analyze(seats=seats)
-    # Место 4 вложило 7.3 BB против нуля у мест 0 и 1, хотя его стек
+    # Место 4 вложило 7.3 BB против нуля у мест 2 и 3, хотя его стек
     # (23.2 BB) — самый маленький из троих.
     assert result["villainPosition"] == Position.BTN.value
     assert result["effectiveStackBb"] == pytest.approx(23.2)
@@ -63,9 +68,9 @@ def test_equal_investments_are_broken_by_the_bigger_stack(run_analyze, analyze_n
     seats[0]["inHand"] = True
     seats[0]["investedBb"] = 7.3
     result = run_analyze(seats=seats)
-    # Места 0 и 4 вложили поровну; место 0 держит 72.2 BB против 23.2 BB.
-    # Кнопка на месте 4, значит место 0 — четвёртое по кругу после неё, MP.
-    assert result["villainPosition"] == Position.MP.value
+    # Места 2 и 4 вложили поровну; место 2 держит 94.4 BB против 23.2 BB.
+    # Кнопка на месте 4, по кругу за ней 5, 6, 7, и место 2 — пятое: HJ.
+    assert result["villainPosition"] == Position.HJ.value
     assert result["effectiveStackBb"] == pytest.approx(63.3)
 
 
@@ -85,13 +90,9 @@ def test_no_call_means_no_required_equity(run_analyze):
 
 
 def test_icm_equity_is_within_the_prize_pool(analyze_base_result):
+    # Поле 490 человек, фонд описан до шестого места. Эквити героя — доля
+    # фонда: положительна и меньше первого приза.
     assert 0 < analyze_base_result["icm"]["heroEquity"] < 1090.51
-
-
-def test_field_is_reduced_not_taken_whole(analyze_base_result):
-    # 496 игроков против 8 мест: стол сохраняется поимённо, остальное поле
-    # занимает все оставшиеся узлы до предела, то есть ровно 8 + 7 = 15.
-    assert analyze_base_result["icm"]["fieldNodes"] == 15
 
 
 def test_equity_shares_sum_to_one(analyze_base_result):
@@ -108,7 +109,7 @@ def test_range_source_is_vpip_when_the_sample_suffices(analyze_base_result):
 
 def test_small_vpip_sample_is_reported_as_default(run_analyze, analyze_node):
     seats = copy.deepcopy(analyze_node["seats"])
-    seats[4]["vpipHands"] = 4
+    seats[2]["vpipHands"] = 4  # соперник, место 4
     result = run_analyze(seats=seats)
     assert result["equity"]["rangeSource"] == "default"
     assert "vpip_default" in result["flags"]
@@ -122,11 +123,11 @@ def test_hero_equity_belongs_to_the_hero_seat(run_analyze, analyze_node):
     for seat in folded:
         seat["inHand"] = False
     small = copy.deepcopy(folded)
-    small[7]["inHand"] = True
+    small[5]["inHand"] = True
     big = copy.deepcopy(folded)
-    big[7]["isHero"] = False
-    big[2]["isHero"] = True
-    big[2]["inHand"] = True
+    big[5]["isHero"] = False
+    big[0]["isHero"] = True
+    big[0]["inHand"] = True
     quiet = {"toCallBb": 0.0, "raiseToBb": None}
     with_small_stack = run_analyze(seats=small, **quiet)
     with_big_stack = run_analyze(seats=big, **quiet)
@@ -144,14 +145,16 @@ def test_risk_premium_is_reported_for_a_head_to_head_spot(analyze_base_result):
 
 
 def test_prize_ladder_out_of_reach_leaves_icm_pressure_undefined(
-    analyze_context, analyze_node
+    run_analyze, analyze_context
 ):
-    # Все выплаты глубже свёрнутого поля: лесенка внутри расчёта нулевая,
-    # деньги не на кону, и давление ICM не определено. Это не ошибка ввода,
-    # а отсутствие давления — разбор обязан продолжиться с пометкой.
+    # Финальный стол из шести, а платят только за места 20-25: они уже
+    # вручены выбывшим, достижимые места ничего не стоят, деньги не на
+    # кону, и давление ICM не определено. Это не ошибка ввода, а отсутствие
+    # давления — разбор обязан продолжиться с пометкой.
     context = copy.deepcopy(analyze_context)
     context["payouts"] = [{"from": 20, "to": 25, "amount": 400.0}]
-    result = analyze(context, [analyze_node], trials=2_000, seed=11)
+    result = run_analyze(context=context)
+    assert result["icm"]["heroEquity"] == 0.0
     assert "riskPremium" not in result
     assert "icm_pressure_undefined" in result["flags"]
     assert "equity" in result
@@ -161,18 +164,9 @@ def test_open_late_registration_is_flagged(analyze_base_result):
     assert "late_reg_open" in analyze_base_result["flags"]
 
 
-def test_reduced_field_and_mh_bias_are_always_flagged(analyze_base_result):
-    flags = analyze_base_result["flags"]
-    assert "reduced_field" in flags
-    assert "mh_bias" in flags
-
-
-def test_field_equal_to_the_table_is_not_flagged_as_reduced(run_analyze):
-    # Финальный стол: 8 мест и 8 оставшихся игроков — схлопывать нечего,
-    # ICM считается по полю целиком и приближением не является.
-    result = run_analyze(playersLeft=8, heroRank=8)
-    assert "reduced_field" not in result["flags"]
-    assert result["icm"]["fieldNodes"] == 8
+def test_mh_bias_is_always_flagged(analyze_base_result, run_analyze):
+    assert "mh_bias" in analyze_base_result["flags"]
+    assert "mh_bias" in run_analyze()["flags"]
 
 
 def test_preflop_advice_is_flagged_as_not_computed(analyze_base_result):
@@ -182,10 +176,9 @@ def test_preflop_advice_is_flagged_as_not_computed(analyze_base_result):
 
 
 def test_postflop_is_not_flagged_as_missing_pushfold(analyze_context, analyze_node):
-    # Финальный стол в обоих узлах: тест про улицу, а не про свёртку поля,
-    # и платить за пятнадцатиузловой ICM дважды ему не за что.
+    # Финальный стол в обоих узлах: тест про улицу, а не про поле.
     preflop = copy.deepcopy(analyze_node)
-    preflop.update(playersLeft=8, heroRank=8)
+    preflop.update(playersLeft=6, heroRank=6)
     flop = copy.deepcopy(preflop)
     flop.update(
         street="flop",
@@ -201,7 +194,7 @@ def test_hand_with_no_active_opponent_skips_head_to_head_numbers(
     run_analyze, analyze_node
 ):
     seats = copy.deepcopy(analyze_node["seats"])
-    seats[4]["inHand"] = False
+    seats[2]["inHand"] = False  # единственный соперник, место 4
     result = run_analyze(seats=seats, toCallBb=0.0, raiseToBb=None)
     assert "equity" not in result
     assert "riskPremium" not in result
@@ -210,13 +203,13 @@ def test_hand_with_no_active_opponent_skips_head_to_head_numbers(
 
 def test_invalid_hand_is_rejected_before_any_computation(analyze_context, analyze_node):
     # Вход нарушает сразу два правила: банк нулевой (валидатор раздачи) и
-    # лесенка платит за все 165 мест (бюджет перебора, гард ниже по ходу).
+    # поле больше стола без среднего стека (гард `analyze` ниже по ходу).
     # Побеждать обязан валидатор — иначе пользователь получил бы отказ про
-    # неподъёмный ICM на раздаче, которую движок и разбирать не должен был.
-    # Одного нулевого банка для этого мало: тест остался бы зелёным, даже
-    # если перенести `validate_hand` в самый конец `analyze`.
+    # поле на раздаче, которую движок и разбирать не должен был. Одного
+    # нулевого банка для этого мало: тест остался бы зелёным, даже если
+    # перенести `validate_hand` в самый конец `analyze`.
     context = copy.deepcopy(analyze_context)
-    context["payouts"] = [{"from": 1, "to": 165, "amount": 400.0}]
+    del context["averageStackBb"]
     broken = copy.deepcopy(analyze_node)
     broken["potBb"] = 0.0
     with pytest.raises(ValueError, match="банк должен быть > 0"):
@@ -243,179 +236,72 @@ def test_every_node_must_be_an_object(analyze_context, analyze_node):
         analyze(analyze_context, [analyze_node, None], trials=2_000, seed=11)
 
 
-def test_a_dense_prize_ladder_is_rejected_instead_of_hanging(
-    analyze_context, analyze_node
-):
-    # Реальный GG MTT: оплачиваемых мест больше, чем узлов поля, поэтому
-    # внутри свёрнутого поля оплачены все пятнадцать. Malmuth-Harville
-    # перебирает 15! порядков — это не «долго», это никогда, и отказ
-    # обязан прийти до первого расчёта. Тест поэтому мгновенный: гард
-    # стоит перед `icm_equities`, считать здесь нечего.
-    context = copy.deepcopy(analyze_context)
-    context["payouts"] = [{"from": 1, "to": 165, "amount": 400.0}]
-    with pytest.raises(
-        ValueError, match="оплачиваемых мест внутри свёрнутого поля 15 из 15"
-    ):
-        analyze(context, [analyze_node], trials=2_000, seed=11)
-
-
-def test_a_mid_sized_field_beyond_the_budget_is_also_rejected(
-    analyze_context, analyze_node
-):
-    # Поле из двенадцати узлов и восемь оплачиваемых мест — 19.9 млн
-    # префиксов: меньше, чем 15!, но всё равно за потолком. Порог
-    # проверяется по стоимости перебора, а не по числу мест самому по
-    # себе: восемь мест из восьми стоили бы 40 320 и считались бы.
-    context = copy.deepcopy(analyze_context)
-    context["payouts"] = context["payouts"][:3] + [
-        {"from": 4, "to": 8, "amount": 400.0}
-    ]
-    node = copy.deepcopy(analyze_node)
-    node.update(playersLeft=12, heroRank=12)
-    with pytest.raises(
-        ValueError, match="оплачиваемых мест внутри свёрнутого поля 8 из 12"
-    ):
-        analyze(context, [node], trials=2_000, seed=11)
-
-
-def test_the_ladder_at_the_budget_edge_is_still_computed(analyze_base_result):
-    # Плановая фикстура платит за шесть мест из пятнадцати. Связь с
-    # бюджетом здесь и есть предмет теста, поэтому она посчитана, а не
-    # пересказана: шесть мест укладываются в потолок, седьмое — нет, то
-    # есть разбор идёт по последней переносимой глубине и обязан
-    # состояться, а не быть отвергнутым заодно с плотными лесенками.
-    nodes = analyze_base_result["icm"]["fieldNodes"]
-    assert nodes == MAX_FIELD_NODES
-    assert math.perm(nodes, 6) <= MAX_ICM_PREFIXES < math.perm(nodes, 7)
-    assert analyze_base_result["icm"]["heroEquity"] > 0
-
-
-def test_the_prefix_budget_is_never_hit_exactly():
-    # Гард сравнивает стоимость перебора строгим `>`, и `>` отличается от
-    # `>=` ровно на одном входе — дающем ровно `MAX_ICM_PREFIXES`
-    # префиксов. Такого входа не существует: число префиксов — падающий
-    # факториал `perm(узлы, места)` при узлах не больше `MAX_FIELD_NODES`,
-    # и значения 4 000 000 он не принимает (ближайшее снизу — 3 991 680
-    # при двенадцати узлах и семи местах). Проверять сам выбор знака
-    # поэтому нечем, и мутация `>` → `>=` тестами не убивается.
-    #
-    # Тест пинит причину этой безразличности, а не сам знак: подвиньте
-    # константу на достижимое число — например на 3 603 600, ровно
-    # стоимость плановой фикстуры, — и граница станет значимой, а разбор,
-    # который сегодня считается, начнёт молча отвергаться.
-    attainable = {
-        math.perm(nodes, paid)
-        for nodes in range(1, MAX_FIELD_NODES + 1)
-        for paid in range(nodes + 1)
-    }
-    assert MAX_ICM_PREFIXES not in attainable
-
-
-def test_a_prize_range_crossing_the_field_edge_is_not_truncation(
-    analyze_context, analyze_node
-):
-    # Финальный стол: 8 мест и 8 узлов, свёртки нет. Интервал выплат
-    # 6..12 кончается за полем, но игроков осталось восемь: места с
-    # девятого по двенадцатое уже заняты выбывшими, призы за них вручены,
-    # и терять модели нечего. Пометка по одному краю интервала соврала бы
-    # ровно так же, как безусловный `reduced_field` на финальном столе.
-    context = copy.deepcopy(analyze_context)
-    context["payouts"] = context["payouts"][:3] + [
-        {"from": 4, "to": 5, "amount": 400.0},
-        {"from": 6, "to": 12, "amount": 200.0},
-    ]
-    node = copy.deepcopy(analyze_node)
-    node.update(playersLeft=8, heroRank=8)
-    result = analyze(context, [node], trials=2_000, seed=11)
-    assert "ladder_truncated" not in result["flags"]
-
-
-def test_a_ladder_as_deep_as_the_attainable_places_is_not_truncated(
-    analyze_context, analyze_node
-):
-    # Финальный стол: 8 мест, 8 узлов, достижимы ровно восемь мест, и все
-    # восемь оплачены внутри модели. Сравнение строгое: равенство глубин —
-    # ещё не обрезание, терять нечего.
-    context = copy.deepcopy(analyze_context)
-    context["payouts"] = context["payouts"][:3] + [
-        {"from": 4, "to": 8, "amount": 400.0}
-    ]
-    node = copy.deepcopy(analyze_node)
-    node.update(playersLeft=8, heroRank=8)
-    result = analyze(context, [node], trials=2_000, seed=11)
-    assert "ladder_truncated" not in result["flags"]
-
-
-def test_a_prize_pool_deeper_than_the_model_is_flagged_as_truncated(
-    analyze_base_result,
-):
-    # Плановая фикстура: турнир платит за 165 мест, живых 496, а призы в
-    # модели кончаются на шестом месте из пятнадцати — глубже описанных
-    # выплат просто нет. Девять десятых лесенки в расчёт не попали, и
-    # `heroEquity` занижено; молчать об этом пометка не вправе, хотя ни
-    # один интервал выплат за поле не выходит.
-    assert "ladder_truncated" in analyze_base_result["flags"]
-
-
-def test_the_truncation_flag_counts_places_paid_not_payout_edges(
-    analyze_context, analyze_node
-):
-    # Тот же вход дважды, разница только в `placesPaid`. Призовая зона
-    # ровно по описанным выплатам (три места) помещается в модель
-    # целиком; призовая зона в 165 мест — нет, хотя ни одна выплата при
-    # этом не меняется. Поле нарочно мелкое (девять узлов, три платных
-    # места — 504 префикса), тест про пометку, а не про стоимость ICM.
-    context = copy.deepcopy(analyze_context)
-    context["payouts"] = context["payouts"][:3]
-    node = copy.deepcopy(analyze_node)
-    node.update(playersLeft=9, heroRank=9, toCallBb=0.0, raiseToBb=None)
-
-    whole = copy.deepcopy(context)
-    whole["placesPaid"] = 3
-    assert "ladder_truncated" not in analyze(
-        whole, [node], trials=2_000, seed=11
-    )["flags"]
-
-    deep = copy.deepcopy(context)
-    deep["placesPaid"] = 165
-    assert "ladder_truncated" in analyze(deep, [node], trials=2_000, seed=11)["flags"]
-
-
 def test_a_final_table_is_analysed_without_the_average_stack(
-    analyze_context, analyze_node
+    run_analyze, analyze_context
 ):
-    # Средний стек нужен только свёртке поля: на финальном столе сворачивать
-    # нечего, и разбор обязан состояться без него.
+    # Средний стек нужен только, чтобы населить поле: на финальном столе
+    # поля нет, и разбор обязан состояться без него.
     context = copy.deepcopy(analyze_context)
     del context["averageStackBb"]
-    node = copy.deepcopy(analyze_node)
-    node.update(playersLeft=8, heroRank=8)
-    result = analyze(context, [node], trials=2_000, seed=11)
-    assert result["icm"]["fieldNodes"] == 8
+    result = run_analyze(context=context)
+    assert result["icm"]["heroEquity"] > 0.0
 
 
-def test_a_reduced_field_without_the_average_stack_is_rejected(
+def test_a_field_without_the_average_stack_is_rejected(
     analyze_context, analyze_node
 ):
     # А пока поле больше стола, отсутствие среднего стека — отказ с русским
-    # текстом, а не арифметика на `None` внутри свёртки.
+    # текстом, а не арифметика на `None`.
     context = copy.deepcopy(analyze_context)
     del context["averageStackBb"]
-    with pytest.raises(ValueError, match="нужен средний стек"):
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "нужен средний стек: игроков (496) больше, чем за столом (6), "
+            "и поле нечем населить"
+        ),
+    ):
         analyze(context, [analyze_node], trials=2_000, seed=11)
+
+
+def test_an_average_stack_below_the_table_is_rejected(run_analyze, analyze_context):
+    # Стол держит 291.1 BB, живых восемь: при среднем 30 BB на двоих в поле
+    # остаётся 240 − 291.1 < 0 фишек. Противоречие в данных, а не поле из
+    # отрицательных стеков.
+    context = copy.deepcopy(analyze_context)
+    context["averageStackBb"] = 30.0
+    with pytest.raises(
+        ValueError,
+        match="^средний стек не согласован со стеками за столом: "
+        "на остальное поле не остаётся фишек$",
+    ):
+        run_analyze(context=context, playersLeft=8, heroRank=8)
+
+
+def test_an_average_stack_that_leaves_the_field_no_chips_is_rejected(
+    run_analyze, analyze_context, analyze_node
+):
+    # Граница: средний стек ровно такой, что вся фишка турнира — за столом.
+    # Поле из двоих без фишек — то же противоречие, что и в минус. Средний
+    # стек — сумма стола, делённая на восемь: деление и умножение на
+    # степень двойки точны, и остаток поля выходит ровно нулём.
+    context = copy.deepcopy(analyze_context)
+    context["averageStackBb"] = sum(seat["stackBb"] for seat in analyze_node["seats"]) / 8
+    with pytest.raises(ValueError, match="^средний стек не согласован"):
+        run_analyze(context=context, playersLeft=8, heroRank=8)
 
 
 def test_a_broken_vpip_is_rejected_before_any_computation(
     analyze_context, analyze_node
 ):
     # Тот же порядок, что и у остального валидатора: бейдж соперника
-    # проверяется до расчёта. Лесенка здесь неподъёмная, и если бы VPIP
+    # проверяется до расчёта. Среднего стека здесь нет, и если бы VPIP
     # проверялся только в `range_for_vpip` (последний шаг `analyze`),
-    # победило бы сообщение про перебор — после всего ICM.
+    # победило бы сообщение про поле.
     context = copy.deepcopy(analyze_context)
-    context["payouts"] = [{"from": 1, "to": 165, "amount": 400.0}]
+    del context["averageStackBb"]
     seats = copy.deepcopy(analyze_node["seats"])
-    seats[4]["vpip"] = 150.0
+    seats[2]["vpip"] = 150.0  # соперник, место 4
     node = copy.deepcopy(analyze_node)
     node["seats"] = seats
     with pytest.raises(ValueError, match=re.escape("VPIP вне диапазона 0..100")):
@@ -423,8 +309,8 @@ def test_a_broken_vpip_is_rejected_before_any_computation(
 
 
 def test_a_prize_zone_of_zero_places_is_rejected(analyze_context, analyze_node):
-    # `placesPaid` виден в ответе только через пометку `ladder_truncated`,
-    # и мусорное значение погасило бы её молча — вместе с единственным
+    # `placesPaid` виден в ответе только через пометку `ladder_incomplete`,
+    # и мусорное значение исказило бы её молча — вместе с единственным
     # сообщением о том, что `heroEquity` занижено.
     context = copy.deepcopy(analyze_context)
     context["placesPaid"] = 0
@@ -432,25 +318,114 @@ def test_a_prize_zone_of_zero_places_is_rejected(analyze_context, analyze_node):
         analyze(context, [analyze_node], trials=2_000, seed=11)
 
 
-def test_all_in_opponent_is_rejected_by_the_field_reduction(run_analyze, analyze_node):
-    # Известное ограничение, а не дефект разбора: место с нулевым стеком
-    # проходит `validate_hand`, но `reduce_field` требует положительных
-    # стеков. Как вернуть в ICM уже вложенные выбывающим фишки — решение
-    # о модели, оно этой задачей не принимается; тест пинит, что отказ
-    # остаётся русским и адресным.
+def test_all_in_opponent_is_rejected_before_the_icm(run_analyze, analyze_node):
+    # Известное ограничение, а не дефект разбора (спека плана 3, §11.1):
+    # место с нулевым стеком проходит `validate_hand`, но модель ICM не
+    # знает, куда деть вложенное выбывающим. Тест пинит, что отказ остаётся
+    # русским и адресным и приходит раньше `icm_field`, у которого свой
+    # текст про стек называл бы позицию в списке.
     #
     # Места нарочно перенумерованы с двойки: `validate_hand` требует от
     # `seatIndex` только уникальности, а на скриншоте номера идут с
-    # пропусками, когда за столом есть пустые места. При нумерации 0..7
-    # номер места и позиция в списке — одно и то же число, и пин не
-    # отличил бы одно от другого; здесь виноватый стек стоит в списке
-    # пятым, а называться обязано место 6.
+    # пропусками, когда за столом есть пустые места. Здесь виноватый стек
+    # соперника стоит в списке третьим (позиция 2), а называться обязано
+    # место 6.
     seats = copy.deepcopy(analyze_node["seats"])
     for seat in seats:
         seat["seatIndex"] += 2
-    seats[4]["stackBb"] = 0.0
-    with pytest.raises(ValueError, match="стек на месте 6 должен быть > 0"):
+    seats[2]["stackBb"] = 0.0
+    with pytest.raises(ValueError, match="^стек на месте 6 должен быть > 0"):
         run_analyze(seats=seats, buttonSeat=6)
+
+
+def test_the_answer_is_the_field_model_of_the_whole_tournament(
+    analyze_base_result, analyze_node
+):
+    # Согласованность с `icm_field`, а не число из памяти: стол по номерам
+    # мест, герой — место 7 (позиция 5), соперник — место 4 (позиция 2),
+    # поле — 490 игроков, делящих фишки турнира без стола поровну.
+    table = [seat["stackBb"] for seat in analyze_node["seats"]]
+    field_count = 496 - len(table)
+    field_stack = (496 * 50.5 - sum(table)) / field_count
+    ladder = PayoutLadder(
+        [(1, 1, 1090.51), (2, 2, 840.37), (3, 3, 648.01), (4, 6, 400.0)],
+        places_paid=165,
+    )
+    args = (table, field_count, field_stack, ladder, 5)
+    assert analyze_base_result["icm"]["heroEquity"] == pytest.approx(hero_equity(*args))
+    pressure = analyze_base_result["riskPremium"]
+    assert pressure["riskPremium"] == pytest.approx(risk_premium(*args, 2))
+    assert pressure["bubbleFactor"] == pytest.approx(bubble_factor(*args, 2))
+
+
+def test_the_answer_no_longer_claims_a_truncated_ladder(analyze_base_result):
+    # Лесенка берётся по настоящему месту целиком, поле не сворачивается:
+    # обеим пометкам больше нечего сообщать.
+    assert "ladder_truncated" not in analyze_base_result["flags"]
+    assert "reduced_field" not in analyze_base_result["flags"]
+
+
+def test_a_homogeneous_field_is_flagged(analyze_base_result):
+    assert "field_homogeneous" in analyze_base_result["flags"]
+
+
+def test_a_final_table_has_no_field_and_is_not_flagged(run_analyze):
+    # Умолчание фикстуры — playersLeft=6 при шести местах: поля вне стола
+    # нет, допущения об однородности тоже, и пометка соврала бы.
+    result = run_analyze()
+    assert "field_homogeneous" not in result["flags"]
+    assert result["icm"]["playersLeft"] == result["icm"]["tableSeats"] == 6
+
+
+def test_a_ladder_shorter_than_places_paid_is_flagged(analyze_base_result):
+    # Фикстура описывает места 1-6 при placesPaid=165.
+    assert "ladder_incomplete" in analyze_base_result["flags"]
+
+
+def test_a_complete_ladder_is_not_flagged(run_analyze, analyze_context):
+    # Те же выплаты, но призовая зона ровно по ним: пометка сравнивает
+    # покрытые места с `placesPaid`, а не с чем-то ещё.
+    context = copy.deepcopy(analyze_context)
+    context["placesPaid"] = 6
+    result = run_analyze(context=context)
+    assert "ladder_incomplete" not in result["flags"]
+
+
+def test_a_deeper_ladder_is_computed_instead_of_refused(run_analyze, analyze_context):
+    # Лесенка на все 165 мест при поле из 490: раньше это падало с
+    # «перебор Malmuth-Harville такого размера не считается».
+    context = copy.deepcopy(analyze_context)
+    context["payouts"] = [
+        {"from": 1, "to": 1, "amount": 1090.51},
+        {"from": 2, "to": 2, "amount": 840.37},
+        {"from": 3, "to": 3, "amount": 648.01},
+        {"from": 4, "to": 6, "amount": 400.0},
+        {"from": 7, "to": 12, "amount": 250.0},
+        {"from": 13, "to": 40, "amount": 120.0},
+        {"from": 41, "to": 165, "amount": 60.0},
+    ]
+    result = run_analyze(context=context, playersLeft=496, heroRank=90)
+    assert result["icm"]["heroEquity"] > 0.0
+    assert "ladder_incomplete" not in result["flags"]
+    assert "riskPremium" in result
+
+
+def test_the_field_size_reported_is_the_whole_tournament(analyze_base_result):
+    assert analyze_base_result["icm"]["playersLeft"] == 496
+    assert analyze_base_result["icm"]["tableSeats"] == 6
+
+
+def test_only_undefined_pressure_is_turned_into_a_flag(run_analyze, monkeypatch):
+    # Пометка `icm_pressure_undefined` — про свойство лесенки. Любой другой
+    # отказ из `risk_premium` — ошибка вызова, и прятать её под пометкой
+    # нельзя: разбор обязан упасть с ней (долг D4). Из настоящего входа
+    # такой отказ недостижим, поэтому он подложен.
+    def broken(*args):
+        raise ValueError("чужой отказ")
+
+    monkeypatch.setattr(analyze_module, "risk_premium", broken)
+    with pytest.raises(ValueError, match="^чужой отказ$"):
+        run_analyze()
 
 
 def test_result_is_json_serialisable(analyze_base_result):

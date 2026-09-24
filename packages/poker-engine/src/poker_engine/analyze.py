@@ -17,42 +17,20 @@
 
 from __future__ import annotations
 
+from ._checks import check_positive
 from .equity import equity_vs_range
-from .field import reduce_field
 from .handstate import (
     DecisionNode,
     Seat,
+    TournamentContext,
     assign_positions,
     context_from_dict,
     node_from_dict,
-    payout_ladder,
     validate_hand,
 )
-from .icm import bubble_factor, icm_equities, risk_premium, significant_depth
+from .icm_field import PressureUndefined, bubble_factor, hero_equity, risk_premium
 from .potodds import required_equity
 from .profiles import range_for_vpip
-
-MAX_FIELD_NODES = 15
-
-# Потолок стоимости одного расчёта ICM: число упорядоченных префиксов
-# игроков, которые перебирает Malmuth-Harville, то есть
-# `n! / (n - paid)!` для поля из `n` узлов и `paid` оплачиваемых мест.
-# Растёт как падающий факториал, а не как число мест: восемь мест из
-# восьми — это 40 320 префиксов и доли секунды, а семь из пятнадцати —
-# уже 32 млн. Замер на поле из 15 узлов, один вызов `icm_equities`
-# (Python 3.12, эта машина):
-#
-#     мест  префиксов      один вызов   весь analyze (семь вызовов)
-#     4        32 760          0.031 с       0.2 с
-#     5       360 360          0.326 с       2.3 с
-#     6     3 603 600          3.259 с      22.8 с
-#     7    32 432 400         29.243 с     204.7 с
-#
-# Предел взят между шестью и семью местами: шесть — последняя глубина,
-# на которой разбор укладывается в десятки секунд. Выше — не «медленно»,
-# а практически никогда: пятнадцать оплачиваемых мест из пятнадцати это
-# 15! ≈ 1.3·10¹² префиксов.
-MAX_ICM_PREFIXES = 4_000_000
 
 
 def analyze(
@@ -66,7 +44,13 @@ def analyze(
     Разбирается последний узел: он и есть момент, на который отвечает герой,
     остальные нужны валидатору как история.
 
-    Размер поля для свёртки берётся из `node.players_left`, а не из
+    ICM считается моделью «стол поимённо + однородное поле» (`icm_field`):
+    места за столом различимы, остальные `players_left − мест за столом`
+    игроков поля неразличимы и держат средний стек турнира за вычетом
+    стола. Место в этой модели — настоящее место в турнире, и приз берётся
+    из лесенки по нему целиком, без обрезания.
+
+    Размер поля берётся из `node.players_left`, а не из
     `context.players_left`: узел — снимок разбираемого момента, контекст
     снят раньше и живёт дольше (в фикстурах плана это 496 против 782).
     Расхождение между ними — норма, а не ошибка ввода, поэтому `handstate`
@@ -78,26 +62,16 @@ def analyze(
     вызову в пределах точности выборки. На ICM и пот-оддсы оба
     параметра не влияют — те считаются точно.
 
-    Пометка `ladder_truncated` в ответе означает ровно это занижение:
-    оплачиваемых и ещё достижимых мест больше, чем мест с призом внутри
-    модели. На реальном турнире она будет стоять почти всегда — это
-    честное описание того, что делает движок, а не редкий особый случай.
-
-    Известное ограничение: плотная лесенка выплат внутри свёрнутого поля
-    разбору не поддаётся. Malmuth-Harville перебирает упорядоченные
-    префиксы игроков до последнего оплачиваемого места, и стоимость
-    растёт падающим факториалом: шесть оплачиваемых мест из пятнадцати —
-    это 3.6 млн префиксов и десятки секунд на весь разбор, семь — уже
-    32 млн, пятнадцать — 15! и никогда. Такой вход отвергается по
-    `MAX_ICM_PREFIXES` (замер и порог — у самой константы), а не считается
-    бесконечно. Снятие ограничения — смена алгоритма ICM, то есть
-    отдельный план, а не эта задача.
+    Пометка `ladder_incomplete` означает, что интервалы выплат покрывают
+    меньше мест, чем `placesPaid`: призы за непокрытые места модель
+    считает нулевыми, и `heroEquity` занижено. Недоснятый скриншот лобби
+    или кривое распознавание — не повод молчать.
 
     Известное ограничение: соперник в олл-ине (стек 0 BB) разбору не
-    поддаётся — `reduce_field` требует положительных стеков и раздача
-    отвергается с сообщением про стек на его месте. Как учитывать уже
-    вложенные в банк фишки выбывающего — решение о модели ICM, и оно
-    этой задачей не принимается.
+    поддаётся — раздача отвергается сообщением про стек на его месте
+    (`seatIndex`, как на скриншоте). Как учитывать уже вложенные в банк
+    фишки выбывающего — решение о модели ICM (спека плана 3, §11.1), и
+    оно не принято.
 
     `effectiveStackBb` — минимум из остаточных стеков героя и соперника;
     уже вложенное в банк в него не входит (`Seat.invested_bb` учтено в
@@ -141,59 +115,34 @@ def analyze(
 
     seats = sorted(node.seats, key=lambda seat: seat.seat_index)
     hero_index = seats.index(hero)
-    field = reduce_field(
-        [seat.stack_bb for seat in seats],
-        hero_index,
-        node.players_left,
-        context.average_stack_bb,
-        max_nodes=MAX_FIELD_NODES,
-        # Иначе отказ назовёт позицию в списке: `seatIndex` со скриншота
-        # идёт с пропусками, когда за столом есть пустые места, и
-        # `validate_hand` требует от него только уникальности.
-        seat_labels=[seat.seat_index for seat in seats],
-    )
-    ladder = payout_ladder(context, places=len(field))
-    # Глубину перебора спрашиваем у самого `icm`, а не считаем заново:
-    # стоимость определяется тем, до какого места рекурсирует `icm_equities`,
-    # и вторая копия этого правила разошлась бы с оригиналом молча.
-    paid = significant_depth(ladder)
-    if _icm_prefixes(len(field), paid) > MAX_ICM_PREFIXES:
-        raise ValueError(
-            f"оплачиваемых мест внутри свёрнутого поля {paid} из {len(field)}: "
-            f"перебор Malmuth-Harville такого размера не считается, "
-            f"ICM не выполним"
-        )
+    # Ноль не доходит до расчёта: стек 0 BB проходит `validate_hand`
+    # (олл-ин соперника), но модель не знает, куда деть его вложенное.
+    # Отказ называет `seatIndex`, а не позицию в списке: номера со
+    # скриншота идут с пропусками, когда за столом есть пустые места, и
+    # `icm_field` назвал бы не то место.
+    for seat in seats:
+        check_positive(seat.stack_bb, f"стек на месте {seat.seat_index}")
+    table = [seat.stack_bb for seat in seats]
+
+    ladder = context.ladder()
+    field_count = node.players_left - len(table)
+    field_stack = _field_stack(node, context, table, field_count)
+
     result["icm"] = {
-        "heroEquity": icm_equities(field, ladder)[hero_index],
-        "fieldNodes": len(field),
+        "heroEquity": hero_equity(table, field_count, field_stack, ladder, hero_index),
+        "playersLeft": node.players_left,
+        "tableSeats": len(table),
     }
     # `mh_bias` безусловна: Malmuth-Harville применяется всегда.
-    # `reduced_field` — только когда свёртка правда была: на финальном
-    # столе поле равно столу, число точное, и пометка о приближении
-    # соврала бы. `flags` — канал честности ответа, флаг, который иногда
+    # `field_homogeneous` — только когда поле вне стола правда есть: на
+    # финальном столе поле пусто, допущения об однородности нет, и флаг
+    # соврал бы. `flags` — канал честности ответа, флаг, который иногда
     # ложь, обесценивает весь канал.
-    #
-    # `ladder_truncated` сравнивает два числа мест, а не края описанных
-    # выплат. `attainable` — мест, которые герою ещё можно занять: глубже
-    # `places_paid` призов нет вовсе, а глубже `players_left` места уже
-    # заняты выбывшими, и приз за них вручён. `paid` — мест с ненулевым
-    # призом внутри модели: `payout_ladder` обрезает лесенку по числу
-    # узлов, а `MAX_ICM_PREFIXES` держит эту глубину не выше шести.
-    # Разница между ними и есть занижение `heroEquity`.
-    #
-    # Край интервала выплат тут ни при чём в обе стороны: лесенка 6..12
-    # на финальном столе из восьми выходит за поле, но места 9..12
-    # недостижимы и терять нечего, а плановая фикстура с 165 платными
-    # местами описывает выплаты только до шестого — обрезано девять
-    # десятых лесенки, и ни один интервал за поле не выходит.
-    # Ни `mh_bias` (смещение Malmuth-Harville), ни `reduced_field`
-    # (схлопывание стеков) про призы не говорят.
     result["flags"].append("mh_bias")
-    if len(field) > len(seats):
-        result["flags"].append("reduced_field")
-    attainable = min(context.places_paid, node.players_left)
-    if attainable > paid:
-        result["flags"].append("ladder_truncated")
+    if field_count > 0:
+        result["flags"].append("field_homogeneous")
+    if not ladder.is_complete:
+        result["flags"].append("ladder_incomplete")
     if context.late_reg_open:
         result["flags"].append("late_reg_open")
     if node.street == "preflop":
@@ -209,25 +158,21 @@ def analyze(
     result["villainPosition"] = positions[villain.seat_index].value
     result["effectiveStackBb"] = min(hero.stack_bb, villain.stack_bb)
 
-    # `risk_premium` и `bubble_factor` отказываются считать, когда исход
-    # олл-ина не двигает ICM-эквити героя (winner-take-all, нулевые выплаты
-    # вне свёрнутой лесенки). Это не ошибка ввода, а отсутствие давления
-    # лесенки — сообщаем пометкой, а не падением всего разбора.
-    #
-    # Блок шире этой одной причины: `_icm_branches` бросает тем же
-    # `ValueError` ещё на «эффективный стек равен нулю», «hero и villain
-    # должны различаться» и «вне диапазона игроков». Последние два здесь
-    # недостижимы (индексы берутся из того же списка мест, а герой и
-    # соперник различны по построению `_pick_villain`), первый —
-    # достижим и будет помечен как отсутствие давления лесенки, хотя
-    # причина другая; самих нулевых стеков раздача с таким местом до
-    # сюда не доносит — её раньше отвергает `reduce_field`.
+    # Неопределённое давление (winner-take-all, деньги вне достижимых мест,
+    # лесенка, награждающая вылет) — не ошибка ввода, а свойство лесенки:
+    # сообщаем пометкой, а не падением всего разбора. Ловится только
+    # `PressureUndefined`: прочие отказы этих функций — ошибки вызова, и
+    # под пометкой они бы спрятались (долг D4).
     try:
         result["riskPremium"] = {
-            "riskPremium": risk_premium(field, ladder, hero_index, villain_index),
-            "bubbleFactor": bubble_factor(field, ladder, hero_index, villain_index),
+            "riskPremium": risk_premium(
+                table, field_count, field_stack, ladder, hero_index, villain_index
+            ),
+            "bubbleFactor": bubble_factor(
+                table, field_count, field_stack, ladder, hero_index, villain_index
+            ),
         }
-    except ValueError:
+    except PressureUndefined:
         result["flags"].append("icm_pressure_undefined")
 
     combos, used_default = range_for_vpip(villain.vpip, villain.vpip_hands)
@@ -245,12 +190,31 @@ def analyze(
     return result
 
 
-def _icm_prefixes(players: int, paid: int) -> int:
-    """Число упорядоченных префиксов, которые переберёт Malmuth-Harville."""
-    count = 1
-    for step in range(paid):
-        count *= players - step
-    return count
+def _field_stack(
+    node: DecisionNode,
+    context: TournamentContext,
+    table: list[float],
+    field_count: int,
+) -> float:
+    """Стек одного игрока поля: средний по турниру за вычетом стола.
+
+    Считается из среднего стека, а не берётся им: средний стек включает
+    стол, а поле — это турнир без стола.
+    """
+    if field_count <= 0:
+        return 0.0
+    if context.average_stack_bb is None:
+        raise ValueError(
+            f"нужен средний стек: игроков ({node.players_left}) больше, чем за "
+            f"столом ({len(table)}), и поле нечем населить"
+        )
+    chips = node.players_left * context.average_stack_bb - sum(table)
+    if chips <= 0:
+        raise ValueError(
+            "средний стек не согласован со стеками за столом: "
+            "на остальное поле не остаётся фишек"
+        )
+    return chips / field_count
 
 
 def _pick_villain(node: DecisionNode) -> Seat | None:

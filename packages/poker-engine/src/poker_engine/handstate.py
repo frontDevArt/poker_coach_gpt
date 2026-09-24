@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from ._checks import check_non_negative, check_positive
 from .equity import FULL_DECK
+from .ladder import PayoutLadder
 from .profiles import check_vpip
 from .types import Position, positions_for
 
@@ -105,10 +106,17 @@ class TournamentContext:
     players_left: int
     late_reg_open: bool
     seats_per_table: int
-    # `None` — законное отсутствие: средний стек участвует только в
-    # схлопывании остального поля (`field.reduce_field`), и на финальном
+    # `None` — законное отсутствие: средний стек нужен только, чтобы
+    # населить поле вне стола (`analyze._field_stack`), и на финальном
     # столе требовать его означало бы требовать число ни для чего.
     average_stack_bb: float | None
+
+    def ladder(self) -> PayoutLadder:
+        """Лесенка выплат контекста. Её гарды — у `PayoutLadder`."""
+        return PayoutLadder(
+            [(payout.first, payout.last, payout.amount) for payout in self.payouts],
+            places_paid=self.places_paid,
+        )
 
 
 def _present(raw, key: str) -> bool:
@@ -348,24 +356,6 @@ def assign_positions(node: DecisionNode) -> dict[int, Position]:
     return positions
 
 
-def payout_ladder(context: TournamentContext, places: int) -> list[float]:
-    """Призовые по местам от первого, добитые нулями до `places`. Если
-    `places` меньше числа оплачиваемых мест, лесенка молча обрезается по
-    `places` — призы за более дальние места в результат не попадают.
-
-    Это вторая, уходящая модель места: 0-based список со скрытой обрезкой
-    против 1-based `ladder.PayoutLadder`. Функцию вместе с её тестами
-    удаляет Задача 4 плана
-    `docs/superpowers/plans/2026-09-12-icm-field-model.md` — она снимает
-    последний вызов из `analyze`."""
-    ladder = [0.0] * places
-    for payout in context.payouts:
-        for place in range(payout.first, payout.last + 1):
-            if 1 <= place <= places:
-                ladder[place - 1] = payout.amount
-    return ladder
-
-
 def validate_hand(
     context: TournamentContext, nodes: list[DecisionNode]
 ) -> None:
@@ -381,23 +371,19 @@ def validate_hand(
 
 
 def _validate_context(context: TournamentContext) -> None:
-    if not context.payouts:
-        raise ValueError("лесенка выплат пуста")
-    seen: set[int] = set()
+    # Пустота, интервалы, призы, пересечения, `places_paid` и глубина
+    # лесенки — у `PayoutLadder`, с теми же текстами: одно нарушение — одно
+    # сообщение, и одна реализация на пакет.
+    #
+    # Конструктор неделим, поэтому две проверки, которые раньше стояли
+    # между его гардами, встают после него (решение Задачи 4, долг D17):
+    # монотонность — отдельным проходом, когда интервалы уже проверены,
+    # упорядочены и не пересекаются; `entrants < players_left` — последней.
+    # Приоритет гардов класса между собой прежний; меняется он ровно в трёх
+    # парах, и каждая запинена в `tests/test_handstate.py`.
+    context.ladder()
     previous_amount: float | None = None
     for payout in sorted(context.payouts, key=lambda p: p.first):
-        if payout.first < 1 or payout.last < payout.first:
-            raise ValueError(
-                f"неверный интервал мест в выплатах: {payout.first}–{payout.last}"
-            )
-        check_positive(payout.amount, f"приз за место {payout.first}")
-        places = set(range(payout.first, payout.last + 1))
-        if places & seen:
-            raise ValueError(
-                f"интервалы выплат пересекаются на месте "
-                f"{min(places & seen)}"
-            )
-        seen |= places
         if previous_amount is not None and payout.amount > previous_amount:
             raise ValueError("выплата за более низкое место больше, чем за высокое")
         previous_amount = payout.amount
@@ -406,26 +392,9 @@ def _validate_context(context: TournamentContext) -> None:
             f"осталось игроков ({context.players_left}) больше, чем входов "
             f"({context.entrants})"
         )
-    # `places_paid` попадает в ответ не числом, а пометкой `ladder_truncated`
-    # (`analyze`): она сравнивает достижимые оплачиваемые места с глубиной
-    # лесенки внутри модели. Ноль или отрицательное молча погасили бы
-    # пометку, то есть занижение `heroEquity` перестало бы называться.
-    check_positive(context.places_paid, "размер призовой зоны")
-    # Выплата за место вне призовой зоны — противоречие в самих данных:
-    # лобби не платит за место, которое не оплачивается. Принять его значит
-    # считать ICM с призами, которых турнир не выдаёт (`payout_ladder` строит
-    # лесенку по выплатам, а не по `places_paid`): `heroEquity` завышается,
-    # и `ladder_truncated` при этом молчит, потому что достижимых мест
-    # оказывается меньше, чем оплаченных внутри модели.
-    deepest = max(payout.last for payout in context.payouts)
-    if deepest > context.places_paid:
-        raise ValueError(
-            f"выплаты описаны до места {deepest}, а призовых мест "
-            f"{context.places_paid}"
-        )
-    # Отсутствие среднего стека проверяет не валидатор, а `reduce_field`:
+    # Отсутствие среднего стека проверяет не валидатор, а `analyze`:
     # обязателен он ровно тогда, когда поле больше стола, и это знает тот,
-    # кто поле сворачивает. Здесь проверяется только переданное значение.
+    # кто поле населяет. Здесь проверяется только переданное значение.
     if context.average_stack_bb is not None:
         check_positive(context.average_stack_bb, "средний стек")
 

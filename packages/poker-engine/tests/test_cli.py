@@ -279,8 +279,8 @@ def test_error_json_is_valid_utf8_on_subprocess_console():
 
 def test_analyze_reads_a_file(tmp_path, capsys, analyze_context, analyze_node):
     # Финальный стол вместо плановых 496 живых: тест про чтение файла и
-    # форму ответа, а свёртка поля стоит ему десять лишних секунд.
-    analyze_node.update(playersLeft=8, heroRank=8)
+    # форму ответа, а не про поле.
+    analyze_node.update(playersLeft=6, heroRank=6)
     path = tmp_path / "hand.json"
     path.write_text(
         json.dumps({"context": analyze_context, "nodes": [analyze_node]}),
@@ -351,7 +351,7 @@ def test_analyze_on_an_all_in_opponent_is_a_json_error(
     # Известное ограничение модели (см. докстринг `analyze`): соперник с
     # нулевым стеком отвергается. Наружу это обязано выходить разбираемым
     # ответом с кодом 1, а не трейсбеком.
-    analyze_node["seats"][4]["stackBb"] = 0.0
+    analyze_node["seats"][2]["stackBb"] = 0.0  # соперник, место 4
     path = tmp_path / "hand.json"
     path.write_text(
         json.dumps({"context": analyze_context, "nodes": [analyze_node]}),
@@ -370,7 +370,7 @@ def test_analyze_passes_trials_and_seed_to_the_engine(
     # того, что CLI их действительно передаёт, а не роняет в умолчания.
     # Разбор здесь считается дважды, поэтому узел — финальный стол: ICM к
     # пробросу `--trials` и `--seed` отношения не имеет.
-    analyze_node.update(playersLeft=8, heroRank=8)
+    analyze_node.update(playersLeft=6, heroRank=6)
     path = tmp_path / "hand.json"
     path.write_text(
         json.dumps({"context": analyze_context, "nodes": [analyze_node]}),
