@@ -5,58 +5,45 @@ Nuxt-оболочка плюс Python-ядро `packages/poker-engine` (ICM, п�
 
 ## Текущее состояние
 
-**Идёт план 3** — модель поля, настоящая лесенка, PKO и бюджет 2 секунды
+**План 3 закрыт** (2026-09-25) — модель поля, настоящая лесенка, PKO и бюджет 2 секунды
 (`docs/superpowers/plans/2026-09-12-icm-field-model.md`, спека
-`docs/superpowers/specs/2026-09-12-icm-field-model-design.md`).
+`docs/superpowers/specs/2026-09-12-icm-field-model-design.md`). Восемь задач, десять фаз,
+каждая задача прошла ревью до `НАХОДОК НЕТ`; ветка `claude/serene-bell-yni6li` влита в `main`
+fast-forward. 477 passed за ~8 с. Разбор `analyze` — 0.16 с при бюджете 2 с; оценщик
+руки — `phevaluator` (не `eval7`, D21).
 
-**Остаток плана идёт по фазам** (решение пользователя 2026-09-24):
-`docs/superpowers/state/2026-09-24-plan3-phases.md`. Одна фаза — одна сессия до ~150k
-контекста. Ревью задачи делает следующая фаза. Там же реестр долгов с хозяевами.
-Каждая фаза пишет отчёт в журнал `docs/superpowers/state/2026-09-12-icm-field-execution-notes.md`
-и промпт следующей фазы в `docs/superpowers/state/plan3-next-prompt.md`.
+**Точка входа — раздел «Итог плана 3» журнала
+`docs/superpowers/state/2026-09-12-icm-field-execution-notes.md`**: решения против текста плана
+по всем задачам, удалённые тесты, замеры, ledger отложенного (D3, D11, D12, D13, D15, D19,
+D21) и открытые вопросы спеки §11 (олл-ин на 0 BB, разброс стеков поля).
 
-- Задача 1 (лесенка выплат, `ladder.py`) — в `main`, прогоны ревью A–D (`472021d` … `d686089`).
-- Фаза 1 сделана (ветка `claude/serene-bell-yni6li`): прогон E Задачи 1, Задача 2 (`icm_field.py`), 376 passed.
-- Фаза 2 сделана: ревью Задачи 2 (F2.1, `0f5336e`), Задача 3 (риск-премия и bubble factor в `icm_field.py`), 394 passed.
-- Фаза 3 сделана: ревью Задачи 3 — `НАХОДОК НЕТ`, Задача 4 (`analyze` на модели поля, `178ea65`, D2–D6, D17), 404 passed.
-- Фаза 4 сделана: ревью Задачи 4 — F4.1 (`573e12c`), Задача 5 (модель половины, `--split` убран, `37710bd`, D8), 413 passed.
-- Фаза 5 сделана: ревью Задачи 5 — F5.1 (`8616497`), Задача 6 (PKO в `analyze`, `61e57fd`), 439 passed.
-- Фаза 6 сделана: ревью Задачи 6 — F6.1 (`b15f8e8`), Задача 7 (защита на баббле, `03aa820`, D9 закрыт ответом пользователя), 459 passed.
-- Фаза 7 сделана: ревью Задачи 7 — F7.1 (`a42dfee`), Задача 8 (`eval7`, три вызова ICM, `59ac718`, D7, D20), 469 passed за ~7 с; разбор 6.9 с → 0.12 с.
-- Фаза 8 сделана: ревью Задачи 8 — находок нет, финальное ревью ветки — F8.1–F8.4, D22 закрыт, D12 и D21 решены пользователем, 469 passed.
-- Фаза 9 сделана: F8.1–F8.4 починены, D21 (`phevaluator` вместо `eval7`, `25c3dfd`), D12 (оговорка в скилле, `f35ad10`), 477 passed.
-- **Следующая — Фаза 10:** повторное ревью починок Фазы 9 и финал плана. Промпт — `docs/superpowers/state/plan3-next-prompt.md`.
+**Следующий — план 4:** push/fold советы (Nash + ICM-поправка). Промпт —
+`docs/superpowers/state/plan3-next-prompt.md`. Правила нарезки на фазы брать из
+`docs/superpowers/state/2026-09-24-plan3-phases.md` (§1, шаблоны §6–§7).
 
 Планы 1 (`feat/poker-engine-core`) и 2 (`feat/screenshot-coach-engine`) закрыты и влиты
-в `main` (обе ветки удалены 2026-09-24, история целиком в `main`): оба ревью на задачу, мутационная приёмка, финальное ревью ветки, 304 теста зелёные.
-Пункт журнала «копии `check_positive` в `bounty.py`» закрыт в плане 3 (прогон D Задачи 1);
-«семь вызовов ICM в три» — Задача 8 плана 3.
-
-**Для контекста планов 1–2 прочитать `docs/superpowers/state/2026-09-10-screenshot-coach-execution-notes.md`**,
-разделы «Task 7» и «Дальше» — что решено против текста плана, мутационная таблица, ledger
-отложенного и два открытых вопроса про модель ICM (оба — предмет отдельного плана).
-
-**Затем `docs/superpowers/state/HANDOFF.md`** — там сетап машины, что появилось
-в Tasks 7–12, восемь решений, принятых против текста плана (план требовал недоказуемых инвариантов),
-один пункт, ждущий решения пользователя, и список сознательно отложенных мелочей.
+в `main`: оба ревью на задачу, мутационная приёмка, финальное ревью ветки. Удалить обе ветки
+на GitHub — за пользователем (D15: из облачной сессии удаление обрывается).
+Контекст планов 1–2 — `docs/superpowers/state/2026-09-10-screenshot-coach-execution-notes.md`,
+разделы «Task 7» и «Дальше».
 
 | Документ | Что |
 |---|---|
-| `docs/superpowers/plans/2026-09-09-poker-engine-core.md` | план, 12 задач |
-| `docs/superpowers/specs/2026-09-09-poker-skillpack-design.md` | спека |
-| `docs/superpowers/state/HANDOFF.md` | точка входа для новой сессии |
-| `docs/superpowers/state/2026-09-09-poker-engine-execution-notes.md` | полный журнал ревью Tasks 1–6 плана 1 |
+| `docs/superpowers/plans/2026-09-09-poker-engine-core.md` | план 1, 12 задач |
+| `docs/superpowers/specs/2026-09-09-poker-skillpack-design.md` | спека скиллпака (слои, `pushfold.py`, фазы) — вход плана 4 |
+| `docs/superpowers/state/HANDOFF.md` | handoff плана 1 (историческое) |
+| `docs/superpowers/state/2026-09-09-poker-engine-execution-notes.md` | журнал ревью Tasks 1–6 плана 1 (историческое) |
 | `docs/superpowers/plans/2026-09-10-screenshot-coach-engine.md` | план 2, 7 задач |
 | `docs/superpowers/specs/2026-09-10-screenshot-coach-design.md` | спека плана 2 |
-| `docs/superpowers/state/2026-09-10-screenshot-coach-execution-notes.md` | **точка входа**: журнал плана 2, Tasks 1–7 |
+| `docs/superpowers/state/2026-09-10-screenshot-coach-execution-notes.md` | журнал плана 2, Tasks 1–7 |
 | `docs/superpowers/state/2026-09-11-task7-handoff-2.md` | handoff второй сессии Task 7 (историческое) |
 | `docs/superpowers/state/2026-09-11-task7-handoff.md` | handoff первой сессии Task 7 (историческое) |
 | `docs/superpowers/state/2026-09-11-next-session-prompt.md` | промпт третьей сессии (историческое) |
-| `docs/superpowers/plans/2026-09-12-icm-field-model.md` | **план 3, 8 задач — текущая работа**; решения прогонов A–D Задачи 1 внутри |
-| `docs/superpowers/specs/2026-09-12-icm-field-model-design.md` | спека плана 3 |
-| `docs/superpowers/state/2026-09-24-plan3-phases.md` | **фазы плана 3**: правила сессий, бюджет, реестр долгов, шаблоны промптов |
-| `docs/superpowers/state/2026-09-12-icm-field-execution-notes.md` | журнал плана 3, раздел на каждую фазу |
-| `docs/superpowers/state/plan3-next-prompt.md` | промпт очередной фазы (перезаписывается) |
+| `docs/superpowers/plans/2026-09-12-icm-field-model.md` | план 3, 8 задач (закрыт); решения каждой задачи внутри |
+| `docs/superpowers/specs/2026-09-12-icm-field-model-design.md` | спека плана 3; §10 — границы, §11 — открытые вопросы |
+| `docs/superpowers/state/2026-09-24-plan3-phases.md` | фазы плана 3: правила сессий, бюджет, реестр долгов, шаблоны промптов |
+| `docs/superpowers/state/2026-09-12-icm-field-execution-notes.md` | **точка входа**: журнал плана 3, раздел на фазу, итоговый раздел |
+| `docs/superpowers/state/plan3-next-prompt.md` | промпт плана 4 |
 
 Плагины перечислены в `.claude/settings.json`.
 
@@ -65,7 +52,7 @@ Nuxt-оболочка плюс Python-ядро `packages/poker-engine` (ICM, п�
 ```bash
 # ядро
 cd packages/poker-engine
-.venv/Scripts/python -m pytest              # 304 passed, ~5.5 мин
+.venv/Scripts/python -m pytest              # 477 passed, ~8 с (Linux: .venv/bin/python)
 
 # первый запуск на новой машине
 python -m venv .venv

@@ -1,3 +1,6 @@
+> **Исторический документ** (план 1, 2026-09-09). Текущее состояние — `CLAUDE.md`; последний
+> план — итоговый раздел `docs/superpowers/state/2026-09-12-icm-field-execution-notes.md`.
+
 # Handoff — план 1 (Ф0 + Ф1) закрыт
 
 Last updated: 2026-09-09. Ветка `feat/poker-engine-core`, база `main` @ `e112e24`, 30 коммитов.
