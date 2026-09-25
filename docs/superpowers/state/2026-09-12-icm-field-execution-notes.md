@@ -1117,3 +1117,219 @@ README, `SKILL.md`, блок решений в плане); `git show 573e12c` (
 
 Фаза доделана целиком. Следующая — Фаза 8: ревью Задачи 8 (`59ac718`) и починки F7.1
 (`a42dfee`), финальное ревью ветки, D12, D21, D22.
+
+## Фаза 8 — ревью Задачи 8 и финальное ревью ветки (2026-09-25)
+
+Ветка `claude/serene-bell-yni6li` (облачная сессия, §3), Linux, `.venv/bin/python` (D16),
+Python 3.11.15. База: **469 passed** за 7.9 с (`-o addopts="" -q`), совпадает с промптом.
+Фаза только ревьюит, код не менялся.
+
+### Ревью Задачи 8 (`59ac718`) и починки F7.1 (`a42dfee`)
+
+Объём: `git show 59ac718` целиком, Задача 8 плана с блоком решений Фазы 7, спека §7 и §9.12,
+`icm_field.py` и `analyze.py` в HEAD.
+
+- **Спека §7.** §7.2: три вызова ICM на разбор. `pressure` считает три ветви один раз;
+  `_equity_after` при вылете героя берёт приз без `table_equities`, так что ветвей не больше
+  трёх. §7.3: оценщик — один вызов `eval7.evaluate` на семь карт, карты `eval7` строятся один
+  раз на модуль. Число прогонов не уменьшено.
+- **Global Constraints.** Один коммит. Новых гардов и текстов нет. `pressure` отказывает
+  тем же порядком и теми же текстами, что три функции порознь: `_branches` общий, риск-премия
+  идёт раньше bubble factor. Пинит `test_pressure_refuses_like_the_measures_it_joins`.
+  Перестановка вызовов в `analyze` (давление теперь до блока `icm`) исхода не меняет: при
+  отказе, отличном от `PressureUndefined`, разбор падает и раньше, и теперь.
+- **Решения Фазы 7, оценка каждого:**
+  1. Эквити из `pressure`, при неопределённом давлении — четвёртый вызов. **Принято.** Нести
+     эквити в исключении — значит расширять `PressureUndefined` полем ради редкого случая, а
+     узкий `except` (D4) сохранился. Эквити в этом случае считается по удлинённой лесенке
+     `ladder`, не по `prizes` — мутант «лесенка лобби» убит
+     (`test_undefined_pressure_keeps_the_equity_on_the_protected_ladder`).
+  2. Оговорки приёмки п.3. **Приняты.** `1` без соперника — `==`; `≤ 3` на фикстуре, `≤ 6`
+     с защитой, `≤ 7` с защитой при неопределённом давлении (3 + 1 + 3) — сверено по коду
+     построчно. Все три счётчика краснеют на `analyze.py` из `a42dfee` (13 вызовов).
+  3. Два теста подменяют `pressure` вместо `risk_premium`. **Принято:** старое имя из
+     `analyze` больше не импортируется, и подмена по нему стала бы пустой. Утверждения не
+     менялись.
+  4. Лок: `eval7==0.1.11`, `future==1.0.0`, `pyparsing==3.3.3`. **Принято.** `pip show eval7`:
+     `Requires: future, pyparsing`; без них `--no-deps` оставил бы `import eval7` сломанным.
+     Проверено по PyPI: `eval7 0.1.11` для `win_amd64` есть только `cp312`, для 3.13/3.14 нет,
+     sdist нет (`--no-binary` видит только 0.1.2–0.1.10). На Linux колёса есть для cp313–cp315.
+     README и шапка лока говорят это верно. Решение по D21 — ниже.
+  5. Фильтр `DeprecationWarning` на `eval7.rangestring`. **Принято:** с `-o filterwarnings=""`
+     выходят `PyparsingDeprecationWarning` из `rangestring.py`, с фильтром — нет, а чужие
+     модули он не глушит. Замечание: `pyparsing` снимает эти имена в 4.0, и `import eval7`
+     тогда упадёт. Лок пинит 3.3.3, `pyproject` верхней границы не ставит. С заменой оценщика
+     по D21 вопрос снимается сам, поэтому это не находка.
+  6. Тесты сверх наброска. **Принято:** ничьи на общей доске (125 из 3000) — единственная
+     проверка деления банка.
+  7. Файлы сверх списка (`icm_field.py`, `test_analyze.py`, `test_icm_field_pressure.py`,
+     README). **Принято.**
+- **Тест на 2 секунды краснеет на медленной реализации — перепроверено.** С `equity.py` из
+  `a42dfee` тест падает: «разбор занял 7.72 с при бюджете 2.0 с». Остальные четыре теста
+  бюджета зелёные. С `analyze.py` из `a42dfee` падают три счётчика: 13 вызовов.
+- **Приёмка Задачи 8.** п.1 — `test_the_fast_evaluator_orders_hands_exactly_like_pokerkit`,
+  3000 пар. п.2 — `test_equity_crosscheck.py` в `59ac718 --stat` отсутствует. п.3 — четыре
+  счётчика в `test_analyze_budget.py`. п.4 — `test_a_full_analysis_fits_the_budget`, 0.15 с на
+  этой машине. п.5 — `pyproject.toml` `eval7>=0.1.11`, лок `eval7==0.1.11`. п.6 — `pokerkit>=0.5`
+  в `dependencies`; в `src` не импортируется. п.7 — 469 passed.
+- **Мутанты Задачи 8** (11 штук, чистый кэш, скрипт ниже). Все убиты: `min` вместо `max` в
+  оценщике; ничья без деления банка; доска без последней карты; перестановка риск-премии и
+  bubble factor в `pressure`; `win` вместо `now`; `hero_equity` всегда; `except ValueError`
+  вместо `PressureUndefined` (D4); эквити при неопределённом давлении по `prizes`; давление без
+  возврата по `ladder`; перестановка ключей в `riskPremium` и в `riskPremiumWithoutRefund`.
+- **F7.1 (`a42dfee`).** Абзац README о защите на баббле передаёт все три части ответа
+  пользователя по D9. Слова «открыта ли регистрация — не важно: `lateRegOpen` на поправку не
+  влияет» совпадают с docstring `protected_ladder`. Находок нет. **Задача 7 закрыта.**
+
+Находок в коде Задачи 8 нет. **Задача 8** закрывается, но D21 (ниже) меняет её оценщик, и
+Фаза 10 ревьюит эту замену.
+
+### Финальное ревью ветки (`git diff d686089..HEAD`)
+
+Объём: 26 файлов, +4207/−605, 24 коммита. Спека прочитана целиком. Код ядра — `analyze.py`,
+`icm_field.py`, `handstate.py` (дифф), `bounty.py`, `ladder.py`, `cli.py`, `equity.py`. Сквозное
+— README, `.claude/skills/poker-math/SKILL.md`, CLI.
+
+**§8.1 Вход.** `bubbleRefundUsd` необязателен (`_as_optional_float`, `check_non_negative`
+«возврат бай-ина»). `seats[].bountyUsd` необязателен; ценник героя обязателен, как только есть
+хоть один ценник (`_validate_prices`), и сверх спеки — у каждого, кто в раздаче. `averageStackBb`
+обязателен ровно тогда, когда `players_left > мест за столом` (`analyze._field_stack`). Решение
+плана — требовать полноту `payouts` пометкой, а не таблицей «входов → мест».
+
+**§8.2 Выход.** `icm.heroEquity`. Блок `bounty` содержит пять полей спеки (`villainPriceUsd`,
+`knockoutCashUsd`, `ownPriceGrowthUsd`, `heroPriceAtRiskUsd`, `requiredEquityWithBounty`) плюс
+`bbValueUsd`. Блок `bubbleProtection` — отдельной строкой. Лесенка и головы раздельно: пинит
+`test_the_two_halves_of_equity_stay_separate`.
+
+**§8.3 Пометки.** Grep по `src`: `ladder_truncated` и `reduced_field` не встречаются.
+`field_homogeneous`, `pko`, `ladder_incomplete`, `bubble_protection` ставятся; `mh_bias`,
+`late_reg_open`, `no_pushfold`, `vpip_default`, `icm_pressure_undefined` остались. README
+перечисляет те же девять. `field.py` с `reduce_field` жив, но вне расчётного пути: так велит
+таблица файлов плана («сам модуль и его тесты остаются»). Кандидат для D13.
+
+**§9 — каждый инвариант и тест, который его пинит:**
+
+| # | Инвариант | Тест |
+|---|---|---|
+| 1 | деньги не теряются | `test_icm_field.py::test_money_is_never_lost`, `…places_already_paid_out_are_not_handed_out_again` |
+| 2 | масштаб лесенки | `test_icm_field.py::test_scaling_the_ladder_scales_every_equity`, `test_icm_field_pressure.py::test_scaling_the_ladder_leaves_pressure_untouched` |
+| 3 | масштаб стеков | `test_icm_field.py::test_scaling_every_stack_changes_nothing` (и `test_icm.py`) |
+| 4 | F = 0 совпадает с перебором до 1e-12 | `test_icm_field.py::test_an_empty_field_reproduces_the_exact_enumeration` |
+| 5 | монотонность, равные — поровну | `…a_bigger_stack_is_worth_more_but_less_than_proportionally`, `…equal_stacks_everywhere_split_the_pool_evenly` |
+| 6 | меньше, чем пропорционально | `…a_bigger_stack_is_worth_more_but_less_than_proportionally` |
+| 7 | плоская лесенка не давит | `test_icm_field_pressure.py::test_a_flat_ladder_paying_everyone_does_not_press` |
+| 8 | бабл давит сильнее | `test_icm_field_pressure.py::test_pressure_is_higher_on_the_bubble_than_deep_in_the_money` |
+| 9 | сохранение баунти-фонда | `test_bounty.py::test_the_bounty_pool_is_conserved`, `…a_knockout_moves_the_whole_bounty_of_the_busted` |
+| 10 | взятые баунти не влияют | `test_analyze.py::test_the_two_halves_of_equity_stay_separate`: в контракте нет поля для взятых баунти, инвариант держится конструктивно |
+| 11 | классика не задета PKO | `test_analyze.py::test_a_table_without_prices_is_not_a_pko`, `…a_classic_table_never_touches_the_bounty_module` |
+| 12 | бюджет | `test_analyze_budget.py::test_a_full_analysis_fits_the_budget` |
+
+У каждого инварианта есть тест. Инвариант §6 про возврат `c` (в §9 его нет, он из плана) пинит
+`test_a_refund_is_the_same_as_every_paid_prize_lowered_by_it` — сверено в Фазе 7.
+
+**Сквозное.** README: установка с оговоркой про Windows и Python; `analyze` с моделью поля,
+пометками, PKO, защитой на баббле, ограничением стека 0; `bounty-ev` без `--split`. `SKILL.md`:
+`--bounty` — число с экрана, `--split` нет (D8). CLI: `bounty-ev` без `--split`, `analyze`
+через `--input`. Расхождение CLI `icm`/`risk-premium` с `analyze` — D12, ниже.
+
+Одна находка — **F8.1** (ниже): комментарий в `analyze.py` называет winner-take-all примером
+неопределённого давления.
+
+### D22 — мутанты «снести гард целиком» на чистом кэше
+
+Скрипт (`ast`): каждый `raise` и каждый вызов `check_*`/`_check*`/`_validate` в модуле по одному
+заменяется на `pass` с тем же отступом. Затем `PYTHONDONTWRITEBYTECODE=1`, удаление всех
+`__pycache__` в `src` и `tests`, полный сьют `-x -q --tb=no -p no:cacheprovider`, откат из
+копии в памяти в `finally` и повторная чистка кэша. Модули: `_checks.py`, `ladder.py`,
+`icm_field.py`, `bounty.py`, `analyze.py`, `handstate.py`, `equity.py`, `cli.py`. Перед прогоном
+и после него сьют на чистом кэше — 469 passed, `git status` чистый.
+
+**120 мутантов, выжили 11.** Все гарды, которые план 3 добавил или менял, убиты:
+`_checks.py` (10/10), `ladder.py` (11/11), `icm_field.py` (15/15), `analyze.py` (6/6),
+`bounty.py` (кроме одного, ниже), новые гарды `handstate.py` (возврат, ценники, ладдер-блок,
+монотонность, `entrants`). **Вердикты «убит» Фаз 1–6 по гардам подтверждены на чистом кэше.**
+
+Выжившие:
+
+- `bounty.py:77` `check_positive(call_amount)` — **эквивалентный, известный** (журнал Фазы 5):
+  `required_equity` на обеих ветках проверяет то же имя тем же текстом.
+- `cli.py:139` «неизвестная команда» — **эквивалентный**: `add_subparsers(required=True)`, и
+  argparse не пропустит неизвестную команду до `_dispatch`.
+- Девять — **не эквивалентны**. Все сидят в коде планов 1–2, который мутант-прогоны плана 3 не
+  трогали (Фазы 1–6 мутировали только свои модули). Находки **F8.2–F8.4**.
+
+### Находки
+
+- **F8.1** — `packages/poker-engine/src/poker_engine/analyze.py:160`, комментарий перед
+  `pressure`: «Неопределённое давление (winner-take-all, деньги вне достижимых мест, лесенка,
+  награждающая вылет)». Про winner-take-all это неправда. На модели поля при WTA давление
+  определено: риск-премия 0, bubble factor 1.0 (docstring `icm_field.risk_premium`/`bubble_factor`,
+  `test_winner_take_all_has_no_ladder_pressure`). Проверено через `analyze` с лесенкой
+  `[{1,1,100}]`, `placesPaid 1`: `riskPremium ≈ 2e-16`, `bubbleFactor ≈ 1.0`, пометки
+  `icm_pressure_undefined` нет — ни на 6 живых, ни на 496. Текст пришёл из `178ea65`
+  (Задача 4). Чинить: убрать «winner-take-all» из перечня; можно заменить на «возврат больше
+  минимального приза».
+- **F8.2** — `packages/poker-engine/src/poker_engine/equity.py`, семь гардов, снос которых не
+  краснит ни одного теста: `:49` «нужно минимум две руки», `:109` «диапазон соперника пуст»,
+  `:115` `_check_duplicates(cards)` комбинации диапазона, `:166` «ожидалось N карт», `:169`
+  «неизвестная карта '…' в '…'», `:175` «на доске не может быть больше 5 карт», `:178`
+  «неизвестная карта на доске». Причина: `tests/test_equity.py:63,68,79` зовут голый
+  `pytest.raises(ValueError)` (нарушение конвенции `match=`) — отказ приходит от другого гарда
+  или от `combinations`. На пять текстов тестов нет вовсе. Чинить только тестами: запинить
+  `match=` в трёх голых тестах и добавить по отказу на каждый из семи гардов (`hand_equity` с
+  одной рукой; `equity_vs_range` с пустым диапазоном; комбинация `AhAh`; рука `AhK`; рука `XxAh`;
+  шесть карт доски; карта доски `Xx`). Каждый такой тест краснит свой мутант.
+- **F8.3** — `packages/poker-engine/src/poker_engine/handstate.py:261`, `_as_optional_bool`
+  (единственный вызов — `isHero`): снос `raise` не краснит ничего. Строка `"false"` в `isHero`
+  тогда проходит как истина, и героем может стать не тот. Тесты
+  `test_a_string_instead_of_a_boolean_is_rejected` / `…number_instead_of_a_boolean…` бьют только
+  `_as_bool` (`inHand`, `lateRegOpen`). Чинить тестом: `isHero: "false"` → `match=^поле 'isHero'
+  должно быть true или false`.
+- **F8.4** — `packages/poker-engine/src/poker_engine/cli.py:175`, `_str_list`: гард «пустой
+  элемент в списке» не пинится ничем. Текст в `test_ranges.py` — другой гард, в `ranges.py`.
+  Чинить тестом CLI: `equity --hands AhKh,,AdKd` → `{"error": "пустой элемент в списке: …"}`
+  с кодом 1.
+
+Итог ревью: **четыре находки, F8.1–F8.4.** Три из них (F8.2–F8.4) — дыры в тестах кода
+планов 1–2, вскрытые перепрогоном D22; код менять не нужно.
+
+### Долги
+
+- **D12 — оценён, решение пользователя.** При пустом поле (F = 0, финальный стол) CLI и
+  `analyze` дают одно и то же: `icm.risk_premium`/`bubble_factor` против `icm_field` на стеках
+  `[5000, 3000, 2000, 1500, 900]`, выплаты `500/300/200`, три пары мест — расхождение ≤ 3·10⁻¹⁵.
+  Эквити пинит инвариант 4. В середине турнира CLI не знает о поле и считает переданный стол
+  целым турниром. Это ошибка §2.2 спеки, и числа расходятся в разы. **Решение пользователя
+  (2026-09-25): оговорить в `SKILL.md` и README** — `icm`/`risk-premium` верны, только когда
+  `--stacks` — весь оставшийся турнир (финальный стол); в середине турнира числа брать из
+  `analyze`. Код не меняется. Хозяин — Фаза 9.
+- **D21 — оценён, решение пользователя.** Варианты: (а) `.venv` от Python 3.12 — кода не
+  меняет, но упрётся снова на 3.13+; (б) `phevaluator 0.6.0` — колёса `win_amd64` cp313 и cp314
+  есть (проверено `pip download`), sdist есть, рантайм-зависимостей нет (`Requires-Dist` —
+  только extras). Замер: разбор эталонной фикстуры 0.22–0.23 с против 0.14–0.15 с у `eval7`,
+  бюджет 2 с. Согласие с `pokerkit` — 3000 пар на общей доске, 125 ничьих, расхождений 0.
+  Направление шкалы обратное: меньше — сильнее; (в) сборка `eval7` из git — нужны MSVC и Cython,
+  хрупко. **Решение пользователя (2026-09-25): `phevaluator 0.6.0`.** Хозяин — Фаза 9: заменить
+  оценщик в `_score_runout` (знак!), `pyproject` и лок (`eval7`, `future`, `pyparsing` убрать,
+  `phevaluator==0.6.0` добавить), снять фильтр `DeprecationWarning`, тест согласия перевести на
+  `phevaluator`, README и docstring `equity.py`. Итог — в ledger финала.
+- **D22 — закрыт этой фазой:** вердикты гардов Фаз 1–6 подтверждены на чистом кэше, выжившие —
+  F8.2–F8.4.
+- **D1** — 469 до и после. **D16** — `.venv/bin/python`.
+- Новых долгов нет. `field.py` вне расчётного пути — к D13 (ledger финала).
+
+### Коммиты фазы
+
+| Коммит | Что |
+|---|---|
+| этот | `docs`: отчёт Фазы 8, реестр, промпт Фазы 9 |
+
+### Тесты (D1)
+
+До: 469 passed. После: **469 passed**, код не менялся. Полных прогонов — три обычных
+(база; перед мутантами на чистом кэше; после мутантов на чистом кэше) и 131 мутант-прогон.
+
+### Где остановились
+
+Фаза доделана. Следующая — Фаза 9: починка F8.1–F8.4, D21 (замена оценщика на
+`phevaluator`), D12 (оговорка в `SKILL.md` и README).
