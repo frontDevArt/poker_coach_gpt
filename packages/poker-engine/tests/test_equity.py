@@ -1,6 +1,8 @@
+import re
+
 import pytest
 
-from poker_engine.equity import hand_equity
+from poker_engine.equity import equity_vs_range, hand_equity
 
 
 def test_mirror_hands_split_equity_exactly():
@@ -59,13 +61,21 @@ def test_same_seed_gives_same_result():
     assert a == pytest.approx(b)
 
 
+def _exactly(message):
+    return "^" + re.escape(message) + "$"
+
+
 def test_rejects_duplicate_cards():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=_exactly("карта 'As' встречается дважды")):
         hand_equity(["AsAd", "AsKd"], board=[], trials=100, seed=1)
 
 
 def test_rejects_oversized_board():
-    with pytest.raises(ValueError):
+    # Без гарда `need` станет -1, и `combinations` бросит свой ValueError:
+    # голый `pytest.raises` принял бы и его.
+    with pytest.raises(
+        ValueError, match=_exactly("на доске не может быть больше 5 карт, получено 6")
+    ):
         hand_equity(
             ["AsAd", "KsKd"],
             board=["2c", "3c", "4c", "5c", "6c", "7c"],
@@ -76,5 +86,45 @@ def test_rejects_oversized_board():
 
 def test_rejects_nonpositive_trials_when_monte_carlo_needed():
     # Префлоп: need=5, попадаем в ветку Monte-Carlo, где trials обязателен.
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=_exactly("trials должен быть > 0, получено 0")):
         hand_equity(["AsAd", "KsKd"], board=[], trials=0, seed=1)
+
+
+def test_rejects_a_single_hand():
+    # Без гарда одна рука забрала бы весь банк: [1.0].
+    with pytest.raises(ValueError, match=_exactly("нужно минимум две руки")):
+        hand_equity(["AsAd"], board=["2c", "7s", "9c", "Ts", "Jd"], trials=1, seed=1)
+
+
+def test_rejects_a_hand_with_the_wrong_number_of_cards():
+    # "Ah" делится на одну карту, а не на две.
+    with pytest.raises(
+        ValueError, match=_exactly("рука 'Ah': ожидалось 2 карт, вышло 1")
+    ):
+        hand_equity(["Ah", "KsKd"], board=["2c", "7s", "9c", "Ts", "Jd"], trials=1, seed=1)
+
+
+def test_rejects_an_unknown_card_in_a_hand():
+    with pytest.raises(ValueError, match=_exactly("неизвестная карта 'Xx' в 'XxAh'")):
+        hand_equity(["XxAh", "KsKd"], board=["2c", "7s", "9c", "Ts", "Jd"], trials=1, seed=1)
+
+
+def test_rejects_an_unknown_card_on_the_board():
+    with pytest.raises(ValueError, match=_exactly("неизвестная карта на доске: 'Xx'")):
+        hand_equity(["AsAd", "KsKd"], board=["2c", "7s", "9c", "Ts", "Xx"], trials=1, seed=1)
+
+
+def test_rejects_an_empty_villain_range():
+    # Без гарда пустой диапазон дошёл бы до другого отказа — «пуст после
+    # исключения известных карт»; якорь `$` их различает.
+    with pytest.raises(ValueError, match=_exactly("диапазон соперника пуст")):
+        equity_vs_range("AhKh", [], board=[], trials=100, seed=1)
+
+
+def test_rejects_a_range_combination_with_a_repeated_card():
+    # Герой и доска не блокируют Ah: без гарда комбинация AhAh прошла бы
+    # в живые руки соперника.
+    with pytest.raises(ValueError, match=_exactly("карта 'Ah' встречается дважды")):
+        equity_vs_range(
+            "KsKd", ["AhAh"], board=["2c", "7s", "9c", "Ts", "Jd"], trials=100, seed=1
+        )
