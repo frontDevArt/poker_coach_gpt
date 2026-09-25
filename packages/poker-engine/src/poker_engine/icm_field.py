@@ -38,6 +38,7 @@ __all__ = [
     "PressureUndefined",
     "bubble_factor",
     "hero_equity",
+    "pressure",
     "risk_premium",
     "table_equities",
 ]
@@ -194,7 +195,50 @@ def risk_premium(
     Разница между порогом безубыточности в деньгах и в фишках.
     Ноль при winner-take-all, положительно при лесенке выплат.
     """
+    return _risk_premium_from(
+        *_branches(table, field_count, field_stack, ladder, hero, villain)
+    )
+
+
+def bubble_factor(
+    table: list[float],
+    field_count: int,
+    field_stack: float,
+    ladder: PayoutLadder,
+    hero: int,
+    villain: int,
+) -> float:
+    """Во сколько раз проигрыш дороже выигрыша в деньгах против фишек.
+
+    1.0 — денежная лесенка не давит (winner-take-all).
+    Больше 1.0 — герой рискует деньгами сильнее, чем фишками.
+    """
+    return _bubble_factor_from(
+        *_branches(table, field_count, field_stack, ladder, hero, villain)
+    )
+
+
+def pressure(
+    table: list[float],
+    field_count: int,
+    field_stack: float,
+    ladder: PayoutLadder,
+    hero: int,
+    villain: int,
+) -> tuple[float, float, float]:
+    """Эквити героя сейчас, риск-премия и bubble factor за один проход.
+
+    Три ветви ICM (сейчас, выигрыш, проигрыш) считаются один раз: по
+    отдельности `hero_equity`, `risk_premium` и `bubble_factor` дали бы
+    семь вызовов `table_equities` на разбор вместо трёх (спека плана 3,
+    §7.2). Числа и отказы — ровно те же, что у трёх функций порознь:
+    неопределённое давление — `PressureUndefined`, прочее — `ValueError`.
+    """
     now, win, lose = _branches(table, field_count, field_stack, ladder, hero, villain)
+    return now, _risk_premium_from(now, win, lose), _bubble_factor_from(now, win, lose)
+
+
+def _risk_premium_from(now: float, win: float, lose: float) -> float:
     if math.isclose(win, lose, abs_tol=1e-9):
         # Плоская лесенка выплат (сателлиты): win и lose равны математически,
         # но приходят к значению разными ветвями перебора и расходятся на
@@ -211,20 +255,7 @@ def risk_premium(
     return money_threshold - _CHIP_THRESHOLD
 
 
-def bubble_factor(
-    table: list[float],
-    field_count: int,
-    field_stack: float,
-    ladder: PayoutLadder,
-    hero: int,
-    villain: int,
-) -> float:
-    """Во сколько раз проигрыш дороже выигрыша в деньгах против фишек.
-
-    1.0 — денежная лесенка не давит (winner-take-all).
-    Больше 1.0 — герой рискует деньгами сильнее, чем фишками.
-    """
-    now, win, lose = _branches(table, field_count, field_stack, ladder, hero, villain)
+def _bubble_factor_from(now: float, win: float, lose: float) -> float:
     if math.isclose(win, now, abs_tol=1e-9) and not math.isclose(now, 0.0, abs_tol=1e-9):
         # Плоская лесенка (сателлиты): win и now совпадают математически,
         # но расходятся на ~1e-15 — без допуска это ловится как

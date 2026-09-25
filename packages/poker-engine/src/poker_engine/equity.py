@@ -3,6 +3,11 @@
 Сплиты делятся поровну между выигравшими, поэтому сумма эквити всегда 1.
 Генератор случайных чисел засеивается явно — результат воспроизводим,
 иначе тесты и разборы плавали бы от прогона к прогону.
+
+Руку оценивает `eval7`: семь карт за один вызов на C, в сотни раз быстрее
+перебора 21 пятикарточной комбинации на `pokerkit` (бюджет двух секунд,
+спека плана 3, §7.3). `pokerkit` остаётся эталоном: тест
+`test_equity_evaluator.py` сверяет порядок рук двух оценщиков.
 """
 
 from __future__ import annotations
@@ -10,13 +15,17 @@ from __future__ import annotations
 import random
 from itertools import combinations
 
-from pokerkit import Card, StandardHighHand
+import eval7
 
 from ._checks import check_positive
 
 RANKS = "23456789TJQKA"
 SUITS = "cdhs"
 FULL_DECK: list[str] = [r + s for r in RANKS for s in SUITS]
+
+# Карты `eval7` строятся один раз: разбор строки на каждом ранауте — ровно
+# те накладные расходы, от которых уходит горячий путь.
+_EVAL_CARDS = {code: eval7.Card(code) for code in FULL_DECK}
 
 
 def hand_equity(
@@ -139,20 +148,16 @@ def equity_vs_range(
 def _score_runout(
     hands: list[list[str]], board: list[str], wins: list[float]
 ) -> None:
-    scores = [_best_hand(hand + board) for hand in hands]
+    board_cards = [_EVAL_CARDS[card] for card in board]
+    scores = [
+        eval7.evaluate([_EVAL_CARDS[card] for card in hand] + board_cards)
+        for hand in hands
+    ]
     best = max(scores)
     winners = [i for i, s in enumerate(scores) if s == best]
     share = 1.0 / len(winners)
     for i in winners:
         wins[i] += share
-
-
-def _best_hand(cards: list[str]) -> StandardHighHand:
-    """Лучшая пятикарточная комбинация из семи карт."""
-    return max(
-        StandardHighHand(Card.parse("".join(combo)))
-        for combo in combinations(cards, 5)
-    )
 
 
 def _parse_cards(text: str, expected: int, label: str) -> list[str]:

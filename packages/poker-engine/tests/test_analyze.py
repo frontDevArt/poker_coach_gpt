@@ -432,13 +432,13 @@ def test_the_field_size_reported_is_the_whole_tournament(analyze_base_result):
 
 def test_only_undefined_pressure_is_turned_into_a_flag(run_analyze, monkeypatch):
     # Пометка `icm_pressure_undefined` — про свойство лесенки. Любой другой
-    # отказ из `risk_premium` — ошибка вызова, и прятать её под пометкой
+    # отказ из `pressure` — ошибка вызова, и прятать её под пометкой
     # нельзя: разбор обязан упасть с ней (долг D4). Из настоящего входа
     # такой отказ недостижим, поэтому он подложен.
     def broken(*args):
         raise ValueError("чужой отказ")
 
-    monkeypatch.setattr(analyze_module, "risk_premium", broken)
+    monkeypatch.setattr(analyze_module, "pressure", broken)
     with pytest.raises(ValueError, match="^чужой отказ$"):
         run_analyze()
 
@@ -828,20 +828,39 @@ def test_a_refund_above_the_min_cash_leaves_only_the_plain_pressure(
     assert result["bubbleProtection"]["riskPremiumWithoutRefund"]["bubbleFactor"] > 1.0
 
 
+def test_undefined_pressure_keeps_the_equity_on_the_protected_ladder(
+    run_analyze, analyze_context
+):
+    # Давление с возвратом не определено, и эквити героя считается отдельно
+    # от него — всё равно по удлинённой лесенке. Возврат c платится только
+    # на местах 7-9: эквити выше, чем без возврата, ровно на c × P(7-9),
+    # то есть строго больше и не больше чем на c.
+    flat = [{"from": 1, "to": 6, "amount": 5.0}]
+    context = bubble_context(analyze_context, 6.60)
+    context["payouts"] = flat
+    plain = bubble_context(analyze_context)
+    plain["payouts"] = flat
+    protected = run_analyze(context=context, playersLeft=9, heroRank=9)
+    without = run_analyze(context=plain, playersLeft=9, heroRank=9)
+    assert "icm_pressure_undefined" in protected["flags"]
+    gain = protected["icm"]["heroEquity"] - without["icm"]["heroEquity"]
+    assert 0.0 < gain <= 6.60
+
+
 def test_undefined_pressure_without_the_refund_drops_only_its_key(
     run_analyze, analyze_context, monkeypatch
 ):
     # Входа, где давление не определено без возврата, а с ним определено,
     # тут не построено, поэтому отказ подложен: только для лесенки лобби
     # (6 оплачиваемых мест против 9 у удлинённой).
-    real = analyze_module.risk_premium
+    real = analyze_module.pressure
 
     def undefined_on_the_lobby_ladder(table, field_count, field_stack, ladder, *seats):
         if ladder.places_paid == 6:
             raise analyze_module.PressureUndefined("подложено")
         return real(table, field_count, field_stack, ladder, *seats)
 
-    monkeypatch.setattr(analyze_module, "risk_premium", undefined_on_the_lobby_ladder)
+    monkeypatch.setattr(analyze_module, "pressure", undefined_on_the_lobby_ladder)
     result = run_analyze(
         context=bubble_context(analyze_context, 6.60), playersLeft=9, heroRank=9
     )

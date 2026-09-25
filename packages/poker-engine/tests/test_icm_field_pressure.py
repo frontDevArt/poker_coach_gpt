@@ -2,10 +2,13 @@
 
 import pytest
 
+from poker_engine import icm_field
+
 from poker_engine.icm_field import (
     PressureUndefined,
     bubble_factor,
     hero_equity,
+    pressure,
     risk_premium,
     table_equities,
 )
@@ -237,4 +240,50 @@ def test_call_errors_are_not_undefined_pressure(call, text):
     # «давление не определено» спрятала бы их.
     with pytest.raises(ValueError, match=text) as caught:
         call()
+    assert not isinstance(caught.value, PressureUndefined)
+
+
+# --- один проход на три величины (план 3, Задача 8, долг D7) -----------------
+
+
+def test_pressure_is_the_three_measures_in_one_pass(monkeypatch):
+    # Те же ветви, та же арифметика: числа совпадают с тремя функциями
+    # порознь точно, а `table_equities` зовётся трижды — по разу на ветвь.
+    # Герой (45) накрывает соперника (30): проигрыш его не выбивает, и
+    # ветвь проигрыша тоже идёт через `table_equities`.
+    table, field_count, field_stack = [30.0, 20.0, 45.0], 5, 25.0
+    ladder = PayoutLadder([(1, 1, 50.0), (2, 2, 30.0), (3, 4, 10.0)], places_paid=4)
+    expected = (
+        hero_equity(table, field_count, field_stack, ladder, 2),
+        risk_premium(table, field_count, field_stack, ladder, 2, 0),
+        bubble_factor(table, field_count, field_stack, ladder, 2, 0),
+    )
+    calls = []
+    original = icm_field.table_equities
+
+    def counted(*args):
+        calls.append(1)
+        return original(*args)
+
+    monkeypatch.setattr(icm_field, "table_equities", counted)
+    assert pressure(table, field_count, field_stack, ladder, 2, 0) == expected
+    assert len(calls) == 3
+
+
+def test_pressure_refuses_like_the_measures_it_joins():
+    # Отказ — тот же, что дала бы первая из двух величин: риск-премия
+    # раньше bubble factor. На лесенке, награждающей вылет, риск-премия
+    # определена, и отказ — про bubble factor.
+    with pytest.raises(
+        PressureUndefined,
+        match="^исход олл-ина не меняет ICM-эквити героя, risk premium не определён$",
+    ):
+        pressure([50.0, 30.0], 0, 0.0, PayoutLadder([(3, 3, 10.0)], places_paid=3), 0, 1)
+    with pytest.raises(
+        PressureUndefined,
+        match="^выигрыш не увеличивает ICM-эквити, bubble factor не определён$",
+    ):
+        pressure([10.0, 10.0], 1, 10.0, PayoutLadder([(3, 3, 90.0)], places_paid=3), 0, 1)
+    with pytest.raises(ValueError, match="^hero и villain должны различаться$") as caught:
+        pressure([50.0, 50.0], 0, 0.0, winner_take_all(), 0, 0)
     assert not isinstance(caught.value, PressureUndefined)

@@ -29,7 +29,7 @@ from .handstate import (
     node_from_dict,
     validate_hand,
 )
-from .icm_field import PressureUndefined, bubble_factor, hero_equity, risk_premium
+from .icm_field import PressureUndefined, hero_equity, pressure
 from .ladder import PayoutLadder
 from .potodds import required_equity
 from .profiles import range_for_vpip
@@ -155,8 +155,32 @@ def analyze(
     field_count = node.players_left - len(table)
     field_stack = _field_stack(node, context, table, field_count)
 
+    # Три вызова ICM на разбор, а не семь (спека §7.2, долг D7): при
+    # сопернике эквити героя приходит из того же прохода, что и давление.
+    # Неопределённое давление (winner-take-all, деньги вне достижимых мест,
+    # лесенка, награждающая вылет) — не ошибка ввода, а свойство лесенки:
+    # сообщаем пометкой ниже, а не падением всего разбора. Ловится только
+    # `PressureUndefined`: прочие отказы — ошибки вызова, и под пометкой
+    # они бы спрятались (долг D4).
+    villain_index = None if villain is None else seats.index(villain)
+    equity = None
+    risk = None
+    if villain_index is not None:
+        try:
+            equity, premium, factor = pressure(
+                table, field_count, field_stack, ladder, hero_index, villain_index
+            )
+            risk = {"riskPremium": premium, "bubbleFactor": factor}
+        except PressureUndefined:
+            pass
+    if equity is None:
+        # Без соперника давления нет. При неопределённом давлении отказ
+        # уносит эквити с собой, и оно стоит ещё одного вызова — редкий
+        # случай, бюджет его не чувствует.
+        equity = hero_equity(table, field_count, field_stack, ladder, hero_index)
+
     result["icm"] = {
-        "heroEquity": hero_equity(table, field_count, field_stack, ladder, hero_index),
+        "heroEquity": equity,
         "playersLeft": node.players_left,
         "tableSeats": len(table),
     }
@@ -194,30 +218,27 @@ def analyze(
     if villain is None:
         return result
 
-    villain_index = seats.index(villain)
     result["villainPosition"] = positions[villain.seat_index].value
     result["effectiveStackBb"] = min(hero.stack_bb, villain.stack_bb)
 
-    # Неопределённое давление (winner-take-all, деньги вне достижимых мест,
-    # лесенка, награждающая вылет) — не ошибка ввода, а свойство лесенки:
-    # сообщаем пометкой, а не падением всего разбора. Ловится только
-    # `PressureUndefined`: прочие отказы этих функций — ошибки вызова, и
-    # под пометкой они бы спрятались (долг D4).
-    try:
-        result["riskPremium"] = _pressure(
-            table, field_count, field_stack, ladder, hero_index, villain_index
-        )
-    except PressureUndefined:
+    if risk is None:
         result["flags"].append("icm_pressure_undefined")
+    else:
+        result["riskPremium"] = risk
     # Обе риск-премии — с возвратом и без: пользователь обязан видеть, что
     # именно смягчило давление (спека §6). Неопределённое давление без
     # возврата — то же свойство лесенки, что и в основном расчёте: ключа
     # тогда нет, а пометка `icm_pressure_undefined` остаётся про основной.
+    # Это ещё три вызова ICM сверх трёх основных — по три на лесенку (D20).
     if protected is not None:
         try:
-            result["bubbleProtection"]["riskPremiumWithoutRefund"] = _pressure(
+            _, premium, factor = pressure(
                 table, field_count, field_stack, prizes, hero_index, villain_index
             )
+            result["bubbleProtection"]["riskPremiumWithoutRefund"] = {
+                "riskPremium": premium,
+                "bubbleFactor": factor,
+            }
         except PressureUndefined:
             pass
 
@@ -266,25 +287,6 @@ def _field_stack(
             "на остальное поле не остаётся фишек"
         )
     return chips / field_count
-
-
-def _pressure(
-    table: list[float],
-    field_count: int,
-    field_stack: float,
-    ladder: PayoutLadder,
-    hero: int,
-    villain: int,
-) -> dict:
-    """Риск-премия и bubble factor героя против соперника на лесенке `ladder`."""
-    return {
-        "riskPremium": risk_premium(
-            table, field_count, field_stack, ladder, hero, villain
-        ),
-        "bubbleFactor": bubble_factor(
-            table, field_count, field_stack, ladder, hero, villain
-        ),
-    }
 
 
 def _bounty_block(

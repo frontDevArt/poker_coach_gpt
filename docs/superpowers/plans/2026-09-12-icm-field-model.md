@@ -2148,7 +2148,43 @@ git commit -m "feat(engine): поправка на компенсацию бай
 (сейчас, выигрыш, проигрыш). Ветви считаются один раз и переиспользуются обеими
 метриками.
 
-- [ ] **Шаг 1: добавить зависимость**
+**Решения при реализации (Фаза 7, 2026-09-25).** Код и тесты ниже — набросок; источник
+истины — `equity.py`, `icm_field.py`, `analyze.py` и тесты. Против наброска принято:
+
+1. **Эквити героя — из того же прохода.** `pressure` — как в наброске: `(эквити, риск-премия,
+   bubble factor)`, неопределённое давление — `PressureUndefined`. `analyze` при сопернике берёт
+   `heroEquity` из `pressure` и не зовёт `hero_equity`; без соперника — один `hero_equity`.
+   Когда давление не определено, отказ уносит эквити, и оно считается ещё одним вызовом —
+   редкий случай (возврат больше минимального приза, деньги вне достижимых мест), в бюджете
+   не виден. Нести эквити в исключении или возвращать `None` вместо отказа — сложнее, а
+   `except PressureUndefined` в `analyze` должен остаться узким (D4).
+2. **Приёмка п.3 оговорена** (D20 и решение 1): `≤ 3` на эталонной фикстуре; `1` без соперника;
+   `≤ 6` с защитой на баббле — по три на лесенку, давление без возврата тоже идёт через
+   `icm_field.pressure`, `analyze._pressure` удалён; `≤ 7` с защитой при неопределённом
+   давлении (3 + 1 + 3). Каждый случай — свой тест в `test_analyze_budget.py`.
+3. **Два теста `test_analyze.py` подменяют `pressure`, а не `risk_premium`**:
+   `test_only_undefined_pressure_is_turned_into_a_flag` (D4) и
+   `test_undefined_pressure_without_the_refund_drops_only_its_key`. `analyze` больше не
+   импортирует `risk_premium`/`bubble_factor`; утверждения тестов не менялись.
+4. **Лок.** Кроме `eval7==0.1.11` записаны его зависимости `future==1.0.0` и `pyparsing==3.3.3`:
+   лок ставится до `--no-deps`, и без них `import eval7` падал бы. Записаны на Linux, Python
+   3.11. У `eval7 0.1.11` нет колёс для Windows на Python 3.13+ и нет sdist — на машине
+   пользователя (Python 3.14 по шапке лока) установка упадёт. Долг **D21**, README и лок это
+   говорят.
+5. **`filterwarnings` в `pyproject.toml`**: `eval7` при импорте зовёт устаревшие имена
+   `pyparsing` (7 `DeprecationWarning` на каждый прогон). Фильтр — только на
+   `eval7.rangestring`; вне pytest `DeprecationWarning` из чужого модуля и так не виден.
+6. **Тесты сверх наброска.** Оценщик: ничьи на общей доске (случайные пары из независимых
+   колод почти не делят банк, а `_score_runout` делит банк по равенству оценок). `pressure`:
+   те же числа, что три функции порознь, ровно три `table_equities`, отказы в том же порядке
+   (`test_icm_field_pressure.py`, +2). Эквити героя при неопределённом давлении — по удлинённой
+   лесенке: выше, чем без возврата, но не больше чем на возврат (`test_analyze.py`, +1;
+   мутант «лесенка лобби» выживал). Счётчики — `trials=200`: число вызовов ICM от прогонов
+   силы руки не зависит.
+7. **Сверх списка файлов:** `icm_field.py` (набросок шага 6 его называет, список — нет),
+   `test_analyze.py`, `test_icm_field_pressure.py`, README (оценщик и Python на Windows).
+
+- [x] **Шаг 1: добавить зависимость**
 
 В `pyproject.toml` в `dependencies` добавить `"eval7>=0.1.11"`.
 Установить и дописать точную версию в `requirements-dev.lock`:
@@ -2158,7 +2194,7 @@ git commit -m "feat(engine): поправка на компенсацию бай
 .venv/Scripts/python -m pip freeze | grep -i eval7 >> requirements-dev.lock
 ```
 
-- [ ] **Шаг 2: написать тест на согласие оценщиков**
+- [x] **Шаг 2: написать тест на согласие оценщиков**
 
 Создать `tests/test_equity_evaluator.py`:
 
@@ -2192,12 +2228,12 @@ def test_the_fast_evaluator_orders_hands_exactly_like_pokerkit():
     assert disagreements == []
 ```
 
-- [ ] **Шаг 3: убедиться, что тест проходит до правок**
+- [x] **Шаг 3: убедиться, что тест проходит до правок**
 
 Run: `.venv/Scripts/python -m pytest tests/test_equity_evaluator.py -v`
 Expected: PASS. Если нет — `eval7` использовать нельзя, остановиться и доложить.
 
-- [ ] **Шаг 4: переписать горячий путь**
+- [x] **Шаг 4: переписать горячий путь**
 
 В `src/poker_engine/equity.py` заменить `_best_hand` и `_score_runout`:
 
@@ -2225,13 +2261,13 @@ def _score_runout(
 Удалить `_best_hand` и импорты `Card`, `StandardHighHand`, `combinations`, если они
 больше не используются.
 
-- [ ] **Шаг 5: убедиться, что числа не поехали**
+- [x] **Шаг 5: убедиться, что числа не поехали**
 
 Run: `.venv/Scripts/python -m pytest tests/test_equity.py tests/test_equity_crosscheck.py tests/test_equity_vs_range.py -v`
 Expected: все зелёные. Это и есть проверка, что замена оценщика ничего не изменила:
 перекрёстная сверка с точным перебором уже существует.
 
-- [ ] **Шаг 6: три вызова ICM вместо семи**
+- [x] **Шаг 6: три вызова ICM вместо семи**
 
 В `analyze.py` посчитать ветви один раз и передать обеим метрикам. Добавить в
 `icm_field.py`:
@@ -2259,7 +2295,7 @@ def pressure(
 `_bubble_factor_from`, оставив публичные функции тонкими обёртками — их тесты из
 Задачи 3 обязаны продолжать проходить без изменений.
 
-- [ ] **Шаг 7: тест на бюджет**
+- [x] **Шаг 7: тест на бюджет**
 
 Создать `tests/test_analyze_budget.py`:
 
@@ -2301,12 +2337,12 @@ def test_the_icm_half_of_the_budget_is_spent_three_times_not_seven(
     assert len(calls) <= 3, f"ICM посчитан {len(calls)} раз вместо трёх"
 ```
 
-- [ ] **Шаг 8: прогнать весь сьют и замерить**
+- [x] **Шаг 8: прогнать весь сьют и замерить**
 
 Run: `.venv/Scripts/python -m pytest`
-Expected: все зелёные, включая оба теста бюджета.
+Expected: все зелёные, включая оба теста бюджета. (Факт — 469 passed за ~7 с, журнал Фазы 7, D1.)
 
-- [ ] **Шаг 9: коммит**
+- [x] **Шаг 9: коммит**
 
 ```bash
 git add src/poker_engine/equity.py src/poker_engine/icm_field.py \
