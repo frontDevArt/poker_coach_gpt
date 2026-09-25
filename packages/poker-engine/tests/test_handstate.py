@@ -471,6 +471,19 @@ def test_a_string_instead_of_a_boolean_is_rejected():
         node_from_dict(_node(seats=seats))
 
 
+def test_a_string_instead_of_a_boolean_is_rejected_for_the_hero_flag():
+    # `isHero` читает `_as_optional_bool`, не `_as_bool`: тест выше его не
+    # задевает. Без гарда строка "false" прошла бы как истина, и героем
+    # стало бы не то место.
+    seats = [_seat(i, 50.0, hero=(i == 7)) for i in range(8)]
+    seats[0]["isHero"] = "false"
+    with pytest.raises(
+        ValueError,
+        match="^" + re.escape("поле 'isHero' должно быть true или false, получено 'false'") + "$",
+    ):
+        node_from_dict(_node(seats=seats))
+
+
 def test_a_number_instead_of_a_boolean_is_rejected():
     broken = dict(CONTEXT)
     broken["lateRegOpen"] = 0
