@@ -172,7 +172,10 @@ def _float_list(text: str) -> list[float]:
 def _str_list(text: str) -> list[str]:
     tokens = [x.strip() for x in text.split(",")]
     if any(not x for x in tokens):
-        raise ValueError(f"пустой элемент в списке: {text!r}")
+        # `ArgumentTypeError`, а не `ValueError`: на `ValueError` из `type=`
+        # argparse подставляет свой текст «invalid _str_list value», и
+        # пользователь не увидел бы, что именно не так.
+        raise argparse.ArgumentTypeError(f"пустой элемент в списке: {text!r}")
     return tokens
 
 

@@ -217,6 +217,14 @@ def test_embedded_empty_token_in_list_returns_error_json(capsys):
     assert "error" in data
 
 
+def test_an_empty_item_in_a_card_list_is_named_in_the_error(capsys):
+    # Без гарда пустой токен дошёл бы до движка как рука '' и отказ пришёл
+    # бы оттуда, с текстом про число карт.
+    code, data = run(["equity", "--hands", "AhKh,,AdKd"], capsys)
+    assert code == 1
+    assert data == {"error": "argument --hands: пустой элемент в списке: 'AhKh,,AdKd'"}
+
+
 def test_help_still_exits_zero_with_usage_text(capsys):
     # -h/--help должен продолжать работать как раньше: argparse завершает
     # процесс через SystemExit(0) отдельным путём (exit, не error), и это
