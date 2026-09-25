@@ -5,7 +5,7 @@ description = "Computation core for MTT poker coaching: ICM, pot odds, PKO bount
 requires-python = ">=3.11"
 dependencies = [
     "pokerkit>=0.5",
-    "eval7>=0.1.11",
+    "phevaluator>=0.6.0",
 ]
 
 [project.optional-dependencies]
@@ -27,5 +27,3 @@ poker_engine = ["data/*.json"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
-# eval7 при импорте зовёт устаревшие имена pyparsing: шум чужого модуля, не наш.
-filterwarnings = ["ignore::DeprecationWarning:eval7.rangestring"]

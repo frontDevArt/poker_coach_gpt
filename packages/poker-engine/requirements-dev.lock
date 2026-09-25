@@ -1,16 +1,14 @@
 # -*- coding: utf-8 -*-
 # Точные версии, на которых прогонялись Task 1-6 (Python 3.14.4, Windows).
 # Ставить до `pip install -e ".[dev]" --no-deps`, иначе pip разрешит зависимости заново.
-# eval7 (план 3, Задача 8) и его зависимости future и pyparsing записаны на Linux, Python
-# 3.11. У eval7 0.1.11 нет колёс для Windows на Python 3.13+ и нет sdist: там нужен
-# Python 3.12 или младше (долг D21 журнала плана 3).
+# phevaluator (план 3, Фаза 9, долг D21) записан на Linux, Python 3.11; зависимостей у него
+# нет, колёса для Windows есть на Python 3.13 и 3.14. Он заменил eval7, который на Windows
+# с Python 3.13+ не ставился.
 colorama==0.4.6
-eval7==0.1.11
-future==1.0.0
 iniconfig==2.3.0
 packaging==26.3
+phevaluator==0.6.0
 pluggy==1.6.0
 pokerkit==0.7.5
 Pygments==2.21.0
-pyparsing==3.3.3
 pytest==9.1.1

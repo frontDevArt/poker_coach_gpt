@@ -2,7 +2,7 @@
 
 import random
 
-import eval7
+from phevaluator import evaluate_cards
 from pokerkit import Card, StandardHighHand
 
 from poker_engine.equity import FULL_DECK
@@ -18,8 +18,9 @@ def _pokerkit(cards):
     )
 
 
-def _eval7(cards):
-    return eval7.evaluate([eval7.Card(card) for card in cards])
+def _phevaluator(cards):
+    # Шкала обратная: меньше — сильнее. Минус приводит её к порядку pokerkit.
+    return -evaluate_cards(*cards)
 
 
 def test_the_fast_evaluator_orders_hands_exactly_like_pokerkit():
@@ -28,7 +29,7 @@ def test_the_fast_evaluator_orders_hands_exactly_like_pokerkit():
     for _ in range(3000):
         left = rng.sample(FULL_DECK, 7)
         right = rng.sample(FULL_DECK, 7)
-        fast = _sign(_eval7(left) - _eval7(right))
+        fast = _sign(_phevaluator(left) - _phevaluator(right))
         slow_left, slow_right = _pokerkit(left), _pokerkit(right)
         slow = (slow_left > slow_right) - (slow_left < slow_right)
         if fast != slow:
@@ -48,7 +49,7 @@ def test_the_fast_evaluator_sees_ties_where_pokerkit_does():
         cards = rng.sample(FULL_DECK, 9)
         board = cards[4:]
         left, right = cards[:2] + board, cards[2:4] + board
-        fast = _sign(_eval7(left) - _eval7(right))
+        fast = _sign(_phevaluator(left) - _phevaluator(right))
         slow_left, slow_right = _pokerkit(left), _pokerkit(right)
         slow = (slow_left > slow_right) - (slow_left < slow_right)
         ties += slow == 0

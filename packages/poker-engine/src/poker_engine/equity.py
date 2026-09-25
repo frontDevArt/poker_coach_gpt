@@ -4,9 +4,11 @@
 Генератор случайных чисел засеивается явно — результат воспроизводим,
 иначе тесты и разборы плавали бы от прогона к прогону.
 
-Руку оценивает `eval7`: семь карт за один вызов на C, в сотни раз быстрее
-перебора 21 пятикарточной комбинации на `pokerkit` (бюджет двух секунд,
-спека плана 3, §7.3). `pokerkit` остаётся эталоном: тест
+Руку оценивает `phevaluator`: семь карт за один вызов на C, в сотни раз
+быстрее перебора 21 пятикарточной комбинации на `pokerkit` (бюджет двух
+секунд, спека плана 3, §7.3). Шкала у него обратная: меньше — сильнее.
+`eval7` стоял здесь раньше и заменён, потому что не ставится на Windows с
+Python 3.13+ (долг D21 плана 3). `pokerkit` остаётся эталоном: тест
 `test_equity_evaluator.py` сверяет порядок рук двух оценщиков.
 """
 
@@ -15,7 +17,7 @@ from __future__ import annotations
 import random
 from itertools import combinations
 
-import eval7
+from phevaluator import Card, evaluate_cards
 
 from ._checks import check_positive
 
@@ -23,9 +25,10 @@ RANKS = "23456789TJQKA"
 SUITS = "cdhs"
 FULL_DECK: list[str] = [r + s for r in RANKS for s in SUITS]
 
-# Карты `eval7` строятся один раз: разбор строки на каждом ранауте — ровно
-# те накладные расходы, от которых уходит горячий путь.
-_EVAL_CARDS = {code: eval7.Card(code) for code in FULL_DECK}
+# Номера карт `phevaluator` считаются один раз: разбор строки на каждом
+# ранауте — ровно те накладные расходы, от которых уходит горячий путь
+# (строки вместо номеров замедляют оценку вчетверо).
+_EVAL_CARDS = {code: Card(code).id_ for code in FULL_DECK}
 
 
 def hand_equity(
@@ -150,10 +153,11 @@ def _score_runout(
 ) -> None:
     board_cards = [_EVAL_CARDS[card] for card in board]
     scores = [
-        eval7.evaluate([_EVAL_CARDS[card] for card in hand] + board_cards)
+        evaluate_cards(*[_EVAL_CARDS[card] for card in hand], *board_cards)
         for hand in hands
     ]
-    best = max(scores)
+    # Меньший ранг `phevaluator` — сильнейшая рука.
+    best = min(scores)
     winners = [i for i, s in enumerate(scores) if s == best]
     share = 1.0 / len(winners)
     for i in winners:
