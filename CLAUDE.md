@@ -20,8 +20,9 @@ D21) и открытые вопросы спеки §11 (олл-ин на 0 BB, 
 **План 4 написан** (2026-10-17): советник push/fold, Nash + ICM-поправка — спека
 `docs/superpowers/specs/2026-10-17-pushfold-advisor-design.md` (утверждена с решениями §12),
 план `docs/superpowers/plans/2026-10-17-pushfold-advisor.md`, 5 задач, 8 фаз —
-`docs/superpowers/state/2026-10-17-plan4-phases.md`, ветка `feat/pushfold-advisor`. Фаза 1
-(Задача 1, таблица эквити) сделана, 500 passed. **Следующая — Фаза 2**, промпт —
+`docs/superpowers/state/2026-10-17-plan4-phases.md`, ветка `feat/pushfold-advisor`. Фазы 1–2
+(таблица эквити; ревью — `НАХОДОК НЕТ`; подыгра `pushfold_game.py`) сделаны, 539 passed.
+**Следующая — Фаза 3**, промпт —
 `docs/superpowers/state/plan4-next-prompt.md`, журнал —
 `docs/superpowers/state/2026-10-17-pushfold-execution-notes.md`.
 
@@ -92,7 +93,7 @@ GitHub пользователь удалил (D15 закрыт, 2026-09-25).
 ```bash
 # ядро
 cd packages/poker-engine
-.venv/Scripts/python -m pytest              # 500 passed, ~15 с (Linux: .venv/bin/python)
+.venv/Scripts/python -m pytest              # 539 passed, ~23 с (Linux: .venv/bin/python)
 
 # первый запуск на новой машине
 python -m venv .venv
