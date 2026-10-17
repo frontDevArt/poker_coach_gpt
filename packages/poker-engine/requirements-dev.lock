@@ -4,8 +4,11 @@
 # phevaluator (план 3, Фаза 9, долг D21) записан на Linux, Python 3.11; зависимостей у него
 # нет, колёса для Windows есть на Python 3.13 и 3.14. Он заменил eval7, который на Windows
 # с Python 3.13+ не ставился.
+# numpy (план 4, Задача 1, долг D25) записан на Windows, Python 3.12.3; колёса win_amd64
+# 2.5.4 проверены `pip download --only-binary=:all:` для 3.12, 3.13 и 3.14.
 colorama==0.4.6
 iniconfig==2.3.0
+numpy==2.5.4
 packaging==26.3
 phevaluator==0.6.0
 pluggy==1.6.0
