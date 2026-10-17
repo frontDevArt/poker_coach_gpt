@@ -17,9 +17,11 @@ fast-forward. 477 passed за ~8 с. Разбор `analyze` — 0.16 с при �
 по всем задачам, удалённые тесты, замеры, ledger отложенного (D3, D11, D12, D13, D15, D19,
 D21) и открытые вопросы спеки §11 (олл-ин на 0 BB, разброс стеков поля).
 
-**Следующий — план 4:** push/fold советы (Nash + ICM-поправка). Промпт —
-`docs/superpowers/state/plan3-next-prompt.md`. Правила нарезки на фазы брать из
-`docs/superpowers/state/2026-09-24-plan3-phases.md` (§1, шаблоны §6–§7).
+**План 4 написан** (2026-10-17): советник push/fold, Nash + ICM-поправка — спека
+`docs/superpowers/specs/2026-10-17-pushfold-advisor-design.md` (утверждена с решениями §12),
+план `docs/superpowers/plans/2026-10-17-pushfold-advisor.md`, 5 задач, 8 фаз —
+`docs/superpowers/state/2026-10-17-plan4-phases.md`. **Следующая — Фаза 1**, промпт —
+`docs/superpowers/state/plan4-next-prompt.md`.
 
 Планы 1 (`feat/poker-engine-core`) и 2 (`feat/screenshot-coach-engine`) закрыты и влиты
 в `main`: оба ревью на задачу, мутационная приёмка, финальное ревью ветки. Обе ветки на
@@ -37,7 +39,7 @@ GitHub пользователь удалил (D15 закрыт, 2026-09-25).
 |---|---|---|---|
 | 1 | Математика: эквити, пот-оддсы | L0, L1 | закрыт (план 1) |
 | 2 | Турнир: ICM с полем, лесенка, PKO, `analyze` | L1 | закрыт (планы 2–3) |
-| 3 | Push/fold: Nash + ICM-поправка | L2 | **план 4, следующий** |
+| 3 | Push/fold: Nash + ICM-поправка | L2 | **план 4, в работе** |
 | 4 | Весь префлоп: открытие с размером, 3/4/5-бет, против лимпа, PKO-поправки | L2 | впереди |
 | 5 | **MVP: префлоп-тренер** — серия скриншотов → пошаговый разбор с историей, только префлоп | L6, L7 | впереди |
 | 6 | Постфлоп: флоп/тёрн/ривер, мультипот, текстура, блеф/чек, линия по улицам | L3 | впереди, подключается к этапу 5 |
@@ -75,7 +77,11 @@ GitHub пользователь удалил (D15 закрыт, 2026-09-25).
 | `docs/superpowers/specs/2026-09-12-icm-field-model-design.md` | спека плана 3; §10 — границы, §11 — открытые вопросы |
 | `docs/superpowers/state/2026-09-24-plan3-phases.md` | фазы плана 3: правила сессий, бюджет, реестр долгов, шаблоны промптов |
 | `docs/superpowers/state/2026-09-12-icm-field-execution-notes.md` | **точка входа**: журнал плана 3, раздел на фазу, итоговый раздел |
-| `docs/superpowers/state/plan3-next-prompt.md` | промпт плана 4 |
+| `docs/superpowers/state/plan3-next-prompt.md` | промпт плана 4 (историческое) |
+| `docs/superpowers/specs/2026-10-17-pushfold-advisor-design.md` | спека плана 4; §12 — решения автора, утверждены |
+| `docs/superpowers/plans/2026-10-17-pushfold-advisor.md` | план 4, 5 задач |
+| `docs/superpowers/state/2026-10-17-plan4-phases.md` | фазы плана 4, реестр долгов, шаблоны промптов |
+| `docs/superpowers/state/plan4-next-prompt.md` | **промпт очередной фазы плана 4** |
 
 Плагины перечислены в `.claude/settings.json`.
 
