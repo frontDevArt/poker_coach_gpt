@@ -37,6 +37,7 @@ __all__ = [
     "MAX_TABLE_SEATS",
     "PressureUndefined",
     "bubble_factor",
+    "field_stack",
     "hero_equity",
     "pressure",
     "risk_premium",
@@ -151,6 +152,34 @@ def table_equities(
         field_equity += row[k] * tail
 
     return seat_equity, field_equity
+
+
+def field_stack(
+    players_left: int,
+    average_stack_bb: float | None,
+    table: list[float],
+    field_count: int,
+) -> float:
+    """Стек одного игрока поля: средний по турниру за вычетом стола.
+
+    Считается из среднего стека, а не берётся им: средний стек включает
+    стол, а поле — это турнир без стола. Фишки банка и вложенное за столом
+    в `table` не входят и приписываются полю (долг D23 плана 4).
+    """
+    if field_count <= 0:
+        return 0.0
+    if average_stack_bb is None:
+        raise ValueError(
+            f"нужен средний стек: игроков ({players_left}) больше, чем за "
+            f"столом ({len(table)}), и поле нечем населить"
+        )
+    chips = players_left * average_stack_bb - sum(table)
+    if chips <= 0:
+        raise ValueError(
+            "средний стек не согласован со стеками за столом: "
+            "на остальное поле не остаётся фишек"
+        )
+    return chips / field_count
 
 
 def _validate(table: list[float], field_count: int, field_stack: float) -> None:

@@ -30,6 +30,7 @@ from .handstate import (
     validate_hand,
 )
 from .icm_field import PressureUndefined, hero_equity, pressure
+from .icm_field import field_stack as icm_field_stack
 from .ladder import PayoutLadder
 from .potodds import required_equity
 from .profiles import range_for_vpip
@@ -153,7 +154,9 @@ def analyze(
     protected = context.protected_ladder(node.players_left)
     ladder = prizes if protected is None else protected
     field_count = node.players_left - len(table)
-    field_stack = _field_stack(node, context, table, field_count)
+    field_stack = icm_field_stack(
+        node.players_left, context.average_stack_bb, table, field_count
+    )
 
     # Три вызова ICM на разбор, а не семь (спека §7.2, долг D7): при
     # сопернике эквити героя приходит из того же прохода, что и давление.
@@ -262,33 +265,6 @@ def analyze(
         result["flags"].append("vpip_default")
 
     return result
-
-
-def _field_stack(
-    node: DecisionNode,
-    context: TournamentContext,
-    table: list[float],
-    field_count: int,
-) -> float:
-    """Стек одного игрока поля: средний по турниру за вычетом стола.
-
-    Считается из среднего стека, а не берётся им: средний стек включает
-    стол, а поле — это турнир без стола.
-    """
-    if field_count <= 0:
-        return 0.0
-    if context.average_stack_bb is None:
-        raise ValueError(
-            f"нужен средний стек: игроков ({node.players_left}) больше, чем за "
-            f"столом ({len(table)}), и поле нечем населить"
-        )
-    chips = node.players_left * context.average_stack_bb - sum(table)
-    if chips <= 0:
-        raise ValueError(
-            "средний стек не согласован со стеками за столом: "
-            "на остальное поле не остаётся фишек"
-        )
-    return chips / field_count
 
 
 def _bounty_block(

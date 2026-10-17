@@ -112,7 +112,7 @@ class TournamentContext:
     late_reg_open: bool
     seats_per_table: int
     # `None` — законное отсутствие: средний стек нужен только, чтобы
-    # населить поле вне стола (`analyze._field_stack`), и на финальном
+    # населить поле вне стола (`icm_field.field_stack`), и на финальном
     # столе требовать его означало бы требовать число ни для чего.
     average_stack_bb: float | None
     # Защита на баббле GG («ранняя пташка»): бай-ин, который рум вернёт
