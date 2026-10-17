@@ -213,7 +213,13 @@ def test_effective_stack_at_the_threshold_is_still_push_fold(pushfold_first_in):
 
 
 def test_threshold_does_not_apply_facing_an_all_in(pushfold_facing_allin):
-    assert _spot(pushfold_facing_allin).totals[1] > PUSHFOLD_MAX_BB
+    # Олл-ин на 15 BB против героя с 30: формула `first_in` дала бы эффективный 15 > 12.
+    raw = pushfold_facing_allin
+    _seat(raw, 2)["investedBb"] = 15.0
+    raw.update(potBb=17.25, toCallBb=15.0)
+    spot = _spot(raw)
+    assert spot.kind == "facing_allin"
+    assert min(spot.totals[0], max(spot.totals[1:])) > PUSHFOLD_MAX_BB
 
 
 # --- мёртвые деньги (Review Focus 1) ---------------------------------------------------------
