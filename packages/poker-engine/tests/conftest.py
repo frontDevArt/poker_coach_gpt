@@ -126,3 +126,36 @@ def pushfold_first_in():
 @pytest.fixture
 def pushfold_facing_allin():
     return pushfold_facing_allin_node()
+
+
+def heads_up_spot(depth):
+    """HU по фишкам без анте: `SB` 0.5 и `BB` 1, у обоих `depth` BB до блайндов.
+
+    `Spot` строится напрямую, без `read_spot`: солвер о пороге push/fold не знает, а
+    эталонный чарт идёт до 20 BB.
+    """
+    from poker_engine.handstate import Seat
+    from poker_engine.pushfold_game import Spot
+
+    def seat(index, invested):
+        return Seat(
+            seat_index=index,
+            name=f"p{index}",
+            stack_bb=depth - invested,
+            invested_bb=invested,
+            in_hand=True,
+            is_hero=index == 1,
+            vpip=None,
+            vpip_hands=None,
+            bounty_usd=None,
+        )
+
+    return Spot(
+        kind="first_in",
+        players=[seat(1, 0.5), seat(2, 1.0)],
+        hero_at=0,
+        bb_at=1,
+        totals=[float(depth), float(depth)],
+        dead_bb=0.0,
+        bystanders=[],
+    )
