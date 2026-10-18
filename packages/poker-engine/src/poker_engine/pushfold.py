@@ -203,6 +203,20 @@ def _flags(
     by_chip: nash.Equilibrium,
 ) -> list[str]:
     """Пометки спеки §8; каждая ставится, только когда она правда (правило `analyze`)."""
+    flags = _context_flags(context, node, pko)
+    if len(spot.players) > 2:
+        flags.append("no_overcall")
+    if any(at != spot.bb_at for at in range(1, len(spot.players))):
+        flags.append("fold_as_walk")
+    if close:
+        flags.append("close_spot")
+    if not (by_icm.converged and by_chip.converged):
+        flags.append("nash_not_converged")
+    return flags
+
+
+def _context_flags(context: TournamentContext, node: DecisionNode, pko: bool) -> list[str]:
+    """Пометки модели и турнира, общие для советников префлопа, в порядке ответа."""
     flags = ["mh_bias"]
     if node.players_left > len(node.seats):
         flags.append("field_homogeneous")
@@ -214,12 +228,4 @@ def _flags(
         flags.append("ladder_incomplete")
     if context.late_reg_open:
         flags.append("late_reg_open")
-    if len(spot.players) > 2:
-        flags.append("no_overcall")
-    if any(at != spot.bb_at for at in range(1, len(spot.players))):
-        flags.append("fold_as_walk")
-    if close:
-        flags.append("close_spot")
-    if not (by_icm.converged and by_chip.converged):
-        flags.append("nash_not_converged")
     return flags

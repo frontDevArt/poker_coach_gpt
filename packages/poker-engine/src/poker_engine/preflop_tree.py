@@ -406,8 +406,7 @@ def icm_payoffs(
     Стол, поле и лесенка — как в `pushfold_game.icm_outcomes`: места вне дерева со своими
     стеками, выбывший — приз места `playersLeft`. При `bounties=True` победитель олл-ина, у
     проигравшего в котором не осталось фишек, получает наличные за его голову; у вскрытия без
-    ставок голов нет — никто не выбывает. Сфолдившему по линии ценник не обязателен, и на ветке,
-    где он выбывает, голова без ценника не платится.
+    ставок голов нет — никто не выбывает (`with_bounties`).
     """
     seats = sorted(node.seats, key=lambda seat: seat.seat_index)
     field_count = node.players_left - len(seats)
@@ -440,11 +439,30 @@ def icm_payoffs(
         for r, row in enumerate(n.rows):
             for p, place in enumerate(places):
                 matrix[r, p] = equities[at, place] if row[p] > 0 else busted
-            if bounties and n.kind == "allin":
-                winner, loser = n.pair if r == 0 else n.pair[::-1]
-                price = tree.players[loser].bounty_usd
-                if row[loser] == 0 and price is not None:
-                    matrix[r, winner] += bounty.knockout_cash(price)
             at += 1
+        values.append(matrix)
+    return with_bounties(tree, values) if bounties else values
+
+
+def with_bounties(
+    tree: Tree, payoffs: list[numpy.ndarray | None]
+) -> list[numpy.ndarray | None]:
+    """Выплаты `payoffs` плюс наличные за головы: ICM на стеках исходов не пересчитывается.
+
+    Победитель олл-ина, у проигравшего в котором не осталось фишек, получает
+    `knockout_cash` его ценника. Сфолдившему по линии ценник не обязателен, и на ветке, где он
+    выбывает, голова без ценника не платится.
+    """
+    values: list[numpy.ndarray | None] = []
+    for n, matrix in zip(tree.nodes, payoffs, strict=True):
+        if not isinstance(n, Terminal) or n.kind != "allin":
+            values.append(matrix)
+            continue
+        matrix = matrix.copy()
+        for r, row in enumerate(n.rows):
+            winner, loser = n.pair if r == 0 else n.pair[::-1]
+            price = tree.players[loser].bounty_usd
+            if row[loser] == 0 and price is not None:
+                matrix[r, winner] += bounty.knockout_cash(price)
         values.append(matrix)
     return values
