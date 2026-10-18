@@ -18,8 +18,13 @@
 отвечающего — выплата ему, когда действие дошло до следующего, по классу открывшего.
 
 **CFR+.** Сожаления обрезаются снизу нулём, стратегия — их доли (нет положительных — поровну).
-Обновления чередуются: сначала открывший, затем все отвечающие против стратегии открывшего
-после его шага. Средняя стратегия — квадратичное усреднение: шаг `t` весит `t²`, умноженное на
+Сожаления открывшего в паре `(0, k)` — по его значениям при входе `k`, без вероятности фолдов
+отвечающих до `k`: при попарных блокерах игра пары от этих фолдов не зависит, они лишь
+множитель всех её значений по классу открывшего. С множителем (контрфактический вес CFR)
+6-max `open` UTG 25 BB сходится за 270 итераций, без него — за 110 (замер в журнале плана 5,
+Фаза 6); результат в обоих случаях проверяет независимая эксплуатируемость. Обновления
+чередуются: сначала открывший, затем все отвечающие против стратегии открывшего после его
+шага. Средняя стратегия — квадратичное усреднение: шаг `t` весит `t²`, умноженное на
 свою достижимость узла (план писал линейное `t`; квадратичное на тех же деревьях сходится за
 0.55–0.65 итераций линейного — замер в журнале плана 5, Фаза 5). Старт — поровну. Лимп
 лимпера сыгран до дерева: «войти» задано диапазоном `f_k`, а ответ на изоляцию внутри этого
@@ -425,12 +430,8 @@ def solve(
         r0, rk = _reach(shape, sigma)
         shares = _shares(shape, rk, opener_side)
         values, actions, folds = _opener_values(shape, sigma, shares, opener_side, best=False)
-        before = _before(shape, folds)
         for at in openers:
-            gain = actions[at] - values[at]
-            if at != shape.root:
-                gain = gain * before[shape.head[at]]
-            regret[at] = numpy.maximum(regret[at] + gain, 0.0)
+            regret[at] = numpy.maximum(regret[at] + actions[at] - values[at], 0.0)
             total[at] += step * r0[at] * sigma[at]
             sigma[at] = _match(regret[at])
 
@@ -452,17 +453,6 @@ def solve(
         iterations=iterations,
         converged=gap <= eps,
     )
-
-
-def _before(shape: _Shape, folds: dict[int, numpy.ndarray]) -> dict[int, numpy.ndarray]:
-    """Узел цепочки → вероятность по классу открывшего, что отвечающие до него сфолдили."""
-    before = {}
-    for links, _ in shape.chains:
-        carried = numpy.ones(169)
-        for at in links:
-            before[at] = carried
-            carried = carried * folds[at]
-    return before
 
 
 def exploitability(
