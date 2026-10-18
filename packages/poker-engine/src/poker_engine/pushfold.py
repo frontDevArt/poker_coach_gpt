@@ -182,9 +182,12 @@ def _row(equilibrium: nash.Equilibrium, at: int) -> numpy.ndarray:
 
 
 def _classes(freq: numpy.ndarray) -> dict[str, float]:
-    steps = numpy.round(freq / CLASS_FREQ_STEP)
+    # Делить на число шагов в единице, а не умножать на шаг: 95 / 100 — ближайшее к 0.95
+    # число, а 95 × 0.01 — 0.9500000000000001, и в JSON ушёл бы хвост.
+    per_unit = round(1 / CLASS_FREQ_STEP)
+    steps = numpy.round(freq * per_unit)
     return {
-        allin_matrix.CLASSES[at]: float(steps[at] * CLASS_FREQ_STEP)
+        allin_matrix.CLASSES[at]: float(steps[at] / per_unit)
         for at in range(len(allin_matrix.CLASSES))
         if steps[at] > 0
     }

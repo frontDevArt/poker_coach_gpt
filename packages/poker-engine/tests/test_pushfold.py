@@ -16,9 +16,9 @@ from conftest import (
     pushfold_first_in_node,
 )
 from poker_engine import bounty, nash, pushfold
-from poker_engine.allin_matrix import CLASSES, class_index
+from poker_engine.allin_matrix import CLASSES, class_index, equity_matrix, hand_weights
 from poker_engine.handstate import context_from_dict, node_from_dict, validate_hand
-from poker_engine.nash import Game, range_share, solve
+from poker_engine.nash import Game, opener_ev, range_share, solve
 from poker_engine.pushfold_game import chip_outcomes, icm_outcomes, read_spot
 
 
@@ -235,6 +235,13 @@ def test_on_the_bubble_icm_overrules_chips():
     assert hero["handFreqChip"] > 0.5 > hero["handFreqIcm"]
 
 
+def test_effective_stack_is_against_the_deepest_behind():
+    # `BTN` с 5 BB короче героя, но за героем есть стеки глубже: эффективный — 10, не 5.
+    raw = pushfold_first_in_node()
+    _seats_by_index(raw)[4]["stackBb"] = 5.0
+    assert _advise(raw)["effectiveStackBb"] == 10.0
+
+
 def test_opener_fold_is_the_walk(first_in_answer):
     # Фолд героя-открывающего — исход `walk`: по фишкам у `UTG` остаётся его стек.
     assert first_in_answer["ev"]["chip"]["foldBb"] == 10.0
@@ -260,6 +267,26 @@ def test_hero_range_comes_from_the_icm_equilibrium(first_in_answer):
             expected[name] = steps * step
     assert callers[-1]["classes"] == pytest.approx(expected, abs=1e-12)
     assert 0 < len(expected) < 169
+    # Округлено и в JSON: `0.95`, а не `0.9500000000000001` (находка 5 ревью Задачи 4).
+    for opponent in callers:
+        assert all(len(repr(freq)) <= 4 for freq in opponent["classes"].values())
+
+
+def test_chip_side_comes_from_the_chip_equilibrium(first_in_answer):
+    # `ev.chip` и `chipPct` — из фишечного решения, а не из ICM: на пузыре знаки совпадают,
+    # на одном призе совпадают равновесия, и подмена иначе не видна.
+    _, game, _ = _games(pushfold_first_in_node())
+    equilibrium = solve(game, nash.EPS_CHIP_BB)
+    row = equity_matrix()[class_index("JTs")]
+    allin, fold = opener_ev(game, equilibrium.call, hand_weights(["Jh", "Th"]), row)
+    chip = first_in_answer["ev"]["chip"]
+    assert (chip["allinBb"], chip["foldBb"]) == pytest.approx((allin, fold), abs=1e-12)
+    hero = first_in_answer["ranges"]["hero"]
+    assert hero["chipPct"] == range_share(equilibrium.push)
+    assert hero["handFreqChip"] == equilibrium.push[class_index("JTs")]
+    callers = first_in_answer["ranges"]["opponents"]
+    for k, caller in enumerate(callers):
+        assert caller["chipPct"] == range_share(equilibrium.call[k])
 
 
 def test_chip_and_icm_ranges_are_both_reported(first_in_answer, facing_answer):
