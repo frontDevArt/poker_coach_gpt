@@ -20,6 +20,13 @@
 сто, а не в `2^900` раз — но всё-таки вдесятеро, и на ранней стадии
 большого турнира эта статья бюджета заметна.
 
+Расчёт идёт на `numpy` (спека D27): состояния одной диагонали
+`|S| + k = d` друг от друга не зависят и обрабатываются одной векторной
+операцией, диагоналей `t + F`. Пакетный вызов считает за тот же проход
+много наборов стеков с общим полем и лесенкой — исходы одной подыгры.
+Прежняя реализация на чистом Python — эталон сверки в
+`tests/icm_field_reference.py`.
+
 Модель Malmuth-Harville сохраняется: вероятность занять следующее место
 пропорциональна стеку. Её известное смещение (завышение второго места
 для крупного стека) здесь не лечится — оно помечается флагом `mh_bias`
@@ -29,6 +36,9 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
+
+import numpy
 
 from ._checks import check_integer, check_non_negative, check_positive
 from .ladder import PayoutLadder
@@ -42,12 +52,17 @@ __all__ = [
     "pressure",
     "risk_premium",
     "table_equities",
+    "table_equities_batch",
 ]
 
-# Стоимость растёт как 2^t. Замеры прототипа на этой машине: 8 мест —
-# 0.23 с, 9 — 0.53 с, 10 — 1.18 с за вызов. Одиннадцать не оставляют
-# места под бюджет двух секунд на весь разбор, поэтому потолок здесь.
-# Это единственный предел в расчётном пути ICM.
+# Стоимость растёт как 2^t. Замер на машине пользователя (план 5, Задача 1),
+# поле 490, лучший из семи: одиночный вызов — 8 мест 0.024 с, 9 — 0.031 с,
+# 10 — 0.043 с; пакет из 20 наборов — 0.092, 0.176 и 0.338 с. Чистый Python
+# плана 3 стоил 0.23, 0.53 и 1.18 с за одиночный вызов. Каждое место сверх
+# удваивает и время, и память диагонали: одиннадцать дали бы ~0.7 с на
+# пакет подыгры, а советник всего префлопа зовёт ICM на порядок чаще, чем
+# push/fold. Столов больше чем на десять мест не бывает, поэтому потолок
+# здесь. Это единственный предел в расчётном пути ICM.
 MAX_TABLE_SEATS = 10
 
 # Порог безубыточности олл-ина в фишках. При двустороннем олл-ине на
@@ -83,75 +98,144 @@ def table_equities(
     пустом поле не читается.
     """
     _validate(table, field_count, field_stack)
+    seats, field = _solve(
+        numpy.asarray([table], dtype=float), field_count, field_stack, ladder
+    )
+    return seats[0].tolist(), float(field[0])
 
-    seats = len(table)
-    stacks = [float(s) for s in table]
+
+def table_equities_batch(
+    tables: Sequence[Sequence[float]],
+    field_count: int,
+    field_stack: float,
+    ladder: PayoutLadder,
+) -> tuple[numpy.ndarray, numpy.ndarray]:
+    """Эквити мест `(B, t)` и поля `(B,)` для `B` наборов стеков за один проход.
+
+    Поле и лесенка у всех наборов общие, наборы — одной длины `t`: так
+    устроены исходы одной подыгры, они различаются только стеками стола.
+    Стек 0 здесь допустим — это выбывший в исходе. Он остаётся местом стола,
+    но верхних мест не занимает: эквити по столу у него ноль, остальные
+    делят места `1..t − 1 + F`, как если бы его не было. Приз места
+    выбывания добавляет вызывающий. Публичный `table_equities` нулевой стек
+    по-прежнему отвергает.
+    """
+    if len(tables) == 0:
+        raise ValueError("пакет столов пуст")
+    seats = len(tables[0])
+    for index, table in enumerate(tables):
+        if len(table) != seats:
+            raise ValueError(
+                f"наборы стеков разной длины: в наборе 0 мест {seats}, "
+                f"в наборе {index} — {len(table)}"
+            )
+    _check_seat_count(seats)
+    for index, table in enumerate(tables):
+        for seat, stack in enumerate(table):
+            check_non_negative(stack, f"стек на месте {seat} в наборе {index}")
+        if not any(stack > 0 for stack in table):
+            raise ValueError(f"в наборе {index} нет ни одного положительного стека")
+    _check_field(field_count, field_stack)
+    return _solve(numpy.asarray(tables, dtype=float), field_count, field_stack, ladder)
+
+
+def _solve(
+    stacks: numpy.ndarray,
+    field_count: int,
+    field_stack: float,
+    ladder: PayoutLadder,
+) -> tuple[numpy.ndarray, numpy.ndarray]:
+    """Обход состояний `(S, k)` по диагоналям `d = |S| + k`, векторно.
+
+    Каждый переход увеличивает `|S| + k` ровно на единицу, поэтому
+    состояния одной диагонали друг от друга не зависят, а всё, что в них
+    входит, приходит с предыдущей. Диагональ хранится одним массивом по
+    маскам: для маски `S` это вероятность состояния `(S, d − |S|)`, ноль,
+    где такой `k` вне `0..F`. Разыгрываемое место на диагонали одно —
+    `d + 1`, приз тоже один.
+
+    Знаменатель — фишки живых: сумма стеков вне `S` (а не `total − chips(S)`,
+    вычитание теряло бы мелкий стек рядом с крупными) плюс `F − k` стеков
+    поля. Где он ноль, живых нет, и состояние ничего не переносит: так
+    кончается каждая ветвь, без деления на ноль. Отдельного хвоста для
+    поля после выбывания стола, как в эталоне плана 3, здесь нет — ряд
+    «стол выбыл» обходится тем же циклом: всё, что в нём есть, уходит полю
+    шагом за шагом, по одному месту на диагональ. Выбывший в исходе (стек 0)
+    не выбирается ни разу и в `S` не попадает.
+
+    Порядок суммирования другой, чем в эталоне, поэтому сверка с ним — с
+    допуском, а не на равенство.
+    """
+    batch, seats = stacks.shape
     one = float(field_stack) if field_count else 0.0
-
     subsets = 1 << seats
-    full = subsets - 1
-    chips = [0.0] * subsets
-    taken = [0] * subsets
-    for mask in range(1, subsets):
-        low = mask & -mask
-        rest = mask ^ low
-        chips[mask] = chips[rest] + stacks[low.bit_length() - 1]
-        taken[mask] = taken[rest] + 1
+    masks = numpy.arange(subsets)
+    # outside[m, i] — место i ещё не в S = m, то есть живо.
+    outside = ((masks[:, None] & (1 << numpy.arange(seats))[None, :]) == 0).astype(float)
+    taken = (seats - outside.sum(axis=1).astype(int))[:, None]
+    # Массивы диагонали — (маска, набор): пакет последней осью, чтобы срезы
+    # по биту ниже шли непрерывными блоками хотя бы по длине пакета.
+    # Фишки живых за столом для каждой маски — сумма стеков вне S.
+    table_left = outside @ stacks.T
 
-    # Приз зависит только от номера места, а мест не больше t + F: лесенка
-    # опрашивается один раз на место, а не на каждое из 2^t × (F+1) состояний.
     prizes = [ladder.prize(place) for place in range(1, seats + field_count + 1)]
 
-    reach = [[0.0] * (field_count + 1) for _ in range(subsets)]
-    reach[0][0] = 1.0
-    seat_equity = [0.0] * seats
-    field_equity = 0.0
+    # Вероятность выбора, взвешенная призом, копится по маскам, а суммы по
+    # местам берутся один раз в конце: место i занимает место d + 1 из
+    # каждой маски, где его ещё нет, с вероятностью share × stack_i. Так же
+    # копится вклад поля.
+    weighted = numpy.zeros((subsets, batch))
+    field_weighted = numpy.zeros((subsets, batch))
+    current = numpy.zeros((subsets, batch))
+    current[0] = 1.0
+    share = numpy.zeros_like(current)
+    scratch = numpy.empty_like(current)
+    # Перенос «место i занимает место d + 1»: маска без бита i переходит в
+    # маску с ним. В разбиении индекса маски на (старшие, бит i, младшие)
+    # это перенос из среза «бит 0» в срез «бит 1» с весом stack_i. Срезы —
+    # виды на буферы, они строятся один раз на вызов.
+    moves = []
+    for seat in range(seats):
+        shape = (subsets >> (seat + 1), 2, 1 << seat, batch)
+        moves.append(
+            (
+                share.reshape(shape)[:, 0],
+                current.reshape(shape)[:, 1],
+                scratch.reshape(shape)[:, 0],
+                stacks[:, seat],
+            )
+        )
+    for diagonal, prize in enumerate(prizes):
+        # Фишки игроков поля, ещё живых в состоянии (S, d − |S|): (F − k) × one.
+        # Где такой `k` вне `0..F`, состояние недостижимо и несёт ровно ноль:
+        # маска не может набрать больше мест, чем разыграно, а из `k = F`
+        # поле не переносит ничего (`left = 0`). Поэтому значение `left` там
+        # не важно, важно лишь не поделить ноль на ноль.
+        left = (field_count - diagonal + taken) * one
+        denominator = table_left + left
+        if seats <= diagonal <= field_count:
+            # Середина: у каждой маски `k` лежит в 0..F, а знаменатель строго
+            # положителен — `F − k >= |S|`, ноль только у пустой маски при
+            # d = F, а у неё за столом все фишки. Проверка не нужна. Ветка —
+            # только ускорение: общий путь ниже дал бы то же, поэтому мутант
+            # «середины нет» эквивалентен.
+            numpy.divide(current, denominator, out=share)
+        else:
+            share.fill(0.0)
+            numpy.divide(current, denominator, out=share, where=denominator > 0)
+        numpy.multiply(share, prize, out=scratch)
+        weighted += scratch
+        # Поле занимает место d + 1: та же маска, k + 1.
+        numpy.multiply(share, left, out=current)
+        numpy.multiply(current, prize, out=scratch)
+        field_weighted += scratch
+        for origin, target, step, stack in moves:
+            numpy.multiply(origin, stack, out=step)
+            target += step
 
-    # Маски обходятся по возрастанию, а `k` внутри маски — тоже: переходы
-    # ведут только в `mask | bit > mask` и в `k + 1`, поэтому к моменту
-    # обхода состояние уже собрало всю вероятность, что в него входит.
-    for mask in range(full):
-        row = reach[mask]
-        seats_gone = taken[mask]
-        # Фишки живых — сумма оставшихся стеков, а не `total − chips(S)`:
-        # вычитание теряло бы мелкий стек рядом с крупными до нуля или ниже.
-        # Сумма положительных строго больше нуля, пока за столом кто-то жив.
-        table_left = chips[full ^ mask]
-        for k in range(field_count + 1):
-            probability = row[k]
-            # Только ускорение: нулевая вероятность ничего не переносит,
-            # поэтому снос проверки — эквивалентный мутант. Нули здесь не
-            # редкость: на большом поле хвосты вероятностей уходят в underflow.
-            if probability == 0.0:
-                continue
-            left = field_count - k
-            share = probability / (table_left + left * one)
-            prize = prizes[seats_gone + k]
-            for seat in range(seats):
-                bit = 1 << seat
-                if mask & bit:
-                    continue
-                step = share * stacks[seat]
-                seat_equity[seat] += step * prize
-                reach[mask | bit][k] += step
-            if left:
-                step = share * left * one
-                field_equity += step * prize
-                row[k + 1] += step
-
-    # Стол выбыл целиком. Ряд `full` цикл выше не обходит, поэтому
-    # `reach[full][k]` — вероятность, что последний игрок стола занял место
-    # `t + k`: при разных `k` события несовместны. Дальше выбирать не из
-    # кого — поле занимает места `t + k + 1 .. t + F` все до одного, и ему
-    # достаётся весь хвост лесенки. Хвост копится с конца, без деления на
-    # нулевые фишки состояния, где не осталось никого.
-    row = reach[full]
-    tail = 0.0
-    for k in range(field_count - 1, -1, -1):
-        tail += prizes[seats + k]
-        field_equity += row[k] * tail
-
-    return seat_equity, field_equity
+    field_equity = field_weighted.sum(axis=0)
+    seat_mass = (outside.T @ weighted).T
+    return seat_mass * stacks, field_equity
 
 
 def field_stack(
@@ -183,15 +267,23 @@ def field_stack(
 
 
 def _validate(table: list[float], field_count: int, field_stack: float) -> None:
-    if not table:
-        raise ValueError("за столом нет игроков")
-    if len(table) > MAX_TABLE_SEATS:
-        raise ValueError(
-            f"мест за столом ({len(table)}) больше предела {MAX_TABLE_SEATS}: "
-            f"перебор растёт как 2^t и не укладывается в бюджет разбора"
-        )
+    _check_seat_count(len(table))
     for index, stack in enumerate(table):
         check_positive(stack, f"стек на месте {index}")
+    _check_field(field_count, field_stack)
+
+
+def _check_seat_count(seats: int) -> None:
+    if seats == 0:
+        raise ValueError("за столом нет игроков")
+    if seats > MAX_TABLE_SEATS:
+        raise ValueError(
+            f"мест за столом ({seats}) больше предела {MAX_TABLE_SEATS}: "
+            f"перебор растёт как 2^t и не укладывается в бюджет разбора"
+        )
+
+
+def _check_field(field_count: int, field_stack: float) -> None:
     check_integer(field_count, "размер поля")
     check_non_negative(field_count, "размер поля")
     if field_count > 0:
