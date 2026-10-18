@@ -283,6 +283,36 @@ def test_rule_raise_at_commit_share_stays_a_raise():
     assert _hero(tree) == [("fold", None), ("call", 2.0), ("raise", 6.0), ("allin", 15.0)]
 
 
+@pytest.mark.parametrize(
+    ("raws", "hero"),
+    [
+        # Открытие: у героя 40, у отвечающих по 4 — 2.0 > 0.4 × 4.
+        (
+            [preflop_frame(3, folded={7, 2}, starting={4: 4.0, 5: 4.0, 6: 4.0})],
+            [("fold", None), ("allin", 40.0)],
+        ),
+        # 3-бет: `UTG` с 10 открыл до 2.0 — 6.0 > 0.4 × 10.
+        (
+            [preflop_frame(3, {7: 2.0}, folded={2}, starting={7: 10.0})],
+            [("fold", None), ("call", 2.0), ("allin", 40.0)],
+        ),
+        # 4-бет: `BTN` с 20 — 3-бет до 7.0, 15.4 > 0.4 × 20.
+        (
+            [
+                preflop_frame(3, folded={7, 2}, starting={4: 20.0}),
+                preflop_frame(3, {3: 2.0, 4: 7.0}, folded={7, 2, 5, 6}, starting={4: 20.0}),
+            ],
+            [("fold", None), ("call", 7.0), ("allin", 40.0)],
+        ),
+    ],
+    ids=["open", "3bet", "4bet"],
+)
+def test_commit_share_is_of_the_effective_stack(no_pushfold, raws, hero):
+    # Эффективный стек — меньший из двух: короткий соперник сливает рейз длинного героя.
+    tree, _ = _tree(raws)
+    assert _hero(tree) == hero
+
+
 def test_played_size_is_kept():
     # Review Focus 3: фактический 3-бет 8.0 больше 0.4 × 15, но сыгран — остаётся рейзом.
     raws = [
@@ -305,13 +335,26 @@ def test_short_hero_has_only_fold_and_allin(no_pushfold):
         assert all(min(row) >= 0 for row in terminal.rows)
 
 
-def test_a_stack_below_the_bet_calls_allin():
-    # `BTN` с 1.5 BB против открытия до 2.0: колл на все, а не колл и олл-ин отдельно.
-    tree, _ = _tree([preflop_frame(3, folded={7, 2}, starting={4: 1.5})])
+@pytest.mark.parametrize("stack", [1.5, 2.0])
+def test_a_stack_below_the_bet_calls_allin(stack):
+    # `BTN` с 1.5 BB и ровно 2.0 против открытия до 2.0: колл на все, а не колл и олл-ин.
+    tree, _ = _tree([preflop_frame(3, folded={7, 2}, starting={4: stack})])
     at = _child(tree, tree.root, "raise")
-    assert _actions(tree, at)[:2] == [("fold", None), ("allin", 1.5)]
-    assert len(_actions(tree, at)) == 2
+    assert _actions(tree, at) == [("fold", None), ("allin", stack)]
     assert tree.nodes[_child(tree, at, "allin")].kind == "allin"
+
+
+def test_a_stack_equal_to_the_3bet_calls_allin(no_pushfold):
+    # Герой `CO` с 8.0 открыл до 2.0, `BTN` — 3-бет ровно до 8.0: колл — на все.
+    raws = [
+        preflop_frame(3, folded={7, 2}, starting={3: 8.0}),
+        preflop_frame(3, {3: 2.0, 4: 8.0}, folded={7, 2, 5, 6}, starting={3: 8.0}),
+    ]
+    tree, _ = _tree(raws)
+    assert _hero(tree) == [("fold", None), ("allin", 8.0)]
+    showdown = tree.nodes[_child(tree, tree.hero_node, "allin")]
+    assert showdown.kind == "allin"
+    assert min(min(row) for row in showdown.rows) == 0
 
 
 # --- ICM и головы ---------------------------------------------------------------------------
