@@ -11,6 +11,7 @@ import io
 import json
 import sys
 
+from .advice import advise
 from .analyze import analyze
 from .bounty import required_equity_with_bounty
 from .equity import equity_vs_range, hand_equity
@@ -136,6 +137,14 @@ def _dispatch(args: argparse.Namespace) -> dict:
             payload["context"], payload["nodes"], trials=args.trials, seed=args.seed
         )
 
+    if args.command == "advise":
+        payload = _read_json(args.input)
+        # Тот же конверт, что у `analyze`, плюс необязательная `history`: её форму, как и
+        # форму `context` и `nodes`, проверяет движок.
+        if "context" not in payload or "nodes" not in payload:
+            raise ValueError("во входном JSON нужны ключи 'context' и 'nodes'")
+        return advise(payload["context"], payload["nodes"], payload.get("history", []))
+
     raise ValueError(f"неизвестная команда: {args.command}")
 
 
@@ -240,6 +249,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p_an.add_argument("--input", required=True, help="файл с JSON или '-' для stdin")
     p_an.add_argument("--trials", type=int, default=10_000)
     p_an.add_argument("--seed", type=int, default=None)
+
+    p_ad = sub.add_parser("advise", help="совет на последнем узле раздачи (push/fold)")
+    p_ad.add_argument("--input", required=True, help="файл с JSON или '-' для stdin")
 
     return parser
 

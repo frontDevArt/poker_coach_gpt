@@ -1,3 +1,4 @@
+import io
 import json
 import subprocess
 import sys
@@ -5,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import _context, pushfold_first_in_node
+from poker_engine.advice import advise
 from poker_engine.analyze import analyze
 from poker_engine.cli import main
 
@@ -410,3 +413,51 @@ def test_analyze_passes_trials_and_seed_to_the_engine(
     direct = analyze(analyze_context, [analyze_node], trials=400, seed=5)
     assert code == 0
     assert data["equity"]["hero"] == direct["equity"]["hero"]
+
+
+def _stdin(monkeypatch, payload):
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(payload)))
+
+
+def test_advise_reads_stdin(monkeypatch, capsys):
+    envelope = {"context": _context(), "nodes": [pushfold_first_in_node()], "history": []}
+    _stdin(monkeypatch, envelope)
+    code, data = run(["advise", "--input", "-"], capsys)
+    assert code == 0
+    assert data["advisor"] == "pushfold"
+    assert data["action"] in {"allin", "fold"}
+    assert data == advise(_context(), [pushfold_first_in_node()], [])
+
+
+def test_advise_history_is_optional(monkeypatch, capsys):
+    _stdin(monkeypatch, {"context": _context(), "nodes": [pushfold_first_in_node()]})
+    code, data = run(["advise", "--input", "-"], capsys)
+    assert code == 0
+    assert data == advise(_context(), [pushfold_first_in_node()], [])
+
+
+def test_advise_passes_the_history_to_the_engine(monkeypatch, capsys):
+    # Форма `history` проверяется движком: CLI её не глотает и не подменяет на [].
+    envelope = {"context": _context(), "nodes": [pushfold_first_in_node()], "history": [7]}
+    _stdin(monkeypatch, envelope)
+    code, data = run(["advise", "--input", "-"], capsys)
+    assert code == 1
+    assert data["error"] == "ответ 0 в истории должен быть объектом, получено 7"
+
+
+def test_advise_without_the_required_keys_is_a_json_error(monkeypatch, capsys):
+    _stdin(monkeypatch, {"context": _context()})
+    code, data = run(["advise", "--input", "-"], capsys)
+    assert code == 1
+    assert data["error"] == "во входном JSON нужны ключи 'context' и 'nodes'"
+
+
+def test_advise_reads_a_file(tmp_path, capsys):
+    path = tmp_path / "hand.json"
+    path.write_text(
+        json.dumps({"context": _context(), "nodes": [pushfold_first_in_node()]}),
+        encoding="utf-8",
+    )
+    code, data = run(["advise", "--input", str(path)], capsys)
+    assert code == 0
+    assert data["spot"] == "first_in"
