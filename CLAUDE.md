@@ -23,7 +23,8 @@ D21) и открытые вопросы спеки §11 (олл-ин на 0 BB, 
 `docs/superpowers/state/2026-10-17-plan4-phases.md`, ветка `feat/pushfold-advisor`. Фазы 1–4
 (таблица эквити, подыгра, солвер `nash.py` с эталоном HoldemResources, советник `pushfold.py`)
 сделаны; Фаза 5 — Задача 5 (`advise`, реестр, CLI, скилл `poker-preflop-mtt`), 632 passed.
-**Следующая — Фаза 6** (ревью Задачи 5 и финальное ревью ветки), промпт — `docs/superpowers/state/plan4-next-prompt.md`, журнал —
+Фаза 6 — ревью Задачи 5 и финальное ревью ветки: три находки, D27 — в ledger плана 5.
+**Следующая — Фаза 7** (починка трёх находок), промпт — `docs/superpowers/state/plan4-next-prompt.md`, журнал —
 `docs/superpowers/state/2026-10-17-pushfold-execution-notes.md`.
 
 Планы 1 (`feat/poker-engine-core`) и 2 (`feat/screenshot-coach-engine`) закрыты и влиты
