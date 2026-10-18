@@ -17,16 +17,19 @@ fast-forward. 477 passed за ~8 с. Разбор `analyze` — 0.16 с при �
 по всем задачам, удалённые тесты, замеры, ledger отложенного (D3, D11, D12, D13, D15, D19,
 D21) и открытые вопросы спеки §11 (олл-ин на 0 BB, разброс стеков поля).
 
-**План 4 написан** (2026-10-17): советник push/fold, Nash + ICM-поправка — спека
-`docs/superpowers/specs/2026-10-17-pushfold-advisor-design.md` (утверждена с решениями §12),
-план `docs/superpowers/plans/2026-10-17-pushfold-advisor.md`, 5 задач, 8 фаз —
-`docs/superpowers/state/2026-10-17-plan4-phases.md`, ветка `feat/pushfold-advisor`. Фазы 1–4
-(таблица эквити, подыгра, солвер `nash.py` с эталоном HoldemResources, советник `pushfold.py`)
-сделаны; Фаза 5 — Задача 5 (`advise`, реестр, CLI, скилл `poker-preflop-mtt`), 632 passed.
-Фаза 6 — ревью Задачи 5 и финальное ревью ветки: три находки, D27 — в ledger плана 5.
-Фаза 7 — три находки починены (`b8064e6`, `37feffa`, `ae46d3f`), 633 passed.
-**Следующая — Фаза 8** (повторное ревью починок, финал плана), промпт — `docs/superpowers/state/plan4-next-prompt.md`, журнал —
-`docs/superpowers/state/2026-10-17-pushfold-execution-notes.md`.
+**План 4 закрыт** (2026-10-18) — советник push/fold `advise`: Nash по фишкам и по ICM модели
+поля, головы PKO, реестр советников, CLI, скилл `poker-preflop-mtt` (спека
+`docs/superpowers/specs/2026-10-17-pushfold-advisor-design.md`, план
+`docs/superpowers/plans/2026-10-17-pushfold-advisor.md`, фазы
+`docs/superpowers/state/2026-10-17-plan4-phases.md`). Пять задач, восемь фаз, каждая задача и
+починка прошли ревью до `НАХОДОК НЕТ`. 633 passed за ~50–56 с. `advise` на 6-max — 0.6–0.7 с
+при бюджете 2 с; 8-max ~3 с, 9-max ~8 с — D27, план 5. Ветка `feat/pushfold-advisor` в `main`
+не влита — fast-forward по согласию пользователя.
+
+**Точка входа — раздел «Итог плана 4» журнала
+`docs/superpowers/state/2026-10-17-pushfold-execution-notes.md`**: решения против плана и спеки,
+замеры, ledger (D3, D11, D12, D13, D19, D23, D26, D27). **Следующий — план 5** (этап 4, весь
+префлоп), промпт — `docs/superpowers/state/plan4-next-prompt.md`.
 
 Планы 1 (`feat/poker-engine-core`) и 2 (`feat/screenshot-coach-engine`) закрыты и влиты
 в `main`: оба ревью на задачу, мутационная приёмка, финальное ревью ветки. Обе ветки на
@@ -44,8 +47,8 @@ GitHub пользователь удалил (D15 закрыт, 2026-09-25).
 |---|---|---|---|
 | 1 | Математика: эквити, пот-оддсы | L0, L1 | закрыт (план 1) |
 | 2 | Турнир: ICM с полем, лесенка, PKO, `analyze` | L1 | закрыт (планы 2–3) |
-| 3 | Push/fold: Nash + ICM-поправка | L2 | **план 4, в работе** |
-| 4 | Весь префлоп: открытие с размером, 3/4/5-бет, против лимпа, PKO-поправки | L2 | впереди |
+| 3 | Push/fold: Nash + ICM-поправка | L2 | закрыт (план 4) |
+| 4 | Весь префлоп: открытие с размером, 3/4/5-бет, против лимпа, PKO-поправки | L2 | **план 5, следующий** |
 | 5 | **MVP: префлоп-тренер** — серия скриншотов → пошаговый разбор с историей, только префлоп | L6, L7 | впереди |
 | 6 | Постфлоп: флоп/тёрн/ривер, мультипот, текстура, блеф/чек, линия по улицам | L3 | впереди, подключается к этапу 5 |
 | 7 | Стадии турнира и профили соперников микро GG | L4, L5 | впереди |
@@ -86,7 +89,8 @@ GitHub пользователь удалил (D15 закрыт, 2026-09-25).
 | `docs/superpowers/specs/2026-10-17-pushfold-advisor-design.md` | спека плана 4; §12 — решения автора, утверждены |
 | `docs/superpowers/plans/2026-10-17-pushfold-advisor.md` | план 4, 5 задач |
 | `docs/superpowers/state/2026-10-17-plan4-phases.md` | фазы плана 4, реестр долгов, шаблоны промптов |
-| `docs/superpowers/state/plan4-next-prompt.md` | **промпт очередной фазы плана 4** |
+| `docs/superpowers/state/2026-10-17-pushfold-execution-notes.md` | **точка входа**: журнал плана 4, раздел на фазу, «Итог плана 4» |
+| `docs/superpowers/state/plan4-next-prompt.md` | **промпт плана 5** |
 
 Плагины перечислены в `.claude/settings.json`.
 
@@ -95,7 +99,7 @@ GitHub пользователь удалил (D15 закрыт, 2026-09-25).
 ```bash
 # ядро
 cd packages/poker-engine
-.venv/Scripts/python -m pytest              # 633 passed, ~45 с (Linux: .venv/bin/python)
+.venv/Scripts/python -m pytest              # 633 passed, ~50–56 с (Linux: .venv/bin/python)
 
 # первый запуск на новой машине
 python -m venv .venv
