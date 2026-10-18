@@ -177,8 +177,11 @@ cat hand.json | .venv/Scripts/poker-engine.exe advise --input -
 оверколлы не моделируются (`no_overcall`); фолд открывающего — уход банка к `BB`
 (`fold_as_walk`). Олл-ин соперника на 0 BB `advise` разбирает, а `analyze` по-прежнему
 отвергает (D3). Бюджет — 2 секунды на совет: 6-max `first_in` с пятью отвечающими — ~0.6 с,
-`facing_allin` — ~0.3 с; 8-max `first_in` с семью отвечающими пока ~3 с (ICM на восьми местах —
-долг D27).
+`facing_allin` — ~0.3 с. Столы больше 6-max в бюджет пока не укладываются: 8-max `first_in` с
+семью отвечающими — ~3 с, 9-max `first_in` с восемью — ~8 с; почти всё время — ICM на всех
+местах стола (`icm_field.table_equities`). Это долг D27, передан в план 5 (реестр §5
+`docs/superpowers/state/2026-10-17-plan4-phases.md`, замер — журнал
+`docs/superpowers/state/2026-10-17-pushfold-execution-notes.md`, раздел «Фаза 6»).
 
 ## Что реализовано
 
