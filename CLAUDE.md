@@ -28,8 +28,15 @@ fast-forward (2026-10-18, согласие пользователя).
 
 **Точка входа — раздел «Итог плана 4» журнала
 `docs/superpowers/state/2026-10-17-pushfold-execution-notes.md`**: решения против плана и спеки,
-замеры, ledger (D3, D11, D12, D13, D19, D23, D26, D27). **Следующий — план 5** (этап 4, весь
-префлоп), промпт — `docs/superpowers/state/plan4-next-prompt.md`.
+замеры, ledger (D3, D11, D12, D13, D19, D23, D26, D27).
+
+**План 5 — спеки и план утверждены пользователем** (2026-10-18; брейнсторм
+пропущен, «делай» — решения автора собраны в §14 спеки префлопа и §8 спеки D27). Спеки:
+`docs/superpowers/specs/2026-10-18-icm-field-speed-design.md` (D27, быстрый ICM, исполняется
+первым) и `docs/superpowers/specs/2026-10-18-preflop-advisor-design.md` (весь префлоп). План —
+`docs/superpowers/plans/2026-10-18-preflop-advisor.md`, 7 задач; фазы —
+`docs/superpowers/state/2026-10-18-plan5-phases.md`, 10 фаз; промпт Фазы 1 —
+`docs/superpowers/state/plan5-next-prompt.md`.
 
 Планы 1 (`feat/poker-engine-core`) и 2 (`feat/screenshot-coach-engine`) закрыты и влиты
 в `main`: оба ревью на задачу, мутационная приёмка, финальное ревью ветки. Обе ветки на
@@ -90,7 +97,12 @@ GitHub пользователь удалил (D15 закрыт, 2026-09-25).
 | `docs/superpowers/plans/2026-10-17-pushfold-advisor.md` | план 4, 5 задач |
 | `docs/superpowers/state/2026-10-17-plan4-phases.md` | фазы плана 4, реестр долгов, шаблоны промптов |
 | `docs/superpowers/state/2026-10-17-pushfold-execution-notes.md` | **точка входа**: журнал плана 4, раздел на фазу, «Итог плана 4» |
-| `docs/superpowers/state/plan4-next-prompt.md` | **промпт плана 5** |
+| `docs/superpowers/state/plan4-next-prompt.md` | промпт плана 5 (историческое) |
+| `docs/superpowers/specs/2026-10-18-icm-field-speed-design.md` | спека D27: ICM модели поля на `numpy`, пакетный вызов |
+| `docs/superpowers/specs/2026-10-18-preflop-advisor-design.md` | спека плана 5: весь префлоп; §14 — решения автора |
+| `docs/superpowers/plans/2026-10-18-preflop-advisor.md` | план 5, 7 задач |
+| `docs/superpowers/state/2026-10-18-plan5-phases.md` | фазы плана 5, реестр долгов, шаблоны промптов |
+| `docs/superpowers/state/plan5-next-prompt.md` | **промпт очередной фазы плана 5** |
 
 Плагины перечислены в `.claude/settings.json`.
 

@@ -1,0 +1,442 @@
+# Весь префлоп: быстрый ICM, линия префлопа, дерево и советник — план имплементации
+
+> **Исполняется по фазам:** `docs/superpowers/state/2026-10-18-plan5-phases.md`. Одна фаза —
+> одна сессия до ~150k контекста. Промпт очередной фазы лежит в
+> `docs/superpowers/state/plan5-next-prompt.md`.
+
+> **Режим исполнения — решение пользователя, перекрывает рекомендацию скиллов.**
+> Субагенты не используются. Каждая задача исполняется **линейно** на Opus. Задачу,
+> реализованную в фазе k, ревьюит фаза k+1. Находки ревью чинятся отдельными коммитами, и
+> цикл «ревью → починка → ревью» идёт, пока ревью не ответит `НАХОДОК НЕТ`. Шаги помечены
+> `- [ ]` для отметок.
+
+**Goal:** на любой префлоп-узел героя, кроме мультипота, — действие с размером («рейз 2.0 BB»,
+«3-бет до 6.0 BB», «колл», «олл-ин», «фолд») и факты для «почему»: EV всех действий по ICM и по
+фишкам, равновесные диапазоны героя и соперников по линии, головы PKO; `advise` push/fold на
+8- и 9-max — в бюджете 2 с.
+
+**Architecture:** сначала ICM модели поля переписывается на `numpy` с пакетным вызовом (D27),
+`pushfold` переходит на пакет. Затем валидатор разрешает несколько узлов префлопа (D26), модуль
+линии восстанавливает действия префлопа по узлам и распознаёт спот. Модуль дерева строит игру
+«открывший против вошедшего» с фактическими размерами на сыгранных узлах и размерами правила на
+остальных, терминалы считаются по фишкам и пакетным ICM. Солвер CFR+ на `numpy` решает дерево;
+советник берёт лучший ответ комбинации героя и встаёт в реестр после `pushfold`.
+
+**Tech Stack:** Python 3.12 (`.venv` пользователя — 3.12.3), pytest, `numpy`, таблица
+`allin_matrix` и солвер `nash` плана 4, модель ICM `icm_field` плана 3.
+
+**Spec:** `docs/superpowers/specs/2026-10-18-icm-field-speed-design.md` (D27, Задачи 1–2) и
+`docs/superpowers/specs/2026-10-18-preflop-advisor-design.md` (Задачи 3–7).
+
+## Global Constraints
+
+Из спек и конвенций ядра (`CLAUDE.md`); требования каждой задачи включают этот раздел.
+
+- **Один коммит на задачу,** правки ревью — отдельными `fix(engine): …`. Вынос общего кода —
+  отдельным `refactor(engine): …` до `feat` своей задачи, не попутно.
+- **Валидация живёт в движке, не в CLI.** Тексты `ValueError` и тексты отказов советника —
+  пользовательские сообщения. Существующие тексты не меняются. Единственная смена контракта —
+  отказ «улицы не идут по порядку» больше не срабатывает на паре «префлоп → префлоп» (D26,
+  Задача 3), его текст прежний.
+- **Общие гарды — только из `_checks.py`.** Имя для гарда — существительное мужского или
+  среднего рода.
+- **Тест на отказ пинит сообщение через `match=`.** Мутационная приёмка включает класс
+  «снести гард целиком».
+- **Тесты — аналитические инварианты.** Чисел из памяти модели нет. Внешний эталон один —
+  HU-чарт плана 4, через сведение дерева к push/fold (Задача 5).
+- **Пометка ставится, только когда она правда.**
+- **Ключи ответа — camelCase.**
+- **Ничего не зашивать про стол:** размер стола — число мест, анте — из банка, поле `blinds` не
+  читается. Размеры §6.2 спеки — калибровочные константы в одном модуле, не результат расчёта.
+- **`analyze.py`, `pushfold.py`, `pushfold_game.py`, `nash.py` по смыслу не меняются.** Числа
+  `analyze` и `advise` плана 4 на всех фикстурах — те же. `pushfold_game.icm_outcomes` меняет
+  только способ вызова ICM (Задача 2).
+- **Прогон тестов:** `cd packages/poker-engine && .venv/Scripts/python -m pytest -q` (Linux —
+  `.venv/bin/python`). До начала работ: **633 passed**, ~50–56 с.
+- **Бюджеты:** `advise` push/fold — ≤ 2 с на 6-, 8- и 9-max `first_in` (Задача 2); советник
+  `preflop` — ≤ 2 с на 6-max `open` UTG, ≤ 4 с на самом дорогом 9-max (Задача 6). Замер 9-max
+  выше 4 с в Задаче 5 — стоп и вопрос пользователю.
+
+## Review Focus
+
+Входы, которые спеки подразумевают, но ни один их инвариант не называет. Тест — в задаче-владельце.
+
+1. **Узел, где вложенное соперника убыло между кадрами префлопа** (vision ошиблась на одном кадре).
+   Ожидание: `ValueError` с текстом правила §5.1, а не странная линия. Тест — Задача 3.
+2. **Открытие меньше 2 BB или «мин-рейз» ровно 2.0 при вложенном BB 1.0** — линия обязана
+   назвать это рейзом, не коллом. Ожидание: `raise` с `toBb = 2.0`. Тест — Задача 3.
+3. **Фактический размер 3-бета больше 40% стека, но не олл-ин.** Ожидание: узел сыгран с
+   фактическим размером, правило слияния к нему не применяется, у открывшего остаются `fold`,
+   `call`, `allin`. Тест — Задача 4.
+4. **Лимпер без бейджа VPIP.** Ожидание: диапазон `DEFAULT_VPIP`, пометка
+   `limper_range_profile`, без отказа. Тест — Задача 6.
+5. **Стек героя меньше размера открытия по правилу** (герой — 1.6 BB в CO). Ожидание: рейз
+   сливается с олл-ином, у героя `fold` и `allin`, без узла с отрицательным стеком. Тест —
+   Задача 4.
+
+---
+
+## Структура файлов
+
+| Файл | Ответственность | Задача |
+|---|---|---|
+| `src/poker_engine/icm_field.py` | `table_equities` на `numpy`, `table_equities_batch` | 1 |
+| `tests/icm_field_reference.py` | старая реализация дословно — эталон сверки | 1 |
+| `src/poker_engine/pushfold_game.py` | `icm_outcomes` через пакетный вызов | 2 |
+| `tests/conftest.py` | фикстуры 8-max и 9-max, споты префлопа | 2, 3 |
+| `src/poker_engine/handstate.py` | переход на одной улице (D26) | 3 |
+| `src/poker_engine/preflop_line.py` | линия префлопа по узлам, спот, отказы | 3 |
+| `src/poker_engine/preflop_tree.py` | размеры, дерево, терминалы по фишкам и ICM, головы | 4 |
+| `src/poker_engine/preflop_solver.py` | CFR+ на дереве, EV, эксплуатируемость, reach | 5 |
+| `src/poker_engine/preflop_advisor.py` | советник `preflop`: лучший ответ, ответ, пометки | 6 |
+| `src/poker_engine/advice.py` | строка `preflop_advisor` в `ADVISORS` | 6 |
+| `scripts/measure_pushfold_threshold.py` | замер порога §11 спеки | 7 |
+| `.claude/skills/poker-preflop-mtt/SKILL.md`, README ядра | весь префлоп | 7 |
+
+---
+
+## Задача 1: ICM модели поля на `numpy`
+
+Спека D27 §3–§5, §7.
+
+**Files:**
+- Create: `tests/icm_field_reference.py` — тело текущего `table_equities` дословно, функция
+  `reference_table_equities(table, field_count, field_stack, ladder)`.
+- Modify: `src/poker_engine/icm_field.py`
+- Test: `tests/test_icm_field_speed.py`
+
+**Interfaces:**
+- Consumes: `PayoutLadder.prize`, `_validate` и тексты гардов `icm_field`.
+- Produces:
+  - `icm_field.table_equities(table: list[float], field_count: int, field_stack: float, ladder: PayoutLadder) -> tuple[list[float], float]` — сигнатура, гарды и результат прежние;
+  - `icm_field.table_equities_batch(tables: Sequence[Sequence[float]], field_count: int, field_stack: float, ladder: PayoutLadder) -> tuple[numpy.ndarray, numpy.ndarray]`
+    — эквити мест `(B, t)` и поля `(B,)`; стек 0 допустим, у такого места эквити по столу 0.
+    Гарды: все наборы одной длины `t`, `1 ≤ t ≤ MAX_TABLE_SEATS`, стеки не отрицательны, в каждом
+    наборе хотя бы один положительный стек; тексты — новые, через `_checks` где подходят.
+
+**Алгоритм (решение плана).** Состояние `(S, k)`, диагональ `d = |S| + k`. Цикл по `d = 0 … t + F`,
+на каждой диагонали массивы вероятностей по маскам с `|S| = p` и `k = d − p` для всех допустимых
+`p`, перенос в `(S ∪ {i}, k)` и `(S, k + 1)` — векторно по маскам, местам и пакету. Знаменатель
+`chips(complement S) + (F − k)·one`; где он 0 (живых нет), состояние не переносит вероятность.
+Хвост поля после выбывания стола — как в эталоне. Порядок суммирования другой, поэтому сверка с
+допуском, а не на равенство.
+
+- [ ] **Step 1: Перенести эталон.** Скопировать текущее тело в `tests/icm_field_reference.py`,
+  импорт `_validate` из `icm_field`. Прогнать сьют: 633 passed.
+- [ ] **Step 2: Тесты сверки** в `tests/test_icm_field_speed.py`:
+  - `test_matches_reference_on_the_grid` — параметризация `t ∈ 1..10`, `F ∈ {0, 1, 2, 9, 490, 1000}`,
+    лесенки: фикстура `conftest._context().ladder()`, winner-take-all `PayoutLadder([(1, 1, 100.0)], places_paid=1)`;
+    стеки — детерминированные наборы: равные, `[50] + [5]*(t−1)`, `[0.5] + [40]*(t−1)`,
+    `[1 + 3·i for i in range(t)]`. Утверждение: `abs(new − ref) ≤ 1e-12 × ladder.total()` для
+    каждого места и поля;
+  - `test_batch_equals_single_calls` — пакет из всех наборов одного `t` равен поэлементно
+    одиночным вызовам с допуском `1e-12 × total`;
+  - `test_zero_stack_in_batch_gets_nothing` — `[[10, 0, 20]]`, `F = 9`: эквити места 1 — `0.0`,
+    сумма остальных и поля — `ladder.total()` ± `1e-9`;
+  - `test_lone_seat_takes_first_prize` — `[[7.0]]`, `F = 0`: эквити — приз места 1;
+  - тесты гардов `table_equities_batch` с `match=` по каждому тексту.
+- [ ] **Step 3: Прогнать** — новые падают (`table_equities_batch` нет), сверка проходит на
+  старом коде (эталон = код).
+- [ ] **Step 4: Реализовать** оба вызова на `numpy`; `table_equities` — обёртка над пакетом из
+  одного набора плюс прежние гарды.
+- [ ] **Step 5: Прогнать сьют** — все зелёные, `test_icm_field*.py` и `test_analyze*.py` без
+  правки.
+- [ ] **Step 6: Замер** на 8, 9, 10 местах при `F = 490`: время одиночного вызова и пакета из 20.
+  Записать в шапку модуля вместо замеров прототипа; довод `MAX_TABLE_SEATS = 10` переписать от
+  нового замера. Цель спеки — ≤ 0.02 с на 9 местах; не достигнута — записать в журнал, план не
+  останавливать, решает ревью.
+- [ ] **Step 7: Commit** `feat(engine): ICM модели поля на numpy и пакетный вызов (D27)`.
+
+## Задача 2: `pushfold` на пакетном ICM, бюджет 8- и 9-max
+
+Спека D27 §4, §6.
+
+**Files:**
+- Modify: `src/poker_engine/pushfold_game.py` (`icm_outcomes`), `tests/conftest.py`,
+  `tests/test_advice_budget.py`
+
+**Interfaces:**
+- Consumes: `icm_field.table_equities_batch` (Задача 1).
+- Produces: `conftest.pushfold_first_in_node_8max()`, `conftest.pushfold_first_in_node_9max()`
+  — фикстура `pushfold_first_in_node` 6-max, дополненная местами до 8 и 9, герой UTG, тот же
+  контекст и поле; `playersLeft` узла прежний.
+
+- [ ] **Step 1: Тесты:**
+  - `test_advice_on_eight_max_first_in_fits_the_budget`, `test_advice_on_nine_max_first_in_fits_the_budget`
+    — как тест 6-max, бюджет `BUDGET_SECONDS = 2.0`;
+  - `test_icm_is_computed_once_per_outcome` переписать в `test_icm_is_one_batch_per_subgame`:
+    счётчик на `table_equities_batch` — ровно 1 вызов на подыгру, пакет — `2m + 2` наборов
+    (`m = 5` на фикстуре 6-max); `table_equities` не зовётся. Смена контракта — в журнал.
+- [ ] **Step 2: Прогнать** — 8/9-max падают по бюджету, счётчик падает.
+- [ ] **Step 3: Переписать `icm_outcomes`**: все `2m + 2` строки исходов — один пакет на столе
+  без изменений состава (выбывший — стек 0, а не удалённое место). Выплата выбывшему —
+  `ladder.prize(players_left)`, как сейчас.
+- [ ] **Step 4: Прогнать сьют** — все зелёные; ответы `advise` на фикстурах плана 4 те же
+  (`test_pushfold.py` без правки ожидаемых чисел).
+- [ ] **Step 5: Мутант бюджета:** подменить `table_equities_batch` циклом по эталону
+  `reference_table_equities` — тест 9-max краснеет. Вывод в журнал.
+- [ ] **Step 6: README ядра:** строка про D27 — бюджет 8/9-max в норме, замер.
+- [ ] **Step 7: Commit** `feat(engine): push/fold на пакетном ICM, бюджет 8- и 9-max`.
+
+## Задача 3: несколько узлов префлопа (D26) и линия префлопа
+
+Спека §4, §5.
+
+**Files:**
+- Modify: `src/poker_engine/handstate.py` (`_validate_transition`), `tests/test_handstate.py`
+  (тест пары «префлоп → префлоп» → пара «флоп → префлоп»)
+- Create: `src/poker_engine/preflop_line.py`
+- Modify: `tests/conftest.py` (споты префлопа)
+- Test: `tests/test_preflop_line.py`
+
+**Interfaces:**
+- Consumes: `handstate.DecisionNode`, `assign_positions`, `positions_for`, `ROUNDING_STEP_BB`,
+  `pushfold_game.read_spot` (только чтобы знать, что узел берёт `pushfold`).
+- Produces:
+  - `preflop_line.Act` — `frozen dataclass`: `seat_index: int`, `action: str`
+    (`"fold" | "limp" | "call" | "raise" | "allin"`), `to_bb: float | None` (вложенное «до» после
+    действия, у `fold` — `None`);
+  - `preflop_line.Line` — `frozen dataclass`: `kind: str` (`"open" | "vs_open" | "vs_3bet" |
+    "vs_4bet" | "vs_allin_after_raise" | "vs_limp"`), `acts: list[Act]` по порядку хода,
+    `players: list[Seat]` — корень дерева первым, дальше по порядку хода все, кто ещё в раздаче
+    или вкладывал на префлопе; `hero_at: int`; `opponent_at: int | None` — индекс соперника,
+    против которого решает герой (`None` в `open`);
+  - `preflop_line.read_line(nodes: list[DecisionNode]) -> Line | str` — линия или причина отказа.
+
+**D26 — правила перехода на одной улице** (тексты пинятся):
+
+| Условие | Текст |
+|---|---|
+| вложенное места убыло дальше `ROUNDING_STEP_BB` | `вложенное на месте {seatIndex} уменьшилось внутри улицы: было {a:.1f} BB, стало {b:.1f} BB` |
+| у героя нет нового решения: максимальная ставка соперников не выросла | `на улице {street} у героя нет нового решения между кадрами` |
+
+Доска, карты героя, вернувшиеся после фолда, сходимость фишек — прежние проверки и тексты.
+Убывающие улицы — прежний текст.
+
+**Линия.** Первый кадр префлопа: вложенное каждого места относительно блайндов — действия до
+героя по порядку хода. Каждый следующий кадр: прирост вложенного — действие, по порядку хода от
+героя. Рейз — `to` больше текущего максимума (мин-рейз до 2.0 при максимуме 1.0 — рейз); колл —
+равно максимуму; лимп — колл 1 BB, когда максимум ещё 1 BB и место не блайнд; олл-ин — стек 0
+(рейз или колл по сумме). Фолд — `inHand` стал `False`.
+
+**Спот** — по таблице §4 спеки. Отказы (пинятся):
+
+| Условие | Текст |
+|---|---|
+| не префлоп | `советник префлопа работает только на префлопе` |
+| у героя стек 0 | `герой уже в олл-ине: решения нет` |
+| узел берёт `pushfold` | `спот push/fold: отвечает советник pushfold` |
+| два и больше добровольно вошедших до героя | `в банк до героя вошли двое и больше: мультипот вне модели` |
+| линия неоднозначна по одному кадру | `линия неоднозначна: нужен кадр предыдущего решения героя` |
+| 5-бет не олл-ином | `5-бет не олл-ином: вне дерева префлопа` |
+| герой — BB, все сфолдили | `все сфолдили до большого блайнда: решения нет` |
+
+- [ ] **Step 1: Тесты D26** в `tests/test_handstate.py`: два кадра префлопа (UTG открыл 2.0,
+  герой CO; затем герой 3-бет 6.0, UTG 4-бет 15.0) проходят `validate_hand`; «флоп → префлоп» —
+  прежний текст; убывание вложенного — текст таблицы; кадр без новой ставки — текст таблицы.
+  Review Focus 1.
+- [ ] **Step 2: Тесты линии** в `tests/test_preflop_line.py`: по фикстуре на каждую строку
+  таблицы спотов спеки §4 — `kind`, `acts`, `hero_at`, `opponent_at`; две фикстуры по два кадра
+  (`vs_3bet`, `vs_4bet`) — линия с прошлым действием героя и фактическими размерами; мин-рейз
+  2.0 — `raise` (Review Focus 2); каждая строка таблицы отказов — текст дословно; фикстуры
+  `first_in` ≤ 12 BB и `facing_allin` плана 4 — отказ «спот push/fold».
+- [ ] **Step 3: Прогнать** — падают.
+- [ ] **Step 4: Реализовать** `_validate_transition` и `preflop_line.py`.
+- [ ] **Step 5: Прогнать сьют** — зелёные; `test_analyze*.py` без правки.
+- [ ] **Step 6: Commit** `feat(engine): узлы префлопа в одной раздаче (D26) и линия префлопа`.
+
+## Задача 4: дерево префлопа и терминалы
+
+Спека §6.1–§6.7.
+
+**Files:**
+- Create: `src/poker_engine/preflop_tree.py`
+- Test: `tests/test_preflop_tree.py`
+
+**Interfaces:**
+- Consumes: `preflop_line.Line`, `Act` (Задача 3); `icm_field.table_equities_batch`,
+  `icm_field.field_stack`; `bounty.knockout_cash`; `TournamentContext.ladder/protected_ladder`;
+  `profiles.range_for_vpip`, `DEFAULT_VPIP`.
+- Produces:
+  - константы: `OPEN_BB = 2.0`, `OPEN_SB_BB = 3.0`, `ISO_BB = 3.0`, `ISO_PER_LIMPER_BB = 1.0`,
+    `ISO_FROM_BB_BB = 4.0`, `THREEBET_IP = 3.0`, `THREEBET_OOP = 4.0`, `FOURBET = 2.2`,
+    `COMMIT_SHARE = 0.4`, `CHECKDOWN_TRUST_BB = 40.0`, `SIZE_STEP_BB = 0.1`;
+  - `preflop_tree.Action` — `frozen dataclass`: `kind: str` (`fold|check|call|raise|allin`),
+    `to_bb: float | None`, `child: int`;
+  - `preflop_tree.Decision` — `player: int` (индекс в `Tree.players`), `actions: tuple[Action, ...]`;
+  - `preflop_tree.Terminal` — `kind: str` (`fold|allin|checkdown`), `rows: list[list[float]]`
+    — стеки всех участников по исходам (у `fold` один ряд, у `allin`/`checkdown` — ряд победы
+    первого из пары и ряд победы второго), `pair: tuple[int, int] | None` — кто вскрывается;
+  - `preflop_tree.Tree` — `players: list[Seat]`, `nodes: list[Decision | Terminal]`, `root: int`,
+    `path: list[tuple[int, int]]` — сыгранная линия как пары (узел, индекс действия), `hero_node: int`,
+    `fixed_ranges: dict[int, numpy.ndarray]` — заданные диапазоны (лимпер), `flags: set[str]`
+    (`fixed_sizing`, `postflop_checkdown`, `deep_stack`, `no_overcall`, `fold_as_walk`,
+    `limper_range_profile`, `no_hero_limp` — те, что правда для этого дерева);
+  - `preflop_tree.build(line: Line, node: DecisionNode) -> Tree`;
+  - `preflop_tree.chip_payoffs(tree: Tree) -> list[numpy.ndarray]` — на терминал матрица
+    `(исходы, участники)`, BB;
+  - `preflop_tree.icm_payoffs(tree: Tree, node: DecisionNode, context: TournamentContext, bounties: bool) -> list[numpy.ndarray]`
+    — то же в долларах, один пакетный вызов ICM на дерево; головы — только на терминалах
+    `allin` с выбыванием.
+
+**Дерево — спека §6.1.** Сыгранные узлы — фактические размеры из `line.acts`, у сыгранного узла
+все действия на месте (`path` выбирает ветку). Размер правила: база §6.2, округление до
+`SIZE_STEP_BB`, слияние с олл-ином при `to > COMMIT_SHARE × эффективный стек` (у сыгранного
+размера слияния нет — Review Focus 3); если `to ≥ стек с вложенным` — только `allin` (Review
+Focus 5). Отвечающие после открытия — по порядку хода; фолд всех — терминал `fold` с банком
+открывшему; первый вошедший начинает пару, остальные фолдят. В `vs_limp` корень — герой,
+диапазон лимпера — `range_for_vpip(vpip, vpip_hands)` в `fixed_ranges`, у лимпера действия
+`fold|call|allin` против изоляции.
+
+- [ ] **Step 1: Тесты:**
+  - `test_chips_are_conserved_on_every_terminal` — на всех фикстурах Задачи 3 каждый ряд
+    каждого терминала: сумма стеков = сумма стеков до + банк, `1e-9`;
+  - `test_rule_raise_above_commit_share_becomes_allin` — 15 BB, открытие 2.0, 3-бет по правилу
+    > 6.0: у узла 3-бета одно агрессивное действие `allin`;
+  - `test_played_size_is_kept` — фактический 3-бет 8.0 из кадра — `to_bb == 8.0` на сыгранном
+    узле, без слияния (Review Focus 3);
+  - `test_short_hero_has_only_fold_and_allin` — герой 1.6 BB в CO (Review Focus 5);
+  - `test_sizes_follow_the_rule` — по строке таблицы §6.2 на фикстуре: 2.0, 3.0 с SB, изоляция
+    3.0 + 1.0, из BB 4.0, 3-бет IP 3×, OOP 4×, 4-бет 2.2×;
+  - `test_icm_is_one_batch_per_tree` — счётчик на `table_equities_batch` — 1;
+  - `test_bounty_only_on_knockouts` — PKO-фикстура: наличные за голову только на рядах
+    `allin` с нулевым стеком проигравшего; на `checkdown` их нет;
+  - `test_flags_are_true_only_when_true` — по паре фикстур на каждую пометку дерева;
+  - `test_fold_tree_matches_pushfold_subgame` — дерево `open` с принудительным слиянием всех
+    рейзов (`COMMIT_SHARE` подменён `monkeypatch` на 0) на фикстуре `pushfold_first_in_node`:
+    терминалы совпадают с `pushfold_game.chip_outcomes` и `icm_outcomes` того же спота.
+- [ ] **Step 2: Прогнать** — падают.
+- [ ] **Step 3: Реализовать** `preflop_tree.py`.
+- [ ] **Step 4: Прогнать сьют** — зелёные.
+- [ ] **Step 5: Commit** `feat(engine): дерево префлопа, размеры и терминалы`.
+
+## Задача 5: солвер дерева
+
+Спека §6.8, §10 инварианты 6, 9–12.
+
+**Files:**
+- Create: `src/poker_engine/preflop_solver.py`
+- Test: `tests/test_preflop_solver.py`
+
+**Interfaces:**
+- Consumes: `preflop_tree.Tree`, payoffs (Задача 4); `allin_matrix` (эквити и веса);
+  `nash.EPS_CHIP_BB`, `nash.solve`, `nash.exploitability`, `nash.Game` — только в тестах сведения.
+- Produces:
+  - `preflop_solver.MAX_ITERATIONS = 3000`;
+  - `preflop_solver.Solution` — `strategy: dict[int, numpy.ndarray]` (узел → `(действия, 169)`),
+    `exploitability: float`, `iterations: int`, `converged: bool`;
+  - `preflop_solver.solve(tree: Tree, payoffs: list[numpy.ndarray], eps: float, max_iterations: int = MAX_ITERATIONS) -> Solution`;
+  - `preflop_solver.action_values(tree, payoffs, solution, node: int, combo: tuple[str, str]) -> list[float]`
+    — EV каждого действия героя на узле для конкретной комбинации против `solution`, будущие
+    решения героя — лучший ответ этой комбинации;
+  - `preflop_solver.reach(tree, solution, player: int) -> numpy.ndarray` — `(169,)`, вероятность,
+    что класс игрока сыграл `tree.path`;
+  - `preflop_solver.exploitability(tree, payoffs, strategy) -> float`.
+
+**Алгоритм (решение плана).** CFR+ с чередующимися обновлениями и линейным усреднением, всё
+векторно по 169 классам; блокеры попарные, как в `nash.py` (вероятность исхода для класса `h`
+против распределения соперника `∝ reach·w[h, ·]`; фолды отвечающих перед вошедшим —
+`q_i(h)` как там). Узлы с `fixed_ranges` — не решаются, стратегия «войти» задана. Старт —
+равномерная стратегия; остановка — эксплуатируемость ≤ `eps` (проверка каждые 10 шагов и на
+последнем) или предел. Равенство EV в лучшем ответе — к пассивному действию (фолд, потом чек,
+колл), допуск `1e-12` от наибольшей выплаты, как в `nash.py`.
+
+- [ ] **Step 1: Тесты:**
+  - `test_tree_reduces_to_pushfold` — дерево из `test_fold_tree_matches_pushfold_subgame`:
+    стратегии дерева, подставленные в `nash.exploitability` той же подыгры, дают ≤ `2·eps`, и
+    наоборот — равновесие `nash.solve` в `preflop_solver.exploitability` ≤ `2·eps`; по фишкам и
+    по ICM; HU 10 BB и фикстура 6-max;
+  - `test_equilibrium_is_unexploitable` — на каждой фикстуре Задачи 3, фишки и ICM: `≤ eps`
+    или `converged is False`;
+  - `test_winner_take_all_icm_equals_chips` — лесенка из одного приза, без голов и защиты:
+    стратегии ICM и фишек совпадают в пределах шага `0.01` на каждом узле;
+  - `test_ladder_scale` — выплаты × 3: стратегии те же, `action_values` × 3 с допуском `1e-9`
+    относительных;
+  - `test_call_value_grows_with_covered_bounty` — фиксированные стратегии, ценник накрытого
+    соперника 1 → 5: EV колла олл-ина не убывает;
+  - `test_deterministic` — два вызова — равные массивы.
+- [ ] **Step 2: Прогнать** — падают.
+- [ ] **Step 3: Реализовать** `preflop_solver.py`.
+- [ ] **Step 4: Прогнать сьют** — зелёные.
+- [ ] **Step 5: Замер — вход бюджета Задачи 6.** Время `build + payoffs + solve` (фишки и ICM) на
+  6-max `open` UTG 25 BB и на 9-max `open` UTG 25 BB, итерации, эксплуатируемость — в журнал.
+  9-max больше 4 с — **стоп**: отчёт и промпт с вопросом пользователю первым пунктом, Задача 6 не
+  начинается.
+- [ ] **Step 6: Commit** `feat(engine): CFR+ на дереве префлопа`.
+
+## Задача 6: советник `preflop`
+
+Спека §5.4, §6.9, §7–§10.
+
+**Files:**
+- Create: `src/poker_engine/preflop_advisor.py`
+- Modify: `src/poker_engine/advice.py` (строка в `ADVISORS`)
+- Test: `tests/test_preflop_advisor.py`, `tests/test_advice_budget.py`
+
+**Interfaces:**
+- Consumes: Задачи 3–5; `pushfold.CLASS_FREQ_STEP`, `pushfold.icm_eps_usd`-подобный допуск
+  (общий код — отдельный `refactor(engine)`, если нужен), `allin_matrix`.
+- Produces: модуль-советник `name = "preflop"`, `applies(context, nodes) -> str | None`,
+  `advise(context, nodes, history) -> dict` формы спеки §7.2; `ADVISORS = (pushfold, preflop_advisor)`.
+
+**Ответ.** Ключи и правила — спека §7.2 дословно. `action` — наибольший `evUsd`, равенство — к
+пассивному; `close_spot` — `|лучший − второй| ≤ eps`. `bountyUsd` — разница лучшего с фолдом с
+головами минус без них при тех же стратегиях (как в плане 4, без перерешения). `line_deviates`
+— последний ответ `history` с `advisor == "preflop"` назвал действие или размер (`sizeBb` ±
+`SIZE_STEP_BB`), а кадр показывает другое действие героя.
+
+- [ ] **Step 1: Тесты:**
+  - форма ответа на каждом споте §4: ключи, `action ∈ actions`, `sizeBb == toBb` выбранного
+    действия, у `fold`/`check` нет `sizeBb`, классы с нулём опущены, шаг 0.01;
+  - `test_named_size_is_in_the_tree` — анти-цель спеки §3: `sizeBb` совпадает с `to_bb` одного
+    из действий узла героя;
+  - пара тестов на каждую пометку §9 (есть/нет);
+  - `test_line_deviates` — история советовала `raise` 2.0, кадр показывает лимп/колл героя —
+    пометка; совпало — нет;
+  - `test_steps_are_consistent` — инвариант 14 спеки: `reach` героя в `vs_3bet` ∝
+    `byAction.raise` ответа на `open` по первому кадру, допуск 0.01 на класс после нормировки;
+  - `test_classic_has_no_bounty` — инвариант 13;
+  - `test_pushfold_answers_unchanged` — все фикстуры плана 4 через `advise` — `advisor ==
+    "pushfold"` и тот же ответ, что до правки реестра (сравнение с прямым `pushfold.advise`);
+  - `test_limper_without_badge` — Review Focus 4;
+  - бюджеты в `tests/test_advice_budget.py`: `test_preflop_open_six_max_fits_the_budget` (2 с),
+    `test_preflop_nine_max_fits_the_budget` (4 с) — самый дорогой 9-max по замеру Задачи 5.
+- [ ] **Step 2: Прогнать** — падают.
+- [ ] **Step 3: Реализовать** советник и строку реестра.
+- [ ] **Step 4: Прогнать сьют** — зелёные.
+- [ ] **Step 5: Мутант бюджета** — предел итераций ×10 при `eps = 0`: тест 6-max краснеет; в журнал.
+- [ ] **Step 6: Commit** `feat(engine): советник всего префлопа`.
+
+## Задача 7: замер порога push/fold, README, скилл
+
+Спека §11, §13.
+
+**Files:**
+- Create: `scripts/measure_pushfold_threshold.py`
+- Modify: README ядра, `.claude/skills/poker-preflop-mtt/SKILL.md`
+
+- [ ] **Step 1: Скрипт** — сетка 6–20 BB шагом 1, позиции UTG/CO/BTN/SB 6-max, фишки и ICM
+  фикстуры `conftest._context()`: дерево `open` (порог `pushfold` обойдён вызовом
+  `preflop_tree.build` напрямую), доля диапазона открытия, играемая рейзом не олл-ином, и для
+  руки на границе диапазона — разница EV `pushfold` и дерева. Вывод — таблица Markdown.
+- [ ] **Step 2: Запуск** в фоне, таблица — в журнал. Предложение порога — в отчёт фазы и в
+  промпт следующей фазы как вопрос пользователю. Константа не меняется.
+- [ ] **Step 3: README** — `advise` на всём префлопе: споты, отказы, размеры §6.2 как
+  калибровка, пометки, бюджеты.
+- [ ] **Step 4: SKILL.md** — споты, как читать `actions`, `ranges.hero.byAction`, `reach`,
+  `line`, все пометки; правило «размер — только из `sizeBb`», «число — только из ответа».
+- [ ] **Step 5: Прогнать сьют** — зелёные.
+- [ ] **Step 6: Commit** `docs(engine): префлоп в README и скилле, замер порога push/fold`.
+
+---
+
+## Финал плана
+
+Делает последняя фаза, только после `НАХОДОК НЕТ` по всем задачам.
+
+- [ ] Журнал: итоговый раздел — решения против плана и спек, удалённые тесты, замеры, ledger
+  (D3, D11, D12, D13, D19, D23 — без изменений; D26, D27 — закрыты; D28, порог
+  `PUSHFOLD_MAX_BB`, — по ответу пользователя).
+- [ ] `CLAUDE.md`: план 5 закрыт, этап 4 закрыт, число тестов и время.
+- [ ] Спросить пользователя про вливание ветки в `main`, fast-forward.
+- [ ] Промпт плана 6 (этап 5, MVP префлоп-тренера) в `docs/superpowers/state/plan5-next-prompt.md`.
