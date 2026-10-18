@@ -23,8 +23,8 @@ D21) и открытые вопросы спеки §11 (олл-ин на 0 BB, 
 `docs/superpowers/plans/2026-10-17-pushfold-advisor.md`, фазы
 `docs/superpowers/state/2026-10-17-plan4-phases.md`). Пять задач, восемь фаз, каждая задача и
 починка прошли ревью до `НАХОДОК НЕТ`. 633 passed за ~50–56 с. `advise` на 6-max — 0.6–0.7 с
-при бюджете 2 с; 8-max ~3 с, 9-max ~8 с — D27, план 5. Ветка `feat/pushfold-advisor` в `main`
-не влита — fast-forward по согласию пользователя.
+при бюджете 2 с; 8-max ~3 с, 9-max ~8 с — D27, план 5. Ветка `feat/pushfold-advisor` влита в `main`
+fast-forward (2026-10-18, согласие пользователя).
 
 **Точка входа — раздел «Итог плана 4» журнала
 `docs/superpowers/state/2026-10-17-pushfold-execution-notes.md`**: решения против плана и спеки,

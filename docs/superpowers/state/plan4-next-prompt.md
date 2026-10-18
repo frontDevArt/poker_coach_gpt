@@ -3,7 +3,7 @@
 
 План 4 закрыт: советник push/fold `advise` (Nash по фишкам и по ICM модели поля, головы PKO,
 реестр советников, CLI, скилл `poker-preflop-mtt`), 633 passed за ~50–56 с; ветка
-`feat/pushfold-advisor` не влита в `main` — вливание fast-forward по согласию пользователя.
+`feat/pushfold-advisor` влита в `main` fast-forward (2026-10-18).
 
 Прочитай `CLAUDE.md`, затем:
 - `docs/superpowers/specs/2026-09-09-poker-skillpack-design.md` — §5 (L2), §9, §11, §14;
