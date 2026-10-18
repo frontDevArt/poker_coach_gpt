@@ -232,7 +232,7 @@ def _reach(
 ) -> tuple[numpy.ndarray, numpy.ndarray]:
     """Своя достижимость открывшего `r0` и отвечающего пары `rk` на каждом узле, `(узлы, 169)`.
 
-    С `start` — от этого узла с достижимостью 1: узлы вне его поддерева не трогаются.
+    С `start` — от этого узла с достижимостью 1: верны только узлы его поддерева.
     """
     r0 = numpy.ones((shape.nodes, 169))
     rk = numpy.ones((shape.nodes, 169))
@@ -382,8 +382,6 @@ def _gap(
     played, _, folds = _opener_values(shape, sigma, shares, opener_side, best=False)
     answer, _, _ = _opener_values(shape, sigma, shares, opener_side, best=True)
     worst = float(prior @ (answer[shape.root] - played[shape.root]))
-    if not shape.chains:
-        return worst
     fold_values = _fold_values(shape, r0, shares, folds)
     own, _ = _responder_values(shape, sigma, r0, fold_values, responder_side, best=False)
     better, _ = _responder_values(shape, sigma, r0, fold_values, responder_side, best=True)

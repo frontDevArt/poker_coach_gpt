@@ -4,6 +4,7 @@
 """
 
 import copy
+import dataclasses
 
 import numpy
 import pytest
@@ -101,13 +102,8 @@ def _chain(tree, at):
     return nodes
 
 
-@pytest.mark.parametrize(
-    "make", [lambda: _heads_up_node(10.0), pushfold_first_in_node], ids=["hu_10bb", "6max"]
-)
-@pytest.mark.parametrize("payout", ["chip", "icm"])
-def test_tree_reduces_to_pushfold(monkeypatch, make, payout):
-    nodes = _nodes([make()])
-    node = nodes[0]
+def _subgame(node, payout):
+    """Подыгра push/fold узла плана 4 для `nash` и её допуск."""
     spot = pushfold_game.read_spot(node)
     assert isinstance(spot, pushfold_game.Spot)
     context = context_from_dict(_context())
@@ -117,14 +113,31 @@ def test_tree_reduces_to_pushfold(monkeypatch, make, payout):
         "icm": pushfold_game.icm_outcomes(spot, node, context, bounties=False),
     }[payout]
     game = nash.Game(outcomes, len(spot.players) - 1)
-    eps = nash.EPS_CHIP_BB if payout == "chip" else icm_eps_usd(chips, outcomes)
+    return game, nash.EPS_CHIP_BB if payout == "chip" else icm_eps_usd(chips, outcomes)
+
+
+def _payoffs(tree, node, payout):
+    if payout == "chip":
+        return chip_payoffs(tree)
+    return icm_payoffs(tree, node, context_from_dict(_context()), False)
+
+
+SUBGAMES = pytest.mark.parametrize(
+    "make", [lambda: _heads_up_node(10.0), pushfold_first_in_node], ids=["hu_10bb", "6max"]
+)
+
+
+@SUBGAMES
+@pytest.mark.parametrize("payout", ["chip", "icm"])
+def test_tree_reduces_to_pushfold(monkeypatch, make, payout):
+    nodes = _nodes([make()])
+    node = nodes[0]
+    game, eps = _subgame(node, payout)
 
     monkeypatch.setattr(pushfold_game, "PUSHFOLD_MAX_BB", 0.0)
     monkeypatch.setattr(preflop_tree, "COMMIT_SHARE", 0.0)
     tree = build(read_line(nodes), node)
-    payoffs = {"chip": chip_payoffs, "icm": lambda t: icm_payoffs(t, node, context, False)}[
-        payout
-    ](tree)
+    payoffs = _payoffs(tree, node, payout)
     root = tree.nodes[tree.root]
     assert [a.kind for a in root.actions] == ["fold", "allin"]
     chain = _chain(tree, root.actions[1].child)
@@ -155,6 +168,32 @@ def test_tree_reduces_to_pushfold(monkeypatch, make, payout):
     assert exploitability(tree, payoffs, strategy) == pytest.approx(
         nash.exploitability(game, push, call), rel=1e-9
     )
+
+
+@SUBGAMES
+@pytest.mark.parametrize("payout", ["chip", "icm"])
+def test_responder_gap_counts_every_entry(monkeypatch, make, payout):
+    # У корня рейз и олл-ин — две цепочки отвечающих. Открывший всегда олл-ин, все всегда
+    # фолд: рейз крадёт столько же, сколько олл-ин, выигрыша у открывшего нет, а выигрыш
+    # отвечающих — тот же, что в подыгре push/fold. Масса входа — по обеим цепочкам: по одной
+    # цепочке рейза она нулевая, и выигрыш отвечающих пропал бы.
+    nodes = _nodes([make()])
+    node = nodes[0]
+    game, _ = _subgame(node, payout)
+    monkeypatch.setattr(pushfold_game, "PUSHFOLD_MAX_BB", 0.0)
+    tree = build(read_line(nodes), node)
+    payoffs = _payoffs(tree, node, payout)
+    assert [a.kind for a in tree.nodes[tree.root].actions] == ["fold", "raise", "allin"]
+    strategy = {}
+    for at, decision in enumerate(tree.nodes):
+        if isinstance(decision, Decision):
+            strategy[at] = numpy.zeros((len(decision.actions), 169))
+            strategy[at][0] = 1.0
+    strategy[tree.root] = numpy.zeros((3, 169))
+    strategy[tree.root][2] = 1.0
+    expected = nash.exploitability(game, numpy.ones(169), numpy.zeros((game.responders, 169)))
+    assert expected > 0
+    assert exploitability(tree, payoffs, strategy) == pytest.approx(expected, rel=1e-9)
 
 
 # --- равновесие -----------------------------------------------------------------------------
@@ -303,6 +342,28 @@ def test_classes_outside_the_limper_range_do_not_count():
     assert exploitability(tree, payoffs, spoiled) == pytest.approx(
         solution.exploitability, abs=1e-12
     )
+
+
+def test_limper_gap_is_normalised_by_his_range():
+    # Масштаб диапазона лимпера невидим: веса открывшего и `prior` лимпера нормированы. Масштаб
+    # 1 / Σ prior·f доводит массу диапазона до 1 — не вероятность, но число то же. Лимпер всегда
+    # фолдит изоляцию: самый эксплуатируемый — он, без нормировки его выигрыш упал бы в
+    # Σ prior·f раз.
+    tree, node = _tree(preflop_vs_limp())
+    payoffs, eps = _games(tree, node)["chip"]
+    solution = solve(tree, payoffs, eps)
+    limper = len(tree.players) - 1
+    spoiled = dict(solution.strategy)
+    for at, strategy in solution.strategy.items():
+        if tree.nodes[at].player == limper:
+            spoiled[at] = numpy.zeros_like(strategy)
+            spoiled[at][0] = 1.0
+    profile = tree.fixed_ranges[limper]
+    prior = numpy.array([allin_matrix.combos_of(name) for name in allin_matrix.CLASSES]) / 1326
+    unit = dataclasses.replace(tree, fixed_ranges={limper: profile / (prior @ profile)})
+    base = exploitability(tree, payoffs, spoiled)
+    assert base > 100 * eps
+    assert exploitability(unit, payoffs, spoiled) == pytest.approx(base, rel=1e-9)
 
 
 def test_check_behind_a_limp_is_equity_against_the_limp_range():
