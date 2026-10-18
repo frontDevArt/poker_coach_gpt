@@ -91,6 +91,19 @@ def test_zero_stack_seat_is_the_same_as_no_seat():
     )
 
 
+def test_several_zero_stacks_are_the_same_as_no_seats():
+    # Несколько выбывших в одном исходе (мультипот-олл-ин): места
+    # 1..t−z+F делят живые, как за столом без выбывших.
+    ladder = _ladders()["lobby"]
+    seats, field = table_equities_batch([[10.0, 0.0, 0.0, 20.0]], 9, 15.0, ladder)
+    ref_seats, ref_field = reference_table_equities([10.0, 20.0], 9, 15.0, ladder)
+    _assert_close(
+        [seats[0, 0], seats[0, 3]], field[0], ref_seats, ref_field, ladder.total()
+    )
+    assert seats[0, 1] == 0.0
+    assert seats[0, 2] == 0.0
+
+
 def test_zero_stack_with_an_empty_field():
     # Поля нет, живой за столом один: ему первое место, выбывшему — ноль.
     ladder = _ladders()["lobby"]
