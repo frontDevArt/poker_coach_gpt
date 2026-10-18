@@ -24,7 +24,8 @@ D21) и открытые вопросы спеки §11 (олл-ин на 0 BB, 
 (таблица эквити, подыгра, солвер `nash.py` с эталоном HoldemResources, советник `pushfold.py`)
 сделаны; Фаза 5 — Задача 5 (`advise`, реестр, CLI, скилл `poker-preflop-mtt`), 632 passed.
 Фаза 6 — ревью Задачи 5 и финальное ревью ветки: три находки, D27 — в ledger плана 5.
-**Следующая — Фаза 7** (починка трёх находок), промпт — `docs/superpowers/state/plan4-next-prompt.md`, журнал —
+Фаза 7 — три находки починены (`b8064e6`, `37feffa`, `ae46d3f`), 633 passed.
+**Следующая — Фаза 8** (повторное ревью починок, финал плана), промпт — `docs/superpowers/state/plan4-next-prompt.md`, журнал —
 `docs/superpowers/state/2026-10-17-pushfold-execution-notes.md`.
 
 Планы 1 (`feat/poker-engine-core`) и 2 (`feat/screenshot-coach-engine`) закрыты и влиты
@@ -94,7 +95,7 @@ GitHub пользователь удалил (D15 закрыт, 2026-09-25).
 ```bash
 # ядро
 cd packages/poker-engine
-.venv/Scripts/python -m pytest              # 632 passed, ~45 с (Linux: .venv/bin/python)
+.venv/Scripts/python -m pytest              # 633 passed, ~45 с (Linux: .venv/bin/python)
 
 # первый запуск на новой машине
 python -m venv .venv
