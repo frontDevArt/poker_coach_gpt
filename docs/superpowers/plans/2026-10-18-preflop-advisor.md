@@ -161,22 +161,32 @@
   — фикстура `pushfold_first_in_node` 6-max, дополненная местами до 8 и 9, герой UTG, тот же
   контекст и поле; `playersLeft` узла прежний.
 
-- [ ] **Step 1: Тесты:**
+- [x] **Step 1: Тесты:**
   - `test_advice_on_eight_max_first_in_fits_the_budget`, `test_advice_on_nine_max_first_in_fits_the_budget`
     — как тест 6-max, бюджет `BUDGET_SECONDS = 2.0`;
   - `test_icm_is_computed_once_per_outcome` переписать в `test_icm_is_one_batch_per_subgame`:
     счётчик на `table_equities_batch` — ровно 1 вызов на подыгру, пакет — `2m + 2` наборов
     (`m = 5` на фикстуре 6-max); `table_equities` не зовётся. Смена контракта — в журнал.
-- [ ] **Step 2: Прогнать** — 8/9-max падают по бюджету, счётчик падает.
-- [ ] **Step 3: Переписать `icm_outcomes`**: все `2m + 2` строки исходов — один пакет на столе
+- [x] **Step 2: Прогнать** — 8/9-max падают по бюджету, счётчик падает.
+- [x] **Step 3: Переписать `icm_outcomes`**: все `2m + 2` строки исходов — один пакет на столе
   без изменений состава (выбывший — стек 0, а не удалённое место). Выплата выбывшему —
   `ladder.prize(players_left)`, как сейчас.
-- [ ] **Step 4: Прогнать сьют** — все зелёные; ответы `advise` на фикстурах плана 4 те же
+- [x] **Step 4: Прогнать сьют** — все зелёные; ответы `advise` на фикстурах плана 4 те же
   (`test_pushfold.py` без правки ожидаемых чисел).
-- [ ] **Step 5: Мутант бюджета:** подменить `table_equities_batch` циклом по эталону
+- [x] **Step 5: Мутант бюджета:** подменить `table_equities_batch` циклом по эталону
   `reference_table_equities` — тест 9-max краснеет. Вывод в журнал.
-- [ ] **Step 6: README ядра:** строка про D27 — бюджет 8/9-max в норме, замер.
-- [ ] **Step 7: Commit** `feat(engine): push/fold на пакетном ICM, бюджет 8- и 9-max`.
+- [x] **Step 6: README ядра:** строка про D27 — бюджет 8/9-max в норме, замер.
+- [x] **Step 7: Commit** `feat(engine): push/fold на пакетном ICM, бюджет 8- и 9-max`.
+
+**Решения по ходу (Фаза 2, 2026-10-18).**
+1. Шаг 2: тесты бюджета 8/9-max зелёные уже до шага 3 — ICM на `numpy` из Задачи 1 сам довёл
+   `advise` до 0.75 и 1.00 с при одиночных вызовах. Красный тест бюджета показан мутантом шага 5.
+2. Счётчик `table_equities` был и в `tests/test_pushfold_game.py`
+   (`test_icm_is_called_once_per_outcome`): переписан в `test_icm_is_one_batch_of_all_outcomes` —
+   один пакет из `2m + 2` наборов на `first_in` и `facing_allin`. Это та же смена контракта, что
+   и в `test_advice_budget.py`.
+3. Оба счётчика ещё и запрещают одиночный `table_equities` (подмена на `pytest.fail`), а не
+   только считают пакет: так «не зовётся» проверено, а не подразумевается.
 
 ## Задача 3: несколько узлов префлопа (D26) и линия префлопа
 
