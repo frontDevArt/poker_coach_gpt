@@ -37,10 +37,11 @@ fast-forward (2026-10-18, согласие пользователя).
 `docs/superpowers/plans/2026-10-18-preflop-advisor.md`, 7 задач; фазы —
 `docs/superpowers/state/2026-10-18-plan5-phases.md`, 10 фаз; промпт Фазы 1 —
 `docs/superpowers/state/plan5-next-prompt.md`.
-**Фазы 1–3 закрыты** (2026-10-18, ветка `feat/preflop-advisor`): ICM на `numpy` и один пакет
-на подыгру, D27 закрыт — `advise` 9-max 0.64 с; узлы префлопа в одной раздаче (D26 закрыт) и
-линия префлопа `preflop_line.py`; 925 passed за ~86 с. Следующая — Фаза 4 (ревью Задачи 3,
-Задача 4); журнал — `docs/superpowers/state/2026-10-18-plan5-execution-notes.md`.
+**Фазы 1–4 закрыты** (2026-10-18, ветка `feat/preflop-advisor`): ICM на `numpy` и один пакет
+на подыгру, D27 закрыт — `advise` 9-max 0.64 с; узлы префлопа в одной раздаче (D26 закрыт),
+линия префлопа `preflop_line.py`, дерево префлопа `preflop_tree.py`; 985 passed за ~90 с.
+Следующая — Фаза 5 (ревью Задачи 4, Задача 5 — солвер); журнал —
+`docs/superpowers/state/2026-10-18-plan5-execution-notes.md`.
 
 Планы 1 (`feat/poker-engine-core`) и 2 (`feat/screenshot-coach-engine`) закрыты и влиты
 в `main`: оба ревью на задачу, мутационная приёмка, финальное ревью ветки. Обе ветки на
@@ -115,7 +116,7 @@ GitHub пользователь удалил (D15 закрыт, 2026-09-25).
 ```bash
 # ядро
 cd packages/poker-engine
-.venv/Scripts/python -m pytest              # 925 passed, ~86 с (Linux: .venv/bin/python)
+.venv/Scripts/python -m pytest              # 985 passed, ~90 с (Linux: .venv/bin/python)
 
 # первый запуск на новой машине
 python -m venv .venv
