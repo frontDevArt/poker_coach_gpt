@@ -150,6 +150,10 @@ def test_ties_break_to_fold():
     flat = Outcomes(steal=[1.0, 1.0], walk=[1.0, 1.0], win=[[1.0, 1.0]], lose=[[1.0, 1.0]])
     equilibrium = solve(Game(flat, 1), EPS_CHIP_BB)
     assert equilibrium.converged
+    # Стартовое «всё 0.5» здесь тоже равновесие: сходимость на нулевом шаге не проверяется,
+    # иначе солвер вернул бы его, не сделав ни шага к фолду (решение 7 Фазы 3).
+    assert equilibrium.iterations > 0
+    assert equilibrium.push.max() < 0.5 and equilibrium.call.max() < 0.5
     # После n шагов с лучшим ответом 0 и шагом 2/(t + 3) средняя частота
     # 0.5 · Π (t + 1)/(t + 3) = 1 / ((n + 1)(n + 2)).
     n = equilibrium.iterations
