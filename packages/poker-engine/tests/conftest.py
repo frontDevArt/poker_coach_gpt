@@ -112,6 +112,18 @@ def pushfold_first_in_node_9max():
     return _with_extra_seats(pushfold_first_in_node(), [28.0, 41.6, 18.4])
 
 
+def preflop_open_utg_node(make, depth=25.0):
+    """Спот `open` героя `UTG` на столе `make`: у всех `depth` BB до раздачи.
+
+    Стол и вложенное — как у `make` (узел `first_in` плана 4); глубже `PUSHFOLD_MAX_BB` узел
+    берёт советник `preflop`. Это деревья замера бюджета Задачи 5 плана 5.
+    """
+    node = make()
+    for seat in node["seats"]:
+        seat["stackBb"] = depth - seat["investedBb"]
+    return node
+
+
 def pushfold_facing_allin_node():
     """Спот `facing_allin`: `HJ` (место 2) пошёл олл-ин на 9 BB, `CO` сфолдил, герой — `BTN`.
 

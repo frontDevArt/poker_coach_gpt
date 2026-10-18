@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from . import pushfold
+from . import preflop_advisor, pushfold
 from .handstate import DecisionNode, TournamentContext, context_from_dict, node_from_dict
 from .handstate import validate_hand
 
@@ -36,7 +36,7 @@ class Advisor(Protocol):
     ) -> dict: ...
 
 
-ADVISORS: tuple[Advisor, ...] = (pushfold,)
+ADVISORS: tuple[Advisor, ...] = (pushfold, preflop_advisor)
 
 
 def advise(context_raw: dict, nodes_raw: list[dict], history_raw: list[dict]) -> dict:

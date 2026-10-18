@@ -1,4 +1,4 @@
-"""Реестр советников и точка входа `advise` (план 4, Задача 5)."""
+"""Реестр советников и точка входа `advise` (план 4, Задача 5; план 5, Задача 6 — `preflop`)."""
 
 from __future__ import annotations
 
@@ -7,10 +7,11 @@ import re
 import pytest
 
 from conftest import _context, _node, pushfold_facing_allin_node, pushfold_first_in_node
-from poker_engine import advice, pushfold
+from poker_engine import advice, preflop_advisor, pushfold
 from poker_engine.advice import advise
 from poker_engine.analyze import analyze
 from poker_engine.handstate import context_from_dict, node_from_dict
+from poker_engine.preflop_line import AMBIGUOUS
 
 _NOT_ALL_IN = "банк открыт не олл-ином: это не спот push/fold"
 
@@ -40,8 +41,9 @@ def _direct(raw: dict) -> dict:
 # --- реестр ----------------------------------------------------------------------------------
 
 
-def test_pushfold_is_registered():
-    assert advice.ADVISORS == (pushfold,)
+def test_pushfold_is_registered_first():
+    # План 5, Задача 6: `preflop` встаёт после `pushfold` (спека плана 5, §4).
+    assert advice.ADVISORS == (pushfold, preflop_advisor)
 
 
 @pytest.mark.parametrize("make", [pushfold_first_in_node, pushfold_facing_allin_node])
@@ -52,10 +54,14 @@ def test_the_registry_gives_the_pushfold_advice(make):
 
 
 def test_a_node_nobody_takes_is_a_refusal_with_reasons():
-    # Узел `analyze`: `BTN` открыл рейзом 7.3 BB, не олл-ином.
+    # Узел `analyze`: `BTN` открыл рейзом 7.3 BB, не олл-ином; у героя `UTG` вложен 1 BB, а
+    # кадра его прошлого решения нет — линия неоднозначна.
     assert advise(_context(), [_node()], []) == {
         "advisor": None,
-        "notApplicable": [{"advisor": "pushfold", "reason": _NOT_ALL_IN}],
+        "notApplicable": [
+            {"advisor": "pushfold", "reason": _NOT_ALL_IN},
+            {"advisor": "preflop", "reason": AMBIGUOUS},
+        ],
     }
 
 

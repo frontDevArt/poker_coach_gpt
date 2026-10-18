@@ -1,4 +1,5 @@
-"""Приёмка плана: совет push/fold укладывается в две секунды, ICM — один пакет на подыгру."""
+"""Приёмка планов 4 и 5: совет push/fold — в две секунды, ICM — один пакет на подыгру; совет
+префлопа — в две секунды на 6-max и в четыре на самом дорогом 9-max."""
 
 import time
 
@@ -6,6 +7,7 @@ import pytest
 
 from conftest import (
     _context,
+    preflop_open_utg_node,
     pushfold_first_in_node,
     pushfold_first_in_node_8max,
     pushfold_first_in_node_9max,
@@ -14,16 +16,15 @@ from poker_engine import icm_field
 from poker_engine.advice import advise
 
 BUDGET_SECONDS = 2.0
+NINE_MAX_PREFLOP_SECONDS = 4.0
 
 
-def _assert_fits_the_budget(node):
+def _assert_fits_the_budget(node, advisor="pushfold", budget=BUDGET_SECONDS):
     start = time.perf_counter()
     answer = advise(_context(), [node], [])
     elapsed = time.perf_counter() - start
-    assert answer["advisor"] == "pushfold"
-    assert elapsed < BUDGET_SECONDS, (
-        f"совет занял {elapsed:.2f} с при бюджете {BUDGET_SECONDS} с"
-    )
+    assert answer["advisor"] == advisor
+    assert elapsed < budget, f"совет занял {elapsed:.2f} с при бюджете {budget} с"
 
 
 def test_advice_on_six_max_first_in_fits_the_budget():
@@ -62,3 +63,15 @@ def test_icm_is_one_batch_per_subgame(monkeypatch):
         seat["bountyUsd"] = 10.0
     advise(_context(), [raw], [])
     assert batches == [2 * 5 + 2]
+
+
+def test_preflop_open_six_max_fits_the_budget():
+    # `open` героя `UTG` на 25 BB у всех: дерево с пятью отвечающими (спека, инвариант 18).
+    _assert_fits_the_budget(preflop_open_utg_node(pushfold_first_in_node), "preflop")
+
+
+def test_preflop_nine_max_fits_the_budget():
+    # Самое дорогое дерево 9-max на 25 BB по замеру Задачи 5: `open` `UTG`, восемь отвечающих.
+    # Глубокий стек 9-max (40 и 100 BB) — замер в журнал, без теста: решение пользователя.
+    node = preflop_open_utg_node(pushfold_first_in_node_9max)
+    _assert_fits_the_budget(node, "preflop", NINE_MAX_PREFLOP_SECONDS)
