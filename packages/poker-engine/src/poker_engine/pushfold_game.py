@@ -260,18 +260,37 @@ def icm_outcomes(
         by_place = dict(zip(alive, equities))
         return [by_place.get(place, busted) for place in places]
 
-    def showdown(row: list[float], winner: int, loser: int) -> list[float]:
-        payout = value(row)
+    chips = chip_outcomes(spot)
+    responders = range(1, len(spot.players))
+    plain = Outcomes(
+        steal=value(chips.steal),
+        walk=value(chips.walk),
+        win=[value(chips.win[j - 1]) for j in responders],
+        lose=[value(chips.lose[j - 1]) for j in responders],
+    )
+    return with_bounties(spot, plain) if bounties else plain
+
+
+def with_bounties(spot: Spot, outcomes: Outcomes) -> Outcomes:
+    """Выплаты `outcomes` плюс наличные за голову победителю каждого нокаута.
+
+    Нокаут — исход `win`/`lose`, в котором у проигравшего не осталось фишек. Отдельно от
+    `icm_outcomes`, чтобы советник считал ICM на стеках исходов один раз и для ответа с
+    головами, и для ответа без них (план 4, Задача 4).
+    """
+    chips = chip_outcomes(spot)
+
+    def showdown(payout: list[float], row: list[float], winner: int, loser: int) -> list[float]:
+        payout = list(payout)
         price = spot.players[loser].bounty_usd
-        if bounties and row[loser] == 0 and price is not None:
+        if row[loser] == 0 and price is not None:
             payout[winner] += bounty.knockout_cash(price)
         return payout
 
-    chips = chip_outcomes(spot)
     responders = range(1, len(spot.players))
     return Outcomes(
-        steal=value(chips.steal),
-        walk=value(chips.walk),
-        win=[showdown(chips.win[j - 1], 0, j) for j in responders],
-        lose=[showdown(chips.lose[j - 1], j, 0) for j in responders],
+        steal=list(outcomes.steal),
+        walk=list(outcomes.walk),
+        win=[showdown(outcomes.win[j - 1], chips.win[j - 1], 0, j) for j in responders],
+        lose=[showdown(outcomes.lose[j - 1], chips.lose[j - 1], j, 0) for j in responders],
     )

@@ -41,7 +41,6 @@ from .pushfold_game import Outcomes
 
 __all__ = [
     "EPS_CHIP_BB",
-    "EPS_ICM_SHARE",
     "MAX_ITERATIONS",
     "Equilibrium",
     "Game",
@@ -55,8 +54,6 @@ __all__ = [
 # Калибровка, а не результат расчёта (план 4, Задача 3, шаг 6).
 MAX_ITERATIONS = 2000
 EPS_CHIP_BB = 1e-3
-# Доля денег в игре — призов мест `1..playersLeft` лесенки, по которой считан ICM.
-EPS_ICM_SHARE = 1e-6
 
 _CHECK_EVERY = 10
 # Относительный допуск равенства EV: шум суммирования, а не стратегия.

@@ -14,6 +14,7 @@ from poker_engine.pushfold_game import (
     icm_outcomes,
     outcome_stacks,
     read_spot,
+    with_bounties,
 )
 
 
@@ -432,3 +433,20 @@ def test_d3_all_in_player_at_zero_builds_outcomes(pushfold_facing_allin):
     assert icm.steal[0] > 0.0
     assert len(icm.win) == len(icm.lose) == 3
 
+
+
+def test_an_opener_who_busts_a_short_responder_takes_the_head():
+    # `BTN` с 5 BB короче героя-`UTG` с 10: выиграв олл-ин против него, герой выбивает его.
+    # В фикстурах выше открывающий никого не накрывает, и ряды `win` без нокаута.
+    raw = _priced(pushfold_first_in_node())
+    _seat(raw, 4)["stackBb"] = 5.0
+    node = node_from_dict(raw)
+    spot = _spot(raw)
+    context = context_from_dict(_context())
+    plain = icm_outcomes(spot, node, context, bounties=False)
+    heads = with_bounties(spot, plain)
+    btn = [seat.seat_index for seat in spot.players].index(4)
+    assert chip_outcomes(spot).win[btn - 1][btn] == 0.0
+    cash = bounty.knockout_cash(spot.players[btn].bounty_usd)
+    assert heads.win[btn - 1][0] == pytest.approx(plain.win[btn - 1][0] + cash, abs=1e-12)
+    assert heads.lose[btn - 1] == plain.lose[btn - 1]
