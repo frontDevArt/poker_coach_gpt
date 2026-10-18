@@ -20,9 +20,9 @@ D21) и открытые вопросы спеки §11 (олл-ин на 0 BB, 
 **План 4 написан** (2026-10-17): советник push/fold, Nash + ICM-поправка — спека
 `docs/superpowers/specs/2026-10-17-pushfold-advisor-design.md` (утверждена с решениями §12),
 план `docs/superpowers/plans/2026-10-17-pushfold-advisor.md`, 5 задач, 8 фаз —
-`docs/superpowers/state/2026-10-17-plan4-phases.md`, ветка `feat/pushfold-advisor`. Фазы 1–3
-(таблица эквити, подыгра, солвер `nash.py` с эталоном HoldemResources) сделаны, 564 passed.
-**Следующая — Фаза 4**, промпт — `docs/superpowers/state/plan4-next-prompt.md`, журнал —
+`docs/superpowers/state/2026-10-17-plan4-phases.md`, ветка `feat/pushfold-advisor`. Фазы 1–4
+(таблица эквити, подыгра, солвер `nash.py` с эталоном HoldemResources, советник `pushfold.py`)
+сделаны, 607 passed. **Следующая — Фаза 5**, промпт — `docs/superpowers/state/plan4-next-prompt.md`, журнал —
 `docs/superpowers/state/2026-10-17-pushfold-execution-notes.md`.
 
 Планы 1 (`feat/poker-engine-core`) и 2 (`feat/screenshot-coach-engine`) закрыты и влиты
@@ -92,7 +92,7 @@ GitHub пользователь удалил (D15 закрыт, 2026-09-25).
 ```bash
 # ядро
 cd packages/poker-engine
-.venv/Scripts/python -m pytest              # 564 passed, ~21 с (Linux: .venv/bin/python)
+.venv/Scripts/python -m pytest              # 607 passed, ~42 с (Linux: .venv/bin/python)
 
 # первый запуск на новой машине
 python -m venv .venv
