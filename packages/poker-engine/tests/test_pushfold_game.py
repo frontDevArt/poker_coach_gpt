@@ -305,25 +305,30 @@ def test_a_blind_responder_who_loses_keeps_the_rest_of_his_total(pushfold_first_
 
 
 @pytest.fixture
-def icm_calls(monkeypatch):
-    calls = []
-    original = icm_field.table_equities
+def icm_batches(monkeypatch):
+    batches = []
+    original = icm_field.table_equities_batch
 
-    def counted(*args, **kwargs):
-        calls.append(args)
-        return original(*args, **kwargs)
+    def counted(tables, *args, **kwargs):
+        batches.append(len(tables))
+        return original(tables, *args, **kwargs)
 
-    monkeypatch.setattr(icm_field, "table_equities", counted)
-    return calls
+    def forbidden(*args, **kwargs):
+        pytest.fail("одиночный table_equities в исходах подыгры")
+
+    monkeypatch.setattr(icm_field, "table_equities_batch", counted)
+    monkeypatch.setattr(icm_field, "table_equities", forbidden)
+    return batches
 
 
 @pytest.mark.parametrize("make", [pushfold_first_in_node, pushfold_facing_allin_node])
-def test_icm_is_called_once_per_outcome(make, icm_calls):
+def test_icm_is_one_batch_of_all_outcomes(make, icm_batches):
+    # Один пакетный вызов на подыгру: `steal`, `walk` и по `win`/`lose` на отвечающего.
     raw = make()
     spot = _spot(raw)
     icm_outcomes(spot, node_from_dict(raw), context_from_dict(_context()), bounties=False)
     m = len(spot.players) - 1
-    assert len(icm_calls) == 2 * m + 2
+    assert icm_batches == [2 * m + 2]
 
 
 @pytest.mark.parametrize("make", [pushfold_first_in_node, pushfold_facing_allin_node])

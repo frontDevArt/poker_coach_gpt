@@ -237,7 +237,9 @@ def icm_outcomes(
 ) -> Outcomes:
     """Выплата по ICM — эквити участника в долларах на модели поля после исхода.
 
-    Один вызов `table_equities` на исход, `2m + 2` на подыгру с `m` отвечающими. При
+    Один пакетный вызов `table_equities_batch` на подыгру: `2m + 2` наборов стеков с `m`
+    отвечающими, по набору на исход (спека D27 §4). Состав стола во всех наборах один,
+    выбывший остаётся своим местом со стеком 0 и получает приз места `playersLeft`. При
     `bounties=True` победитель нокаута получает сверх ICM наличные за голову выбитого.
     """
     seats = _table(spot)
@@ -253,22 +255,24 @@ def icm_outcomes(
     busted = ladder.prize(node.players_left)
     places = [[seat.seat_index for seat in seats].index(p.seat_index) for p in spot.players]
 
-    def value(row: list[float]) -> list[float]:
-        table = _expand(spot, row)
-        alive = [at for at, stack in enumerate(table) if stack > 0]
-        equities, _ = icm_field.table_equities(
-            [table[at] for at in alive], field_count, one, ladder
-        )
-        by_place = dict(zip(alive, equities))
-        return [by_place.get(place, busted) for place in places]
-
     chips = chip_outcomes(spot)
-    responders = range(1, len(spot.players))
+    tables = [
+        _expand(spot, row) for row in [chips.steal, chips.walk, *chips.win, *chips.lose]
+    ]
+    equities, _ = icm_field.table_equities_batch(tables, field_count, one, ladder)
+
+    def value(at: int) -> list[float]:
+        return [
+            float(equities[at, place]) if tables[at][place] > 0 else busted
+            for place in places
+        ]
+
+    m = len(spot.players) - 1
     plain = Outcomes(
-        steal=value(chips.steal),
-        walk=value(chips.walk),
-        win=[value(chips.win[j - 1]) for j in responders],
-        lose=[value(chips.lose[j - 1]) for j in responders],
+        steal=value(0),
+        walk=value(1),
+        win=[value(2 + k) for k in range(m)],
+        lose=[value(2 + m + k) for k in range(m)],
     )
     return with_bounties(spot, plain) if bounties else plain
 

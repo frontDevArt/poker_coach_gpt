@@ -79,6 +79,39 @@ def pushfold_first_in_node():
     return node
 
 
+def _with_extra_seats(node, stacks):
+    """Узел, дополненный местами 8, 9, … после `UTG` (место 7): герой остаётся `UTG`.
+
+    Новые места в раздаче, ничего не вложили, ставят анте наравне со всеми: банк растёт на
+    0.125 BB за место. Контекст и `playersLeft` прежние.
+    """
+    for offset, stack in enumerate(stacks):
+        node["seats"].append(
+            {
+                "seatIndex": 8 + offset,
+                "name": f"p{8 + offset}",
+                "stackBb": stack,
+                "investedBb": 0.0,
+                "inHand": True,
+                "isHero": False,
+                "vpip": 25.0,
+                "vpipHands": 60,
+            }
+        )
+    node["potBb"] += 0.125 * len(stacks)
+    return node
+
+
+def pushfold_first_in_node_8max():
+    """Спот `first_in` плана 4 на 8 местах: герой `UTG`, за ним семь отвечающих."""
+    return _with_extra_seats(pushfold_first_in_node(), [28.0, 41.6])
+
+
+def pushfold_first_in_node_9max():
+    """Спот `first_in` плана 4 на 9 местах: герой `UTG`, за ним восемь отвечающих."""
+    return _with_extra_seats(pushfold_first_in_node(), [28.0, 41.6, 18.4])
+
+
 def pushfold_facing_allin_node():
     """Спот `facing_allin`: `HJ` (место 2) пошёл олл-ин на 9 BB, `CO` сфолдил, герой — `BTN`.
 
