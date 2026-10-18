@@ -550,7 +550,7 @@ def _validate_transition(earlier: DecisionNode, later: DecisionNode) -> None:
     if later.street == earlier.street:
         _validate_same_street(earlier, later)
 
-    before =sum(seat.stack_bb for seat in earlier.seats) + earlier.pot_bb
+    before = sum(seat.stack_bb for seat in earlier.seats) + earlier.pot_bb
     after = sum(seat.stack_bb for seat in later.seats) + later.pot_bb
     tolerance = ROUNDING_STEP_BB * max(len(earlier.seats), len(later.seats))
     if abs(before - after) > tolerance:
