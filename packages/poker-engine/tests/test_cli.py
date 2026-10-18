@@ -445,8 +445,13 @@ def test_advise_passes_the_history_to_the_engine(monkeypatch, capsys):
     assert data["error"] == "ответ 0 в истории должен быть объектом, получено 7"
 
 
-def test_advise_without_the_required_keys_is_a_json_error(monkeypatch, capsys):
-    _stdin(monkeypatch, {"context": _context()})
+@pytest.mark.parametrize("missing", ["context", "nodes"])
+def test_advise_without_the_required_keys_is_a_json_error(missing, monkeypatch, capsys):
+    # Каждый ключ — отдельно: без проверки `context` конверт `{"nodes": …}` ушёл бы в
+    # `KeyError` мимо `main`, который ловит только `ValueError` и `IndexError`.
+    envelope = {"context": _context(), "nodes": [pushfold_first_in_node()]}
+    del envelope[missing]
+    _stdin(monkeypatch, envelope)
     code, data = run(["advise", "--input", "-"], capsys)
     assert code == 1
     assert data["error"] == "во входном JSON нужны ключи 'context' и 'nodes'"
