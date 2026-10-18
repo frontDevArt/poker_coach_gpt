@@ -37,6 +37,9 @@ fast-forward (2026-10-18, согласие пользователя).
 `docs/superpowers/plans/2026-10-18-preflop-advisor.md`, 7 задач; фазы —
 `docs/superpowers/state/2026-10-18-plan5-phases.md`, 10 фаз; промпт Фазы 1 —
 `docs/superpowers/state/plan5-next-prompt.md`.
+**Фаза 1 закрыта** (2026-10-18, `6c2ee3a`, ветка `feat/preflop-advisor`): ICM на `numpy`,
+891 passed за ~93 с. Следующая — Фаза 2 (ревью Задачи 1, Задача 2); журнал —
+`docs/superpowers/state/2026-10-18-plan5-execution-notes.md`.
 
 Планы 1 (`feat/poker-engine-core`) и 2 (`feat/screenshot-coach-engine`) закрыты и влиты
 в `main`: оба ревью на задачу, мутационная приёмка, финальное ревью ветки. Обе ветки на
@@ -111,7 +114,7 @@ GitHub пользователь удалил (D15 закрыт, 2026-09-25).
 ```bash
 # ядро
 cd packages/poker-engine
-.venv/Scripts/python -m pytest              # 633 passed, ~50–56 с (Linux: .venv/bin/python)
+.venv/Scripts/python -m pytest              # 891 passed, ~93 с (Linux: .venv/bin/python)
 
 # первый запуск на новой машине
 python -m venv .venv
