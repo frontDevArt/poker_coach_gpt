@@ -127,6 +127,72 @@ def pushfold_facing_allin_node():
     return node
 
 
+def preflop_frame(hero, invested=None, folded=(), starting=None):
+    """Кадр префлопа на столе `pushfold_first_in_node`: 6-max, у каждого 40 BB до раздачи.
+
+    Кнопка — место 4, ход — `UTG` 7, `HJ` 2, `CO` 3, `BTN` 4, `SB` 5, `BB` 6. `invested` —
+    вложенное на улице по местам поверх блайндов 0.5 и 1.0, `folded` — сфолдившие, `starting` —
+    стеки до раздачи, отличные от 40. Стек — стартовый минус вложенное, банк — вложенное плюс
+    анте 0.75: фишки между кадрами одной раздачи сходятся сами собой.
+    """
+    put = {5: 0.5, 6: 1.0, **(invested or {})}
+    totals = {**{seat: 40.0 for seat in range(2, 8)}, **(starting or {})}
+    node = pushfold_first_in_node()
+    for seat in node["seats"]:
+        index = seat["seatIndex"]
+        seat.update(
+            investedBb=put.get(index, 0.0),
+            stackBb=totals[index] - put.get(index, 0.0),
+            inHand=index not in folded,
+            isHero=index == hero,
+        )
+    node.update(
+        potBb=sum(put.values()) + 0.75,
+        toCallBb=max(put.values()) - put.get(hero, 0.0),
+        raiseToBb=None,
+    )
+    return node
+
+
+def preflop_open():
+    """`open`: `UTG` и `HJ` сфолдили, герой — `CO`."""
+    return [preflop_frame(3, folded={7, 2})]
+
+
+def preflop_vs_open():
+    """`vs_open`: `UTG` открыл до 2.0 (мин-рейз), `HJ` сфолдил, герой — `CO`."""
+    return [preflop_frame(3, {7: 2.0}, folded={2})]
+
+
+def preflop_vs_limp():
+    """`vs_limp`: `UTG` залимпил, `HJ` и `CO` сфолдили, герой — `BTN`."""
+    return [preflop_frame(4, {7: 1.0}, folded={2, 3})]
+
+
+def preflop_vs_3bet():
+    """`vs_3bet` в два кадра: герой `CO` открыл до 2.0, `BTN` — 3-бет до 7.0, блайнды фолд."""
+    return [
+        preflop_frame(3, folded={7, 2}),
+        preflop_frame(3, {3: 2.0, 4: 7.0}, folded={7, 2, 5, 6}),
+    ]
+
+
+def preflop_vs_4bet():
+    """`vs_4bet` в два кадра: `UTG` открыл до 2.0, герой `CO` — 3-бет до 6.0, `UTG` — 4-бет 15.0."""
+    return [
+        preflop_frame(3, {7: 2.0}, folded={2}),
+        preflop_frame(3, {7: 15.0, 3: 6.0}, folded={2, 4, 5, 6}),
+    ]
+
+
+def preflop_vs_allin_after_raise():
+    """`vs_allin_after_raise`: герой `CO` открыл до 2.0, `BTN` пошёл олл-ин на 40 BB."""
+    return [
+        preflop_frame(3, folded={7, 2}),
+        preflop_frame(3, {3: 2.0, 4: 40.0}, folded={7, 2, 5, 6}),
+    ]
+
+
 @pytest.fixture
 def analyze_context():
     return _context()

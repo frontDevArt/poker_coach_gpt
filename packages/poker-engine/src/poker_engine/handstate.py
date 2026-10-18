@@ -531,7 +531,9 @@ def _validate_prices(node: DecisionNode) -> None:
 
 
 def _validate_transition(earlier: DecisionNode, later: DecisionNode) -> None:
-    if STREETS.index(later.street) <= STREETS.index(earlier.street):
+    # Соседние узлы одной улицы разрешены (D26, спека плана 5 §5.1): на префлопе
+    # их несколько — открытие, 3-бет, 4-бет. Отказ остаётся за убывающими улицами.
+    if STREETS.index(later.street) < STREETS.index(earlier.street):
         raise ValueError(
             f"улицы не идут по порядку: {earlier.street} → {later.street}"
         )
@@ -545,12 +547,44 @@ def _validate_transition(earlier: DecisionNode, later: DecisionNode) -> None:
     returned = now_in - was_in
     if returned:
         raise ValueError(f"игрок вернулся в раздачу после фолда: место {min(returned)}")
+    if later.street == earlier.street:
+        _validate_same_street(earlier, later)
 
-    before = sum(seat.stack_bb for seat in earlier.seats) + earlier.pot_bb
+    before =sum(seat.stack_bb for seat in earlier.seats) + earlier.pot_bb
     after = sum(seat.stack_bb for seat in later.seats) + later.pot_bb
     tolerance = ROUNDING_STEP_BB * max(len(earlier.seats), len(later.seats))
     if abs(before - after) > tolerance:
         raise ValueError(
             f"фишки не сходятся между улицами: было {before:.1f} BB, "
             f"стало {after:.1f} BB"
+        )
+
+
+def _validate_same_street(earlier: DecisionNode, later: DecisionNode) -> None:
+    """Два узла одной улицы: вложенное не убывает, у героя появилось новое решение.
+
+    Доску, карты героя и вернувшихся после фолда проверяют общие правила перехода; здесь —
+    только то, что отличает соседние кадры одной улицы (спека плана 5, §5.1). Вложенное
+    убывает лишь в пределах шага печати: глубже — vision ошиблась на одном из кадров. Новое
+    решение — ставка соперников выросла и стоит выше вложенного героем; иначе это тот же
+    кадр дважды или улица уже закрыта коллом.
+    """
+    invested = {seat.seat_index: seat.invested_bb for seat in earlier.seats}
+    for seat in later.seats:
+        was = invested.get(seat.seat_index)
+        if was is not None and seat.invested_bb < was - ROUNDING_STEP_BB:
+            raise ValueError(
+                f"вложенное на месте {seat.seat_index} уменьшилось внутри улицы: "
+                f"было {was:.1f} BB, стало {seat.invested_bb:.1f} BB"
+            )
+
+    def facing(node: DecisionNode) -> float:
+        return max(
+            (seat.invested_bb for seat in node.seats if not seat.is_hero), default=0.0
+        )
+
+    raised = facing(later) > facing(earlier)
+    if not raised or facing(later) <= later.hero.invested_bb:
+        raise ValueError(
+            f"на улице {later.street} у героя нет нового решения между кадрами"
         )

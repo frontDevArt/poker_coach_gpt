@@ -10,6 +10,7 @@ import re
 
 import pytest
 
+from conftest import preflop_frame, preflop_vs_3bet, preflop_vs_4bet, preflop_vs_open
 from poker_engine.handstate import (
     assign_positions,
     context_from_dict,
@@ -201,11 +202,59 @@ def test_duplicate_card_inside_the_board_is_rejected():
         _validate([_node(street="flop", board=["8c", "8c", "9d"])])
 
 
-def test_streets_must_advance():
-    first = _node()
-    second = _node(street="preflop", potBb=10.0)
-    with pytest.raises(ValueError, match="улицы не идут по порядку"):
+def test_streets_must_not_go_back():
+    # До плана 5 тест пинил отказ на паре «префлоп → префлоп»; D26 её разрешил, и отказ
+    # остался за убывающими улицами с прежним текстом.
+    first = _node(street="flop", board=["8c", "2s", "9d"], potBb=5.9)
+    second = _node()
+    with pytest.raises(ValueError, match="^улицы не идут по порядку: flop → preflop$"):
         _validate([first, second])
+
+
+def test_two_preflop_frames_of_one_hand_pass():
+    # D26: `UTG` открыл до 2.0, герой `CO`; затем герой 3-бет до 6.0, `UTG` 4-бет до 15.0.
+    _validate(preflop_vs_4bet())
+
+
+def test_invested_cannot_shrink_within_a_street():
+    # Review Focus 1: vision ошиблась на одном кадре — у `SB` вложенное 0.5 стало 0.0. Стек
+    # вырос ровно на столько же, фишки сходятся: отказ даёт правило улицы, а не сохранение.
+    first, second = preflop_vs_3bet()
+    shrunk = preflop_frame(3, {3: 2.0, 4: 7.0, 5: 0.0}, folded={7, 2, 5, 6})
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "вложенное на месте 5 уменьшилось внутри улицы: было 0.5 BB, стало 0.0 BB"
+        ),
+    ):
+        _validate([first, shrunk])
+
+
+def test_invested_rounding_within_a_street_is_tolerated():
+    # Шаг печати 0.1 BB: вложенное `SB` 0.5 → 0.4 — шум, а не убывание.
+    first, _ = preflop_vs_3bet()
+    rounded = preflop_frame(3, {3: 2.0, 4: 7.0, 5: 0.4}, folded={7, 2, 5, 6})
+    _validate([first, rounded])
+
+
+def test_a_repeated_frame_is_not_a_new_decision():
+    # Тот же скриншот дважды: ставка перед героем не выросла.
+    frame = preflop_vs_open()[0]
+    with pytest.raises(
+        ValueError, match="^на улице preflop у героя нет нового решения между кадрами$"
+    ):
+        _validate([frame, frame])
+
+
+def test_a_call_behind_the_hero_is_not_a_new_decision():
+    # Герой 3-бет до 6.0, `UTG` заколлировал: ставки выросли, но выше вложенного героем нет —
+    # улица закрыта, следующего решения на префлопе быть не может.
+    first = preflop_vs_open()[0]
+    called = preflop_frame(3, {7: 6.0, 3: 6.0}, folded={2, 4, 5, 6})
+    with pytest.raises(
+        ValueError, match="^на улице preflop у героя нет нового решения между кадрами$"
+    ):
+        _validate([first, called])
 
 
 def test_board_must_extend_the_previous_board():
