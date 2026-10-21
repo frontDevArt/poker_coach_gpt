@@ -7,9 +7,10 @@
 дерево, а не маршрут советников.
 
 Этот модуль — и мерка подбора: `scripts/calibrate_realization.py` берёт отсюда стол, доли, метрику
-и допуски §6.3, чтобы подбор и тест не разошлись. Тест допусков (инвариант 13) встаёт вместе с
-подобранными константами: подбор §6.2 не прошёл T2 ни в основной форме, ни в запасной §6.4
-(журнал плана 6, «Фаза 3b»), решение — за пользователем.
+и допуски §6.3, чтобы подбор и тест не разошлись. Тест допусков (инвариант 13) — при константах
+`realization`, подобранных скриптом (журнал плана 6, «Фаза 3c»); точки вне T2 — роли
+`holdout_sb_limp` (`SB` первым в банк, до лимпа `SB`) и `holdout_cold_call` (E6: в чарте есть
+колд-колл незакрывающего, в модели нет).
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ import numpy
 import pytest
 
 from conftest import _context
-from poker_engine import allin_matrix, nash, pushfold_game
+from poker_engine import allin_matrix, nash, pushfold_game, realization
 from poker_engine.handstate import (
     assign_positions,
     context_from_dict,
@@ -39,6 +40,17 @@ REFERENCE = pathlib.Path(__file__).parent / "data" / "mtt_reference.json"
 TOLERANCE_PP = {"calibration": 6.0, "holdout": 10.0}
 CASH_TOLERANCE_PP = 12.0
 CASH_SOURCE = "E11"
+# Роли вне `holdout` — спека §6.1 и решения Задачи 3 плана 6 (Фазы 3b–3c): `E4.SB.open` — `SB`
+# первым в банк, как E7–E9; E6 целиком — ответ незакрывающего, у которого в чарте колд-колл.
+ROLE_OF_SOURCE = {
+    "E1": "calibration",
+    "E2": "calibration",
+    "E6": "holdout_cold_call",
+    "E7": "holdout_sb_limp",
+    "E8": "holdout_sb_limp",
+    "E9": "holdout_sb_limp",
+}
+ROLE_OF_POINT = {"E4.SB.open": "holdout_sb_limp"}
 
 _PRIOR = numpy.array([allin_matrix.combos_of(name) for name in allin_matrix.CLASSES]) / 1326
 
@@ -173,6 +185,8 @@ def test_reference_file_shape():
     for point in points:
         assert point["payout"] == "chip"
         assert point["source"] and point["accessed"] and point["method"]
+        expected = ROLE_OF_POINT.get(point["id"], ROLE_OF_SOURCE.get(source_of(point), "holdout"))
+        assert point["role"] == expected, point["id"]
 
 
 @pytest.mark.parametrize("point", load_points(), ids=lambda point: point["id"])
@@ -190,3 +204,29 @@ def test_reference_point_is_the_named_spot(point):
         opener = next(seat for seat in node.seats if seat.invested_bb > 1.0)
         assert assign_positions(node)[opener.seat_index] is Position[point["villain"]]
         assert opener.invested_bb == point["openBb"]
+
+
+_SOLVED: dict[tuple, Solved] = {}
+
+
+def _solved(point: dict) -> Solved:
+    """Одно равновесие на дерево: точки E1, E4 и E5 на `UTG1` 40 BB — одно и то же дерево."""
+    key = (tree_key(point), realization.REALIZATION_KAPPA, realization.REALIZATION_LAMBDA)
+    if key not in _SOLVED:
+        _SOLVED[key] = solve_point(point)
+    return _SOLVED[key]
+
+
+@pytest.mark.parametrize(
+    "point",
+    [point for point in load_points() if point["role"] in TOLERANCE_PP],
+    ids=lambda point: point["id"],
+)
+def test_model_is_within_the_reference_tolerance(point):
+    # Инвариант 13, допуски §6.3 при константах модуля: калибровочные ±6 п.п., отложенные ±10,
+    # E11 ±12; у интервала источников — от краёв. Равновесие обязано сойтись: доли несошедшегося
+    # решения — не модель.
+    solved = _solved(point)
+    assert solved.converged
+    model = model_value(point, solved.shares)
+    assert deviation(model, point["value"]) <= tolerance(point), (model, point["value"])

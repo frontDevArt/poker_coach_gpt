@@ -117,6 +117,8 @@ def test_matrix_orientation_and_complement(monkeypatch):
 
 def test_cache_key_has_the_constants(monkeypatch):
     # Кеш по `(SPR, позиция, κ, λ)`: смена константы даёт другую матрицу, а не старую из кеша.
+    monkeypatch.setattr(realization, "REALIZATION_KAPPA", 0.0)
+    monkeypatch.setattr(realization, "REALIZATION_LAMBDA", 0.0)
     plain = matrix(2.0, True)
     monkeypatch.setattr(realization, "REALIZATION_KAPPA", 0.5)
     stretched = matrix(2.0, True)

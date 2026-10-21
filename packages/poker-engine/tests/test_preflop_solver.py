@@ -237,7 +237,8 @@ def _stretch(monkeypatch, kappa, lam=0.0):
 @pytest.mark.parametrize("make", FIXTURES.values(), ids=FIXTURES)
 def test_zero_kappa_is_the_plain_showdown(monkeypatch, make):
     # Инвариант 4: при `κ = λ = 0` равновесие и EV те же, что у вскрытия без ставок — того же
-    # солвера с сырой эквити на каждом терминале.
+    # солвера с сырой эквити на каждом терминале. Нули — явно: константы модуля подобраны (T2).
+    _stretch(monkeypatch, 0.0)
     tree, node = _tree(make())
     payoffs, eps = _games(tree, node)["chip"]
     combo = ("Kh", "Qd")
@@ -271,7 +272,8 @@ def test_stretch_moves_call_value(monkeypatch):
     # Инвариант 12: стратегии соперника заморожены (равновесие при `κ = 0`), колл `BB` на
     # открытие `UTG` — сразу терминал реализации. `κ > 0` растягивает эквити: колл `AA`
     # (эквити против любого класса не ниже 0.5) дорожает, колл `72o` (против диапазона
-    # открытия хуже 0.5) дешевеет.
+    # открытия хуже 0.5) дешевеет. «До» — `κ = λ = 0` явно: константы модуля подобраны (T2).
+    _stretch(monkeypatch, 0.0)
     tree, node = _tree([preflop_frame(6, {7: 2.0}, folded={2, 3, 4, 5})])
     payoffs, eps = _games(tree, node)["chip"]
     solution = solve(tree, payoffs, eps)
@@ -471,8 +473,10 @@ def test_limper_gap_is_normalised_by_his_range():
     assert exploitability(unit, payoffs, spoiled) == pytest.approx(base, rel=1e-9)
 
 
-def test_check_behind_a_limp_is_equity_against_the_limp_range():
-    # `BB` против лимпа `SB`: чек — вскрытие без ставок против диапазона профиля лимпера, руками.
+def test_check_behind_a_limp_is_equity_against_the_limp_range(monkeypatch):
+    # `BB` против лимпа `SB`: чек при `κ = λ = 0` (явно: константы модуля подобраны, T2) —
+    # вскрытие без ставок против диапазона профиля лимпера, руками.
+    _stretch(monkeypatch, 0.0)
     tree, node = _tree(FIXTURES["sb_limp"]())
     payoffs, eps = _games(tree, node)["chip"]
     solution = solve(tree, payoffs, eps)

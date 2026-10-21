@@ -5,18 +5,20 @@
 `holdout`) — стол, доли, метрика и допуски те же, что у теста T2 (`tests/test_mtt_reference.py`).
 Константы `realization` подменяются на время вызова, модуль не меняется.
 
-Цель — сумма квадратов отклонений точек `calibration` в п.п. Правило выбора (§6.2): наименьшая
-цель; `λ ≠ 0` берётся, только если снижает корень средней цели не меньше чем на 1 п.п. против
-лучшего `λ = 0` и проходит отложенные точки; при равенстве — меньший `κ`. Выбор проверяется
-допусками §6.3.
+Цель — сумма квадратов отклонений точек `calibration` в п.п. Правило выбора — §6.2 среди узлов,
+где проходят допуски §6.3 всех точек T2 (решение пользователя по стопу Фазы 3b, вариант A):
+наименьшая цель; `λ ≠ 0` берётся, только если снижает корень средней цели не меньше чем на 1 п.п.
+против лучшего `λ = 0`; при равенстве — меньший `κ`. Нет проходящего узла с `λ = 0` — выбора нет
+(стоп §6.4).
 
 `--cap C` — запасная форма §6.4: `s = 1 + κ · min(SPR, C)`; матрица реализации подменяется в
 процессах подбора, движок формы с насыщением не знает.
 
-Вывод — Markdown: сетка (корень средней цели, п.п., и число точек вне допуска), выбор по правилу
-и его проверка, узлы, проходящие допуски, отклонение каждой точки у лучшего `λ = 0` и у лучшего
-`λ ≠ 0`; у выбора — ещё точки вне теста T2 (роли `holdout_sb_limp` и `holdout_cold_call`, кроме
-метрики `limp`), справочно. Узел, где хоть одно равновесие не сошлось, помечен `*`.
+Вывод — Markdown: сетка (корень средней цели, п.п., и число точек вне допуска), лучшие узлы по
+всей сетке и среди проходящих, выбор по правилу; отклонение каждой точки у выбора, у лучшего
+проходящего `λ ≠ 0` и у лучших по всей сетке; у выбора — ещё точки вне теста T2 (роли
+`holdout_sb_limp` и `holdout_cold_call`, кроме метрики `limp`), справочно. Узел, где хоть одно
+равновесие не сошлось, помечен `*`.
 
 Узлы сетки решаются параллельно, по процессу на ядро; `numpy` — в один поток: матрицы 169 × 169
 малы, а потоки BLAS нескольких процессов только мешают друг другу.
@@ -118,13 +120,24 @@ def main() -> None:
     def misses(cell: tuple[float, float]) -> list[int]:
         return [i for i, off in enumerate(offs(cell)) if off > tolerance(tested[i])]
 
-    def best(lams: list[float]) -> tuple[float, float]:
+    def best(lams: list[float], among: list[tuple[float, float]]) -> tuple[float, float] | None:
         # Наименьшая цель, при равенстве — меньший `κ`.
-        return min(((k, lam) for lam in lams for k in KAPPAS), key=lambda c: (target(c), c[0]))
+        return min(
+            (cell for cell in among if cell[1] in lams),
+            key=lambda c: (target(c), c[0]),
+            default=None,
+        )
 
-    plain, shifted = best(LAMBDAS[:1]), best(LAMBDAS[1:])
+    passing = [cell for cell in cells if not misses(cell)]
+    plain, shifted = best(LAMBDAS[:1], cells), best(LAMBDAS[1:], cells)
     gain = rms(plain) - rms(shifted)
-    chosen = shifted if gain >= SIMPLER_BY_PP and not misses(shifted) else plain
+    plain_ok, shifted_ok = best(LAMBDAS[:1], passing), best(LAMBDAS[1:], passing)
+    if plain_ok is None:
+        chosen = None
+    elif shifted_ok is not None and rms(plain_ok) - rms(shifted_ok) >= SIMPLER_BY_PP:
+        chosen = shifted_ok
+    else:
+        chosen = plain_ok
 
     form = "основная" if cap is None else f"запасная §6.4, CAP = {cap:g}"
     print(f"Форма — {form}. Сетка {len(KAPPAS)} × {len(LAMBDAS)}, точек T2 — {len(tested)} "
@@ -144,29 +157,44 @@ def main() -> None:
         missed = [tested[i]["id"] for i in misses(cell)]
         return "проходят" if not missed else "не проходят: " + ", ".join(missed)
 
-    print(f"\nЛучший λ = 0: κ = {plain[0]:.2f}, корень {rms(plain):.2f} п.п.; допуски "
-          f"{verdict(plain)}.")
-    print(f"Лучший λ ≠ 0: κ = {shifted[0]:.2f}, λ = {shifted[1]:g}, корень {rms(shifted):.2f} п.п. "
+    def name(cell: tuple[float, float]) -> str:
+        return f"κ = {cell[0]:.2f}, λ = {cell[1]:g}"
+
+    print(f"\nЛучший λ = 0 по всей сетке: κ = {plain[0]:.2f}, корень {rms(plain):.2f} п.п.; "
+          f"допуски {verdict(plain)}.")
+    print(f"Лучший λ ≠ 0 по всей сетке: {name(shifted)}, корень {rms(shifted):.2f} п.п. "
           f"(выигрыш {gain:.2f} п.п.); допуски {verdict(shifted)}.")
-    print(f"**Выбор по правилу: κ = {chosen[0]:.2f}, λ = {chosen[1]:g}; допуски "
-          f"{verdict(chosen)}.**")
-    passing = [cell for cell in cells if not misses(cell)]
     print("Узлы, где допуски проходят: "
-          + (", ".join(f"κ = {k:.2f}, λ = {lam:g}" for k, lam in passing) or "нет") + ".\n")
+          + (", ".join(name(cell) for cell in passing) or "нет") + ".")
+    if plain_ok is not None:
+        print(f"Среди них лучший λ = 0: κ = {plain_ok[0]:.2f}, корень {rms(plain_ok):.2f} п.п.")
+    if shifted_ok is not None:
+        line = f"Среди них лучший λ ≠ 0: {name(shifted_ok)}, корень {rms(shifted_ok):.2f} п.п."
+        if plain_ok is not None:
+            line += f" (выигрыш {rms(plain_ok) - rms(shifted_ok):.2f} п.п.)"
+        print(line)
+    if chosen is None:
+        print("**Выбора нет: ни один узел с λ = 0 не проходит допуски — стоп §6.4.**\n")
+    else:
+        print(f"**Выбор по правилу: {name(chosen)}, корень {rms(chosen):.2f} п.п.**\n")
 
-    print(f"| Точка | Роль | Эталон | λ = 0, κ = {plain[0]:.2f} | откл. | "
-          f"κ = {shifted[0]:.2f}, λ = {shifted[1]:g} | откл. | допуск |")
-    print("|---|---|---|---|---|---|---|---|")
+    columns = list(dict.fromkeys(c for c in (chosen, shifted_ok, plain, shifted) if c is not None))
+    print("| Точка | Роль | Эталон | "
+          + " | ".join(f"{name(cell)} | откл." for cell in columns) + " | допуск |")
+    print("|---|---|---|" + "---|---|" * len(columns) + "---|")
     for i, point in enumerate(tested):
-        a, b = results[plain][0][i], results[shifted][0][i]
-        print(f"| {point['id']} | {point['role']} | {point['value']} | {a:.1f} | "
-              f"{offs(plain)[i]:.1f} | {b:.1f} | {offs(shifted)[i]:.1f} | {tolerance(point):g} |")
+        cells_text = " | ".join(
+            f"{results[cell][0][i]:.1f} | {offs(cell)[i]:.1f}" for cell in columns
+        )
+        print(f"| {point['id']} | {point['role']} | {point['value']} | {cells_text} | "
+              f"{tolerance(point):g} |")
 
-    print("\nВне теста T2, у выбора по правилу (справочно):\n")
+    reference = chosen or plain
+    print(f"\nВне теста T2, у {name(reference)} (справочно):\n")
     print("| Точка | Роль | Эталон | Модель |")
     print("|---|---|---|---|")
     with ProcessPoolExecutor(max_workers=1) as pool:
-        models, _ = pool.submit(_models, (outside, *chosen, cap)).result()
+        models, _ = pool.submit(_models, (outside, *reference, cap)).result()
     for point, model in zip(outside, models):
         print(f"| {point['id']} | {point['role']} | {point['value']} | {model:.1f} |")
 

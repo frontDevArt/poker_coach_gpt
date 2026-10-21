@@ -1,5 +1,5 @@
 {
-  "description": "Эталон T2 модели колла: точки E1–E11 спеки docs/superpowers/specs/2026-10-21-preflop-call-model-design.md, §2.1, дословно; позиции — имена движка (внешний UTG 8-max — UTG1, UTG+1 — MP). Значения — % рук героя. `open` — доля всех рук, которую корень играет рейзом или олл-ином; `allinShareOfOpen` — доля олл-ина в открытии; `fold`/`call`/`raise`/`allin`/`limp` — доля всех рук на узле героя. `tableAssumed` — источник стол не называет, взят 8-max (спека §6.1). `openBb` — размер открытия движка в точке: `OPEN_BB`, у `SB` — `OPEN_SB_BB`; в `vs_open` — открытие соперника. Роли (спека §6.1): `calibration` — подбор; `holdout` — проверка; `holdout_sb_limp` — `SB` первым в банк, включается с лимпом `SB` (Задача 4 плана 6); `holdout_cold_call` — колд-колл незакрывающего, которого в модели нет (спека §4, D32), включается с ним на этапе 6.",
+  "description": "Эталон T2 модели колла: точки E1–E11 спеки docs/superpowers/specs/2026-10-21-preflop-call-model-design.md, §2.1, дословно; позиции — имена движка (внешний UTG 8-max — UTG1, UTG+1 — MP). Значения — % рук героя. `open` — доля всех рук, которую корень играет рейзом или олл-ином; `allinShareOfOpen` — доля олл-ина в открытии; `fold`/`call`/`raise`/`allin`/`limp` — доля всех рук на узле героя. `tableAssumed` — источник стол не называет, взят 8-max (спека §6.1). `openBb` — размер открытия движка в точке: `OPEN_BB`, у `SB` — `OPEN_SB_BB`; в `vs_open` — открытие соперника. Роли (спека §6.1): `calibration` — подбор; `holdout` — проверка; `holdout_sb_limp` — `SB` первым в банк, включается с лимпом `SB` (Задача 4 плана 6); `holdout_cold_call` — ответ незакрывающего, в чарте которого есть колд-колл, а в модели его нет (спека §4, D32): руки колла уходят в 3-бет и олл-ин и перекашивают весь ответ, поэтому вне T2 все частоты E6 (решение пользователя по стопу Фазы 3b, вариант A); включается с колд-коллом на этапе 6.",
   "points": [
     {
       "id": "E1.UTG1.open",
@@ -314,7 +314,7 @@
       "villain": "BTN",
       "metric": "fold",
       "value": 71.4,
-      "role": "holdout",
+      "role": "holdout_cold_call",
       "source": "poker.academy",
       "url": "https://poker.academy/blog/post/40bb-is-it-too-big-to-3bet-all-in",
       "accessed": "2026-10-21",
@@ -350,7 +350,7 @@
       "villain": "BTN",
       "metric": "raise",
       "value": 13.0,
-      "role": "holdout",
+      "role": "holdout_cold_call",
       "source": "poker.academy",
       "url": "https://poker.academy/blog/post/40bb-is-it-too-big-to-3bet-all-in",
       "accessed": "2026-10-21",
@@ -368,7 +368,7 @@
       "villain": "BTN",
       "metric": "allin",
       "value": 4.1,
-      "role": "holdout",
+      "role": "holdout_cold_call",
       "source": "poker.academy",
       "url": "https://poker.academy/blog/post/40bb-is-it-too-big-to-3bet-all-in",
       "accessed": "2026-10-21",
