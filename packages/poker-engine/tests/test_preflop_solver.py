@@ -136,7 +136,11 @@ SUBGAMES = pytest.mark.parametrize(
 
 @SUBGAMES
 @pytest.mark.parametrize("payout", ["chip", "icm"])
-def test_tree_reduces_to_pushfold(monkeypatch, make, payout):
+@pytest.mark.parametrize("stretch", [(0.0, 0.0), (0.5, 0.05)], ids=["plain", "stretched"])
+def test_tree_reduces_to_pushfold(monkeypatch, make, payout, stretch):
+    # Инвариант 10 спеки модели колла: при любых `κ`, `λ` — у олл-ина сырая эквити, терминалов
+    # реализации в подыгре push/fold нет.
+    _stretch(monkeypatch, *stretch)
     nodes = _nodes([make()])
     node = nodes[0]
     game, eps = _subgame(node, payout)
