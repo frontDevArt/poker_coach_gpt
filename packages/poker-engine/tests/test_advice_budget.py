@@ -1,5 +1,8 @@
-"""Приёмка планов 4 и 5: совет push/fold — в две секунды, ICM — один пакет на подыгру; совет
-префлопа — в две секунды на 6-max и в четыре на самом дорогом 9-max."""
+"""Приёмка планов 4–6: совет push/fold — в две секунды, ICM — один пакет на подыгру; совет
+префлопа — в четыре секунды на 6-max и в восемь на самом дорогом 9-max.
+
+Бюджеты префлопа — решение пользователя (2026-10-21, план 6, Фаза 3c) для его машины: разбор
+идёт после раздачи, точность модели колла важнее секунд; замер — журнал плана 6, «Фаза 3c»."""
 
 import time
 
@@ -16,7 +19,8 @@ from poker_engine import icm_field
 from poker_engine.advice import advise
 
 BUDGET_SECONDS = 2.0
-NINE_MAX_PREFLOP_SECONDS = 4.0
+SIX_MAX_PREFLOP_SECONDS = 4.0
+NINE_MAX_PREFLOP_SECONDS = 8.0
 
 
 def _assert_fits_the_budget(node, advisor="pushfold", budget=BUDGET_SECONDS):
@@ -67,7 +71,8 @@ def test_icm_is_one_batch_per_subgame(monkeypatch):
 
 def test_preflop_open_six_max_fits_the_budget():
     # `open` героя `UTG` на 25 BB у всех: дерево с пятью отвечающими (спека, инвариант 18).
-    _assert_fits_the_budget(preflop_open_utg_node(pushfold_first_in_node), "preflop")
+    node = preflop_open_utg_node(pushfold_first_in_node)
+    _assert_fits_the_budget(node, "preflop", SIX_MAX_PREFLOP_SECONDS)
 
 
 def test_preflop_nine_max_fits_the_budget():
