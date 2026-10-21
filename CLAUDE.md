@@ -35,8 +35,9 @@ fast-forward (2026-10-18, согласие пользователя).
 `docs/superpowers/specs/2026-10-18-icm-field-speed-design.md` (D27, быстрый ICM, исполняется
 первым) и `docs/superpowers/specs/2026-10-18-preflop-advisor-design.md` (весь префлоп). План —
 `docs/superpowers/plans/2026-10-18-preflop-advisor.md`, 7 задач; фазы —
-`docs/superpowers/state/2026-10-18-plan5-phases.md`, 10 фаз; промпт Фазы 1 —
-`docs/superpowers/state/plan5-next-prompt.md`.
+`docs/superpowers/state/2026-10-18-plan5-phases.md`, 10 фаз; промпт очередной фазы —
+`docs/superpowers/state/plan5-next-prompt.md`. Фазы 1–7 сделаны (2026-10-21: 1099 passed, ~113 с
+в облаке); следующая — Фаза 8, финальное ревью ветки `feat/preflop-advisor`.
 **Фазы 1–6 закрыты** (2026-10-18, ветка `feat/preflop-advisor`): ICM на `numpy` и один пакет
 на подыгру, D27 закрыт — `advise` 9-max 0.64 с; узлы префлопа в одной раздаче (D26 закрыт),
 линия `preflop_line.py`, дерево `preflop_tree.py`, солвер CFR+ `preflop_solver.py`, советник
@@ -125,7 +126,7 @@ GitHub пользователь удалил (D15 закрыт, 2026-09-25).
 ```bash
 # ядро
 cd packages/poker-engine
-.venv/Scripts/python -m pytest              # 1095 tests, ~181–192 с (Linux: .venv/bin/python)
+.venv/Scripts/python -m pytest              # 1099 passed, ~113–190 с (Linux: .venv/bin/python)
 
 # первый запуск на новой машине
 python -m venv .venv
