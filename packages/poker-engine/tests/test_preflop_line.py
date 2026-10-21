@@ -20,7 +20,7 @@ from conftest import (
     pushfold_first_in_node,
 )
 from poker_engine.handstate import context_from_dict, node_from_dict, validate_hand
-from poker_engine.preflop_line import Act, Line, read_line
+from poker_engine.preflop_line import MULTIWAY, Act, Line, read_line
 
 
 def _line(raws):
@@ -224,3 +224,8 @@ def test_a_hero_limp_is_refused():
         preflop_frame(5, {5: 1.0, 6: 4.0}, folded={7, 2, 3, 4}),
     ]
     assert _line(raws) == "герой вошёл в банк лимпом или коллом: линия вне дерева префлопа"
+
+
+def test_cold_call_before_the_hero_is_multiway():
+    # Спека модели колла §4, инвариант 3: колд-колл незакрывающего до героя до дерева не доходит.
+    assert _line([preflop_frame(4, {7: 2.0, 2: 2.0}, folded={3})]) == MULTIWAY

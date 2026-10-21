@@ -254,7 +254,12 @@ class _Builder:
         elif total <= top:
             options.append(("allin", total, self._end("allin", 0, k, _put(inv, k, total))))
         else:
-            options.append(("call", top, self._end("checkdown", 0, k, _put(inv, k, top))))
+            # Колл открытия и изоляции — только у закрывающего действие: колд-колл, который
+            # потом сквизят, — тройная подыгра вне попарного солвера (D30).
+            if k == len(self.players) - 1:
+                options.append(("call", top, self._end("checkdown", 0, k, _put(inv, k, top))))
+            elif at == self.hero_node:
+                self.flags.add("no_cold_call")
             if k == self._last:
                 options.append(("allin", total, self._raise_child(0, k, inv, total, 2)))
             else:

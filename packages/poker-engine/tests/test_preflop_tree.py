@@ -11,6 +11,7 @@ from conftest import (
     _context,
     preflop_frame,
     preflop_open,
+    preflop_open_utg_node,
     preflop_vs_3bet,
     preflop_vs_4bet,
     preflop_vs_allin_after_raise,
@@ -142,9 +143,48 @@ def test_open_tree_starts_at_the_hero():
     walk = tree.nodes[_child(tree, tree.root, "fold")]
     assert walk.kind == "fold"
     assert walk.rows[0][3] == pytest.approx(40.0 + 0.5 + 0.75)
-    # Колл открытия без олл-ина — вскрытие без ставок, а не олл-ин.
-    called = tree.nodes[_child(tree, _child(tree, tree.root, "raise"), "call")]
-    assert (called.kind, called.pair) == ("checkdown", (0, 1))
+    # Колл открытия без олл-ина — у закрывающего `BB` (участник 3), вскрытие без ставок.
+    at = _child(tree, _child(tree, _child(tree, tree.root, "raise"), "fold"), "fold")
+    called = tree.nodes[_child(tree, at, "call")]
+    assert (called.kind, called.pair) == ("checkdown", (0, 3))
+
+
+# --- колл только у закрывающего (спека модели колла §4, инвариант 1) ------------------------
+
+
+def test_non_closing_responder_has_no_call():
+    # 6-max, `UTG` открывает при 25 BB: колл открытия — только у `BB`, он закрывает действие.
+    tree, _ = _tree([preflop_open_utg_node(pushfold_first_in_node)])
+    assert [seat.seat_index for seat in tree.players] == [7, 2, 3, 4, 5, 6]
+    at = _child(tree, tree.root, "raise")
+    for player in range(1, 5):
+        assert tree.nodes[at].player == player
+        assert [kind for kind, _ in _actions(tree, at)] == ["fold", "raise", "allin"]
+        at = _child(tree, at, "fold")
+    assert tree.nodes[at].player == 5
+    assert [kind for kind, _ in _actions(tree, at)] == ["fold", "call", "raise", "allin"]
+
+
+def test_call_against_an_open_allin_stays():
+    # Корень пошёл олл-ин: колл у каждого отвечающего, как у push/fold плана 4.
+    tree, _ = _tree([preflop_open_utg_node(pushfold_first_in_node)])
+    at = _child(tree, tree.root, "allin")
+    for player in range(1, 6):
+        assert tree.nodes[at].player == player
+        assert [kind for kind, _ in _actions(tree, at)] == ["fold", "call"]
+        at = _child(tree, at, "fold")
+
+
+def test_limper_closes_against_isolation():
+    # Герой `BTN` изолирует лимп `UTG`: блайнды без колла, лимпер закрывает действие.
+    tree, _ = _tree(preflop_vs_limp())
+    at = _child(tree, tree.root, "raise")
+    for player in (1, 2):
+        assert tree.nodes[at].player == player
+        assert [kind for kind, _ in _actions(tree, at)] == ["fold", "raise", "allin"]
+        at = _child(tree, at, "fold")
+    assert tree.nodes[at].player == 3
+    assert [kind for kind, _ in _actions(tree, at)] == ["fold", "call", "allin"]
 
 
 # --- против лимпа --------------------------------------------------------------------------
@@ -157,13 +197,9 @@ def test_vs_limp_tree_starts_at_the_hero_and_ends_with_the_limper():
     assert _hero(tree) == [("fold", None), ("raise", 4.0), ("allin", 40.0)]
     at = _child(tree, tree.root, "raise")
     for _ in (5, 6):
-        # Отвечающие на изоляцию: 3-бет без позиции 4 × 4.0 = 16.0 = 0.4 × 40 — не слит.
-        assert _actions(tree, at) == [
-            ("fold", None),
-            ("call", 4.0),
-            ("raise", 16.0),
-            ("allin", 40.0),
-        ]
+        # Отвечающие на изоляцию: колла нет (закрывает лимпер); 3-бет без позиции
+        # 4 × 4.0 = 16.0 = 0.4 × 40 — не слит.
+        assert _actions(tree, at) == [("fold", None), ("raise", 16.0), ("allin", 40.0)]
         at = _child(tree, at, "fold")
     # Лимпер против изоляции: без рейза.
     assert tree.nodes[at].player == 3
@@ -280,7 +316,7 @@ def test_rule_raise_above_commit_share_becomes_allin():
 def test_rule_raise_at_commit_share_stays_a_raise():
     # Граница «больше»: 3-бет в позиции 6.0 = 0.4 × 15 — ещё рейз.
     tree, _ = _tree([preflop_frame(3, {7: 2.0}, folded={2}, starting=_stacks(15.0))])
-    assert _hero(tree) == [("fold", None), ("call", 2.0), ("raise", 6.0), ("allin", 15.0)]
+    assert _hero(tree) == [("fold", None), ("raise", 6.0), ("allin", 15.0)]
 
 
 @pytest.mark.parametrize(
@@ -294,7 +330,7 @@ def test_rule_raise_at_commit_share_stays_a_raise():
         # 3-бет: `UTG` с 10 открыл до 2.0 — 6.0 > 0.4 × 10.
         (
             [preflop_frame(3, {7: 2.0}, folded={2}, starting={7: 10.0})],
-            [("fold", None), ("call", 2.0), ("allin", 40.0)],
+            [("fold", None), ("allin", 40.0)],
         ),
         # 4-бет: `BTN` с 20 — 3-бет до 7.0, 15.4 > 0.4 × 20.
         (
@@ -321,8 +357,9 @@ def test_played_size_is_kept():
     ]
     tree, _ = _tree(raws)
     at, index = tree.path[-1]
-    assert _actions(tree, at) == [("fold", None), ("call", 2.0), ("raise", 8.0), ("allin", 15.0)]
-    assert index == 2
+    # `BTN` не закрывает действие: колла открытия у него нет.
+    assert _actions(tree, at) == [("fold", None), ("raise", 8.0), ("allin", 15.0)]
+    assert index == 1
     # У открывшего против него — без 4-бета: 2.2 × 8.0 по правилу слит.
     assert _hero(tree) == [("fold", None), ("call", 8.0), ("allin", 15.0)]
 
@@ -482,6 +519,18 @@ def test_fold_tree_matches_pushfold_subgame(monkeypatch):
         ("no_hero_limp", _sb_open, True),
         ("no_hero_limp", preflop_open, False),
         ("no_hero_limp", _sb_limp, False),
+        # Инвариант 2: незакрывающий против открытия — без колла, `BB` закрывает.
+        ("no_cold_call", preflop_vs_open, True),
+        ("no_cold_call", lambda: [preflop_frame(6, {7: 2.0}, folded={2, 3, 4, 5})], False),
+        ("no_cold_call", preflop_open, False),
+        ("no_cold_call", preflop_vs_limp, False),
+        ("no_cold_call", preflop_vs_allin_after_raise, False),
+        # Стек героя 1.6 не выше открытия 2.0: колла нет из-за стека, олл-ин и есть колл.
+        (
+            "no_cold_call",
+            lambda: [preflop_frame(3, {7: 2.0}, folded={2}, starting={3: 1.6})],
+            False,
+        ),
     ],
 )
 def test_flags_are_true_only_when_true(no_pushfold, flag, make, expected):

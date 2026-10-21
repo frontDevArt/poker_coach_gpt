@@ -48,6 +48,7 @@ SPOTS = {
 
 TREE_FLAGS = (
     "no_overcall",
+    "no_cold_call",
     "fold_as_walk",
     "fixed_sizing",
     "postflop_checkdown",

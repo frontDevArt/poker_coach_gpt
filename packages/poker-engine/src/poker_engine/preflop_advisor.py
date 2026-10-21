@@ -49,6 +49,7 @@ _RAISE_ROLES = ("opener", "3bettor", "4bettor")
 # Пометки дерева в порядке ответа: ставит их `preflop_tree.build`.
 _TREE_FLAGS = (
     "no_overcall",
+    "no_cold_call",
     "fold_as_walk",
     "fixed_sizing",
     "postflop_checkdown",

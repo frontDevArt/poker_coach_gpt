@@ -410,9 +410,9 @@ def test_fold_value_is_the_fold_payoff():
 
 
 def test_responder_values_are_conditional_on_the_open():
-    # Герой `CO` отвечает на открытие `UTG`: EV фолда — его стек 40, колл и 3-бет — в пределах
-    # выплат своих поддеревьев.
-    tree, node = _tree(preflop_vs_open())
+    # Герой `BB` отвечает на открытие `UTG`: колл есть только у закрывающего. EV фолда — стек
+    # 40 без блайнда 1.0, колл — в пределах выплат своего поддерева.
+    tree, node = _tree([preflop_frame(6, {7: 2.0}, folded={2, 3, 4, 5})])
     payoffs, eps = _games(tree, node)["chip"]
     solution = solve(tree, payoffs, eps)
     me = tree.nodes[tree.hero_node].player
@@ -421,7 +421,7 @@ def test_responder_values_are_conditional_on_the_open():
     assert [a.kind for a in hero.actions] == ["fold", "call", "raise", "allin"]
     for combo in (("Ah", "Ad"), ("7c", "2d")):
         values = action_values(tree, payoffs, solution, tree.hero_node, combo)
-        assert values[0] == pytest.approx(40.0, abs=1e-9)
+        assert values[0] == pytest.approx(39.0, abs=1e-9)
         showdown = payoffs[hero.actions[1].child]
         assert showdown[:, me].min() <= values[1] <= showdown[:, me].max()
 
