@@ -45,6 +45,13 @@ fast-forward (2026-10-18, согласие пользователя).
 Фаза 7 (ревью Задачи 6, Задача 7 — порог, README, скилл); журнал —
 `docs/superpowers/state/2026-10-18-plan5-execution-notes.md`.
 
+**Ветка плана 5 — `feat/preflop-advisor`, пушить только в неё** (решение пользователя,
+2026-10-21). Облачная сессия стартует из `main` на своей ветке `claude/…` — там плана 5 нет.
+Первым делом: `git fetch origin feat/preflop-advisor && git checkout -B feat/preflop-advisor
+origin/feat/preflop-advisor`; коммиты и пуш — в `feat/preflop-advisor`, назначенную ветку
+сессии `claude/…` не использовать. В облаке нет `.venv` — поставить по «Командам» ниже
+(`.venv/bin/python`).
+
 Планы 1 (`feat/poker-engine-core`) и 2 (`feat/screenshot-coach-engine`) закрыты и влиты
 в `main`: оба ревью на задачу, мутационная приёмка, финальное ревью ветки. Обе ветки на
 GitHub пользователь удалил (D15 закрыт, 2026-09-25).

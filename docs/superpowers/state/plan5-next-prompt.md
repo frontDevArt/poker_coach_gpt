@@ -1,5 +1,10 @@
 Фаза 7 плана 5, проект poker_coach_gpt.
 
+Ветка — `feat/preflop-advisor` (решение пользователя): если сессия стартовала на другой ветке
+(облако — `claude/…` из `main`), сначала `git fetch origin feat/preflop-advisor && git checkout -B
+feat/preflop-advisor origin/feat/preflop-advisor`. Коммиты и пуш — только в
+`feat/preflop-advisor`.
+
 Прочитай `CLAUDE.md`, затем `docs/superpowers/state/2026-10-18-plan5-phases.md` — §1–§3,
 карточку Фазы 7 в §4 и реестр §5; правила §1.1–§1.7 — в
 `docs/superpowers/state/2026-09-24-plan3-phases.md`. Из журнала
