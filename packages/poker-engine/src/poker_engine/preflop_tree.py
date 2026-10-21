@@ -20,7 +20,8 @@
 
 **Размеры.** На сыгранном узле рейз — фактический из линии, без слияния (Review Focus 3).
 Несыгранный — по правилу §6.2 с округлением до `SIZE_STEP_BB` и слиянием с олл-ином, если он
-выше `COMMIT_SHARE` эффективного стека или не меньше стека с вложенным (Review Focus 5).
+выше `COMMIT_SHARE` эффективного стека. Эффективный стек не больше своего, поэтому размер не
+меньше стека с вложенным (короткий стек, Review Focus 5) сливается тем же правилом.
 3-бет без позиции — место, которое на флопе ходит первым: `SB` против любого, `BB` против
 всех, кроме `SB`.
 
@@ -323,7 +324,7 @@ class _Builder:
         if played is not None and played.action == "raise":
             return [("raise", played.to_bb), ("allin", total)]
         to = _round(rule)
-        if to > COMMIT_SHARE * effective or to >= total:
+        if to > COMMIT_SHARE * effective:
             return [("allin", total)]
         self.flags.add("fixed_sizing")
         return [("raise", to), ("allin", total)]
