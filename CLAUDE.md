@@ -60,10 +60,11 @@ fast-forward (2026-10-21, согласие пользователя).
 линтер чисел, скиллы L6/L7, решения по D3, D11–D13, D19, D23, A1). Исследование D30 — §2 первой
 спеки: модель плана 5 открывает 72–79% рук с первой позиции 8-max против 17% у солверов; обе
 поправки — 15–46% по позициям, в 1.4–6.2 п.п. от эталона. Десять задач, четырнадцать фаз
-(`docs/superpowers/state/2026-10-21-plan6-phases.md`). **Следующая — Фаза 1** (Задача 1): промпт —
-`docs/superpowers/state/plan6-next-prompt.md`; ветка `feat/preflop-trainer` от коммита спек в
-`claude/kind-gates-inkk6f`. В облаке нет `.venv` — поставить по «Командам» ниже
-(`.venv/bin/python`).
+(`docs/superpowers/state/2026-10-21-plan6-phases.md`). Фаза 1 (Задача 1, колл только у
+закрывающего) сделана, 1110 passed за ~177 с в облаке; журнал —
+`docs/superpowers/state/2026-10-21-plan6-execution-notes.md`. **Следующая — Фаза 2** (ревью
+Задачи 1, Задача 2): промпт — `docs/superpowers/state/plan6-next-prompt.md`; ветка
+`feat/preflop-trainer`. В облаке нет `.venv` — поставить по «Командам» ниже (`.venv/bin/python`).
 
 Планы 1 (`feat/poker-engine-core`) и 2 (`feat/screenshot-coach-engine`) закрыты и влиты
 в `main`: оба ревью на задачу, мутационная приёмка, финальное ревью ветки. Обе ветки на
@@ -144,7 +145,7 @@ GitHub пользователь удалил (D15 закрыт, 2026-09-25).
 ```bash
 # ядро
 cd packages/poker-engine
-.venv/Scripts/python -m pytest              # 1100 passed, ~180–190 с; облако ~106–122 с (Linux: .venv/bin/python)
+.venv/Scripts/python -m pytest              # 1110 passed; облако ~177 с (Linux: .venv/bin/python)
 
 # первый запуск на новой машине
 python -m venv .venv
