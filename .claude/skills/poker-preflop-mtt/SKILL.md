@@ -89,7 +89,7 @@ packages/poker-engine/.venv/Scripts/poker-engine.exe advise --input hand.json
 
 ## Пометки
 
-Каждая пометка в `flags` — что сказать пользователю: в `flags` — что сказать пользователю:
+Каждая пометка в `flags` — что сказать пользователю:
 
 | Пометка | Что сказать |
 |---|---|
