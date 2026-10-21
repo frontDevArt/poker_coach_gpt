@@ -390,10 +390,12 @@ def _vs_3bet_after_open(size):
         ),
         ([{"advisor": None, "notApplicable": []}], 2.0, False),
         ([], 2.0, False),
+        # История — вход пользователя: ответ без `sizeBb` сверяется только по действию.
+        ([{"advisor": "preflop", "action": "raise"}], 2.0, False),
     ],
     ids=[
         "same", "within_step", "other_size", "fold", "allin", "last", "pushfold",
-        "refusal_skipped", "only_refusal", "none",
+        "refusal_skipped", "only_refusal", "none", "no_size",
     ],
 )
 def test_line_deviates(history, size, deviates):
