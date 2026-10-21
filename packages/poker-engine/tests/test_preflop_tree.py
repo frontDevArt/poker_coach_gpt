@@ -161,6 +161,16 @@ def test_spr_and_position_on_paper():
     assert tree.nodes[at].opener_in_position is False
 
 
+def test_spr_counts_the_shorter_stack_of_the_pair():
+    # `R` — меньший из остатков пары: у `BB` 25 BB до раздачи, после колла открытия 2.0 за ним
+    # 23, у `CO` — 38; банк тот же 5.25.
+    tree, _ = _tree([preflop_frame(3, folded={7, 2}, starting={6: 25.0})])
+    opened = _child(tree, tree.root, "raise")
+    at = _child(tree, _child(tree, _child(tree, opened, "fold"), "fold"), "call")
+    assert tree.nodes[at].pair == (0, 3)
+    assert tree.nodes[at].spr == pytest.approx(23.0 / 5.25)
+
+
 def test_big_blind_is_in_position_against_the_small_blind():
     # Порядок флопа `SB`, `BB`, `UTG…BTN`: чек `BB` за лимпом `SB` — `BB` в позиции.
     tree, _ = _tree(_sb_limp())
