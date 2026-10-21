@@ -4,7 +4,7 @@
 (`chip_payoffs` или `icm_payoffs`), единицы выплат — любые (BB по фишкам, доллары по ICM).
 
 **Строение дерева.** Участник 0 — открывший, корень — его решение. Действие корня ведёт либо в
-терминал (фолд — банк большому блайнду, `check` — вскрытие без ставок с лимпером), либо в
+терминал (фолд — банк большому блайнду, `check` — терминал реализации с лимпером), либо в
 **цепочку** отвечающих: узел отвечающего `k`, его фолд — узел `k + 1` или терминал «все
 сфолдили», любое другое действие — **пара** `(0, k)`: поддерево, где ходят только 0 и `k`.
 
@@ -16,6 +16,11 @@
 открывшего с весом `w[h, x]`, умноженным на достижимость открывшего; фолды отвечающих перед ним
 этого распределения не меняют — ровно отказ от блокеров троих в `nash`. Значение фолда
 отвечающего — выплата ему, когда действие дошло до следующего, по классу открывшего.
+
+**Матрицы исходов.** У пары вес исхода «выиграл открывший» по классам `(h, x)` — сырая эквити
+`allin_matrix` на олл-ине (матрица 0) и `realization.matrix(spr, позиция)` на терминале реализации
+(спека модели колла §5.3); терминалы пар группируются по паре «ключ весов отвечающего, номер
+матрицы», и всё, что ниже, умножает на `w` матрицу своей группы вместо `e`.
 
 **CFR+.** Сожаления обрезаются снизу нулём, стратегия — их доли (нет положительных — поровну).
 Сожаления открывшего в паре `(0, k)` — по его значениям при входе `k`, без вероятности фолдов
@@ -46,7 +51,7 @@ from functools import lru_cache
 
 import numpy
 
-from . import allin_matrix
+from . import allin_matrix, realization
 from ._checks import check_positive
 from .preflop_tree import Decision, Terminal, Tree
 
@@ -76,12 +81,12 @@ class Solution:
 
 
 @lru_cache(maxsize=1)
-def _tables() -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray, numpy.ndarray]:
-    """`e`, `w`, `w·e` и `prior` — один раз на процесс; `w` симметрична."""
+def _tables() -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
+    """`e`, `w` и `prior` — один раз на процесс; `w` симметрична."""
     equity = allin_matrix.equity_matrix()
     weight = allin_matrix.weight_matrix().astype(numpy.float64)
     prior = numpy.array([allin_matrix.combos_of(name) for name in allin_matrix.CLASSES]) / 1326
-    return equity, weight, weight * equity, prior
+    return equity, weight, prior
 
 
 @dataclass(frozen=True)
@@ -101,7 +106,11 @@ class _Shape:
     chains: tuple[tuple[tuple[int, ...], int], ...]  # узлы цепочки и терминал «все сфолдили»
     terms: numpy.ndarray  # терминалы пар, в том числе вскрытие корня с лимпером
     pair_of: numpy.ndarray  # `k` каждого терминала пары
-    groups: tuple[tuple[int | None, numpy.ndarray], ...]  # позиции в `terms` по ключу весов
+    matrices: tuple[numpy.ndarray, ...]  # вероятность победы открывшего `(169, 169)`, 0 — сырая
+    # позиции в `terms`: по ключу весов, по паре «ключ весов, номер матрицы», по номеру матрицы
+    by_key: tuple[tuple[int | None, numpy.ndarray], ...]
+    groups: tuple[tuple[tuple[int | None, int], numpy.ndarray], ...]
+    by_matrix: tuple[tuple[int, numpy.ndarray], ...]
     hung: dict[int, numpy.ndarray]  # узел цепочки → позиции в `terms` его пар
     free: tuple[int, ...]  # фолд корня и «все сфолдили»
     opener_wins: numpy.ndarray  # (узлы, игроки): выплаты, когда пару выиграл открывший
@@ -156,7 +165,21 @@ def _shape(tree: Tree, payoffs: list[numpy.ndarray | None]) -> _Shape:
         free.append(at)
         chains.append((tuple(links), at))
 
-    keys = [_key(tree.fixed_ranges, responder[at]) for at in terms]
+    equity, _, _ = _tables()
+    matrices = [equity]
+    known: dict[tuple[float, bool], int] = {}
+    numbers = []
+    for at in terms:
+        node = tree.nodes[at]
+        if node.kind != "realization":
+            numbers.append(0)
+            continue
+        spot = (round(node.spr, 2), node.opener_in_position)
+        if spot not in known:
+            known[spot] = len(matrices)
+            matrices.append(realization.matrix(node.spr, node.opener_in_position))
+        numbers.append(known[spot])
+    keys = [(_key(tree.fixed_ranges, responder[at]), m) for at, m in zip(terms, numbers)]
     opener_wins = numpy.zeros((count, players))
     other_wins = numpy.zeros((count, players))
     for at, node in enumerate(tree.nodes):
@@ -178,9 +201,18 @@ def _shape(tree: Tree, payoffs: list[numpy.ndarray | None]) -> _Shape:
         chains=tuple(chains),
         terms=numpy.array(terms, dtype=numpy.int64),
         pair_of=numpy.array([responder[at] for at in terms], dtype=numpy.int64),
+        matrices=tuple(matrices),
+        by_key=tuple(
+            (key, numpy.array([i for i, (k, _) in enumerate(keys) if k == key], dtype=numpy.int64))
+            for key in dict.fromkeys(k for k, _ in keys)
+        ),
         groups=tuple(
             (key, numpy.array([i for i, k in enumerate(keys) if k == key], dtype=numpy.int64))
             for key in dict.fromkeys(keys)
+        ),
+        by_matrix=tuple(
+            (m, numpy.array([i for i, n in enumerate(numbers) if n == m], dtype=numpy.int64))
+            for m in dict.fromkeys(numbers)
         ),
         hung={
             at: numpy.array([i for i, t in enumerate(terms) if head[t] == at], dtype=numpy.int64)
@@ -196,33 +228,37 @@ def _shape(tree: Tree, payoffs: list[numpy.ndarray | None]) -> _Shape:
 
 @dataclass(frozen=True)
 class _Opener:
-    """Руки открывшего строками, по ключу `_key`: `w·f_k` и `w·e·f_k` `(K, 169)`, их суммы."""
+    """Руки открывшего строками: `w·f_k` `(K, 169)` и суммы по ключу `_key`, `w·p_m·f_k` — по
+    паре «ключ, номер матрицы» `m`."""
 
     weight: dict[int | None, numpy.ndarray]
-    wequity: dict[int | None, numpy.ndarray]
+    wequity: dict[tuple[int | None, int], numpy.ndarray]
     total: dict[int | None, numpy.ndarray]  # (K,): Σ_x f_k·w[h, x]
 
 
 @dataclass(frozen=True)
 class _Responder:
-    """Руки отвечающего столбцами: `w` и `w·e` эквити открывшего, `(169, K)`."""
+    """Руки отвечающего столбцами: `w` и `w·p_m` по номеру матрицы `m`, `(169, K)`."""
 
     weight: numpy.ndarray
-    wequity: numpy.ndarray
+    wequity: dict[int, numpy.ndarray]
 
 
-def _opener_side(shape: _Shape, weight: numpy.ndarray, wequity: numpy.ndarray) -> _Opener:
+def _opener_side(
+    shape: _Shape, weight: numpy.ndarray, wequity: dict[int, numpy.ndarray]
+) -> _Opener:
     scaled = {None: numpy.ones(169), **shape.fixed}
     rows = {k: weight * f for k, f in scaled.items()}
     return _Opener(
         weight=rows,
-        wequity={k: wequity * f for k, f in scaled.items()},
+        wequity={(k, m): wequity[m] * scaled[k] for k, m in (key for key, _ in shape.groups)},
         total={k: row.sum(axis=1) for k, row in rows.items()},
     )
 
 
 def _class_sides(shape: _Shape) -> tuple[_Opener, _Responder]:
-    _, weight, wequity, _ = _tables()
+    _, weight, _ = _tables()
+    wequity = {m: weight * matrix for m, matrix in enumerate(shape.matrices)}
     return _opener_side(shape, weight, wequity), _Responder(weight, wequity)
 
 
@@ -264,10 +300,10 @@ def _shares(
     size = next(iter(side.total.values())).shape[0]
     share = numpy.empty((len(shape.terms), size))
     win = numpy.empty((len(shape.terms), size))
-    for key, rows in shape.groups:
-        reached = rk[shape.terms[rows]]
-        share[rows] = reached @ side.weight[key].T / side.total[key]
-        win[rows] = reached @ side.wequity[key].T / side.total[key]
+    for key, rows in shape.by_key:
+        share[rows] = rk[shape.terms[rows]] @ side.weight[key].T / side.total[key]
+    for (key, m), rows in shape.groups:
+        win[rows] = rk[shape.terms[rows]] @ side.wequity[(key, m)].T / side.total[key]
     return share, win
 
 
@@ -355,10 +391,10 @@ def _responder_values(
     values = numpy.zeros((shape.nodes, side.weight.shape[1]))
     terms, ks = shape.terms, shape.pair_of
     lose = shape.other_wins[terms, ks][:, None]
-    reached = r0[terms]
-    values[terms] = lose * (reached @ side.weight) + (
-        shape.opener_wins[terms, ks][:, None] - lose
-    ) * (reached @ side.wequity)
+    gain = shape.opener_wins[terms, ks][:, None] - lose
+    values[terms] = lose * (r0[terms] @ side.weight)
+    for m, rows in shape.by_matrix:
+        values[terms[rows]] += gain[rows] * (r0[terms[rows]] @ side.wequity[m])
     actions: dict[int, numpy.ndarray] = {}
     for at in reversed(shape.decisions):
         if at == shape.root:
@@ -380,7 +416,7 @@ def _responder_values(
 def _gap(
     shape: _Shape, sigma: dict[int, numpy.ndarray], sides: tuple[_Opener, _Responder]
 ) -> float:
-    _, weight, _, prior = _tables()
+    _, weight, prior = _tables()
     opener_side, responder_side = sides
     r0, rk = _reach(shape, sigma)
     shares = _shares(shape, rk, opener_side)
@@ -486,7 +522,6 @@ def action_values(
     комбинации; будущие решения игрока — лучший ответ комбинации. Если соперник по стратегии
     до узла не доходит ни одной совместимой рукой, его диапазон на узле — все руки.
     """
-    equity, _, _, _ = _tables()
     cards = list(combo)
     weights = allin_matrix.hand_weights(cards).astype(numpy.float64)
     index = allin_matrix.class_index(allin_matrix.class_of(cards))
@@ -494,7 +529,11 @@ def action_values(
     sigma = solution.strategy
     r0, rk = _reach(shape, sigma)
     if tree.nodes[node].player == 0:
-        side = _opener_side(shape, weights[None, :], (weights * equity[index])[None, :])
+        side = _opener_side(
+            shape,
+            weights[None, :],
+            {m: (weights * matrix[index])[None, :] for m, matrix in enumerate(shape.matrices)},
+        )
         mass = 1.0
         if node != shape.root:
             key = _key(shape.fixed, shape.responder[node])
@@ -513,6 +552,9 @@ def action_values(
         r0, _ = _reach(shape, sigma, start=node)
         mass = float(weights @ r0[node])
     fold_values = _fold_values(shape, r0, shares, folds)
-    side = _Responder(weights[:, None], (weights * equity[:, index])[:, None])
+    side = _Responder(
+        weights[:, None],
+        {m: (weights * matrix[:, index])[:, None] for m, matrix in enumerate(shape.matrices)},
+    )
     _, actions = _responder_values(shape, sigma, r0, fold_values, side, best=True)
     return [float(value) / mass for value in actions[node][:, 0]]

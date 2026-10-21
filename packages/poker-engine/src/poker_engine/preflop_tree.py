@@ -28,9 +28,13 @@
 всех, кроме `SB`.
 
 **Терминалы.** `fold` — банк оставшемуся; `allin` — вскрытие олл-ина, излишок возвращается;
-`checkdown` — колл без олл-ина, банк делится по эквити без ставок (§6.4). Ряды — стеки
-участников после раздачи, BB: у `fold` один ряд, у пары — победа первого из `pair`, затем
-второго. Сфолдивший теряет вложенное на момент фолда.
+`realization` — колл без олл-ина: банк достаётся победителю с вероятностью модели реализации
+эквити по SPR (`realization`, спека модели колла §5). Ряды — стеки участников после раздачи, BB:
+у `fold` один ряд, у пары — победа первого из `pair`, затем второго; ряды `realization` те же,
+что у вскрытия, меняется только вес исходов. Сфолдивший теряет вложенное на момент фолда.
+`SPR` — меньший из остатков стеков пары, делённый на банк, который забирает победитель (с
+мёртвыми деньгами); позиция — ходит ли первый из `pair` на флопе последним: порядок флопа
+`SB`, `BB`, `UTG…BTN`, а за столом на двоих `SB` — кнопка и ходит последним.
 """
 
 from __future__ import annotations
@@ -57,7 +61,7 @@ THREEBET_IP = 3.0
 THREEBET_OOP = 4.0
 FOURBET = 2.2
 COMMIT_SHARE = 0.4
-CHECKDOWN_TRUST_BB = 40.0
+REALIZATION_TRUST_BB = 40.0
 SIZE_STEP_BB = 0.1
 
 LIMP_RERAISE = "лимпер ответил на изоляцию рейзом не олл-ином: вне дерева префлопа"
@@ -82,11 +86,17 @@ class Decision:
 
 @dataclass(frozen=True)
 class Terminal:
-    """Конец раздачи: `fold`, `allin` или `checkdown`; `rows` — стеки участников по исходам."""
+    """Конец раздачи: `fold`, `allin` или `realization`; `rows` — стеки участников по исходам.
+
+    `spr` и `opener_in_position` (первый из `pair` ходит на флопе последним) — только у
+    `realization`, у `fold` и `allin` — `None`.
+    """
 
     kind: str
     rows: list[list[float]]
     pair: tuple[int, int] | None
+    spr: float | None = None
+    opener_in_position: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -138,14 +148,16 @@ def build(line: Line, node: DecisionNode) -> Tree | str:
     base = [_blind(role) for role in roles]
     if limper is not None:
         base[-1] = voluntary[0].to_bb
-    builder = _Builder(players, roles, base, _dead_money(node, players), acts, limper is not None)
+    builder = _Builder(
+        players, roles, base, _dead_money(node, players), acts, limper is not None, len(order) == 2
+    )
     root_node = builder.root()
 
     me = next(at for at, seat in enumerate(players) if seat.is_hero)
     totals = builder.totals
     effective = min(totals[me], max(total for at, total in enumerate(totals) if at != me))
     flags = set(builder.flags)
-    if effective > CHECKDOWN_TRUST_BB:
+    if effective > REALIZATION_TRUST_BB:
         flags.add("deep_stack")
     if len(players) > 2:
         flags.add("no_overcall")
@@ -203,6 +215,7 @@ class _Builder:
         dead: float,
         acts: list[Act],
         vs_limp: bool,
+        heads_up: bool,
     ) -> None:
         self.players = players
         self.roles = roles
@@ -211,6 +224,7 @@ class _Builder:
         self.totals = [seat.stack_bb + seat.invested_bb for seat in players]
         self.acts = acts
         self.vs_limp = vs_limp
+        self.heads_up = heads_up
         self.nodes: list = []
         self.path: list[tuple[int, int]] = []
         self.hero_node = -1
@@ -230,7 +244,7 @@ class _Builder:
             rule = OPEN_SB_BB if self.roles[0] is Position.SB else OPEN_BB
         inv = list(self.base)
         if self.vs_limp and self.roles[0] is Position.BB:
-            passive = ("check", None, self._end("checkdown", 0, self._last, inv))
+            passive = ("check", None, self._end("realization", 0, self._last, inv))
         else:
             bb = self.roles.index(Position.BB)
             passive = ("fold", None, lambda on: self._fold(bb, inv))
@@ -259,7 +273,7 @@ class _Builder:
             # Колл открытия и изоляции — только у закрывающего действие: колд-колл, который
             # потом сквизят, — тройная подыгра вне попарного солвера (D30).
             if k == len(self.players) - 1:
-                options.append(("call", top, self._end("checkdown", 0, k, _put(inv, k, top))))
+                options.append(("call", top, self._end("realization", 0, k, _put(inv, k, top))))
             elif at == self.hero_node:
                 self.flags.add("no_cold_call")
             if k == self._last:
@@ -280,7 +294,7 @@ class _Builder:
         if total <= top:
             options.append(("allin", total, self._end("allin", a, b, _put(inv, a, total))))
         else:
-            options.append(("call", top, self._end("checkdown", a, b, _put(inv, a, top))))
+            options.append(("call", top, self._end("realization", a, b, _put(inv, a, top))))
             if level == 2:
                 eff = min(total, self.totals[b])
                 for kind, to in self._aggression(a, FOURBET * top, eff, played):
@@ -336,6 +350,13 @@ class _Builder:
         self.flags.add("fixed_sizing")
         return [("raise", to), ("allin", total)]
 
+    def _acts_last(self, a: int, b: int) -> bool:
+        """`a` ходит на флопе после `b`: порядок флопа `SB`, `BB`, `UTG…BTN`; за столом на
+        двоих `SB` — кнопка."""
+        if self.heads_up:
+            return self.roles[a] is Position.SB
+        return _flop_rank(self.roles[a]) > _flop_rank(self.roles[b])
+
     def _out_of_position(self, responder: int, opener: int) -> bool:
         role = self.roles[responder]
         return role is Position.SB or (
@@ -374,19 +395,31 @@ class _Builder:
         return len(self.nodes) - 1
 
     def _showdown(self, kind: str, a: int, b: int, inv: list[float]) -> int:
-        if kind == "checkdown":
-            self.flags.add("postflop_checkdown")
         pair = (min(a, b), max(a, b))
         stake = min(inv[a], inv[b])
         others = sum(inv) - inv[a] - inv[b]
+        spr = in_position = None
+        if kind == "realization":
+            self.flags.add("postflop_realization")
+            pot = 2 * stake + self.dead + others
+            spr = (min(self.totals[a], self.totals[b]) - stake) / pot
+            in_position = self._acts_last(*pair)
         rows = []
         for winner, loser in (pair, pair[::-1]):
             row = [total - put for total, put in zip(self.totals, inv)]
             row[winner] = self.totals[winner] + stake + self.dead + others
             row[loser] = self.totals[loser] - stake
             rows.append(row)
-        self.nodes.append(Terminal(kind, rows, pair))
+        self.nodes.append(Terminal(kind, rows, pair, spr, in_position))
         return len(self.nodes) - 1
+
+
+_FLOP_ORDER = positions_for(9)
+
+
+def _flop_rank(role: Position) -> int:
+    """Номер хода на флопе: `SB` 0, `BB` 1, дальше `UTG…BTN` в порядке префлопа."""
+    return (_FLOP_ORDER.index(role) + 2) % len(_FLOP_ORDER)
 
 
 def _put(inv: list[float], player: int, to: float) -> list[float]:
@@ -413,8 +446,9 @@ def icm_payoffs(
 
     Стол, поле и лесенка — как в `pushfold_game.icm_outcomes`: места вне дерева со своими
     стеками, выбывший — приз места `playersLeft`. При `bounties=True` победитель олл-ина, у
-    проигравшего в котором не осталось фишек, получает наличные за его голову; у вскрытия без
-    ставок голов нет — никто не выбывает (`with_bounties`).
+    проигравшего в котором не осталось фишек, получает наличные за его голову; у терминала
+    реализации голов нет — никто не выбывает (`with_bounties`). Вес исходов терминала
+    реализации — забота солвера: здесь, как и у олл-ина, только стеки исходов.
     """
     seats = sorted(node.seats, key=lambda seat: seat.seat_index)
     field_count = node.players_left - len(seats)

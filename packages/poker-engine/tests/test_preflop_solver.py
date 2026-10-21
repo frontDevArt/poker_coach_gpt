@@ -20,7 +20,14 @@ from conftest import (
     preflop_vs_open,
     pushfold_first_in_node,
 )
-from poker_engine import allin_matrix, nash, preflop_solver, preflop_tree, pushfold_game
+from poker_engine import (
+    allin_matrix,
+    nash,
+    preflop_solver,
+    preflop_tree,
+    pushfold_game,
+    realization,
+)
 from poker_engine.handstate import context_from_dict, node_from_dict, validate_hand
 from poker_engine.preflop_line import read_line
 from poker_engine.preflop_solver import action_values, exploitability, reach, solve
@@ -213,6 +220,100 @@ def test_equilibrium_is_unexploitable(make, payout):
     for at, strategy in solution.strategy.items():
         assert strategy.shape == (len(tree.nodes[at].actions), 169)
         assert numpy.allclose(strategy.sum(axis=0), 1.0)
+
+
+# --- терминал реализации (спека модели колла §5, инварианты 4, 11, 12) ------------------------
+
+
+def _stretch(monkeypatch, kappa, lam=0.0):
+    monkeypatch.setattr(realization, "REALIZATION_KAPPA", kappa)
+    monkeypatch.setattr(realization, "REALIZATION_LAMBDA", lam)
+
+
+@pytest.mark.parametrize("make", FIXTURES.values(), ids=FIXTURES)
+def test_zero_kappa_is_the_plain_showdown(monkeypatch, make):
+    # Инвариант 4: при `κ = λ = 0` равновесие и EV те же, что у вскрытия без ставок — того же
+    # солвера с сырой эквити на каждом терминале.
+    tree, node = _tree(make())
+    payoffs, eps = _games(tree, node)["chip"]
+    combo = ("Kh", "Qd")
+    modelled = solve(tree, payoffs, eps)
+    values = action_values(tree, payoffs, modelled, tree.hero_node, combo)
+    monkeypatch.setattr(realization, "matrix", lambda spr, ip: allin_matrix.equity_matrix())
+    plain = solve(tree, payoffs, eps)
+    assert modelled.iterations == plain.iterations
+    for at, strategy in plain.strategy.items():
+        assert numpy.abs(modelled.strategy[at] - strategy).max() <= 1e-9
+    plain_values = action_values(tree, payoffs, plain, tree.hero_node, combo)
+    assert values == pytest.approx(plain_values, abs=1e-9)
+
+
+@pytest.mark.parametrize("make", [preflop_open, preflop_vs_3bet, FIXTURES["sb_limp"]])
+@pytest.mark.parametrize("payout", ["chip", "icm"])
+def test_equilibrium_is_unexploitable_with_realization(monkeypatch, make, payout):
+    # Инвариант 11 на растянутой модели: `≤ eps` или честное `converged is False`.
+    _stretch(monkeypatch, 0.5, 0.05)
+    tree, node = _tree(make())
+    payoffs, eps = _games(tree, node)[payout]
+    solution = solve(tree, payoffs, eps)
+    assert solution.converged is (solution.exploitability <= eps)
+    assert solution.converged or solution.iterations == preflop_solver.MAX_ITERATIONS
+    assert exploitability(tree, payoffs, solution.strategy) == pytest.approx(
+        solution.exploitability, abs=1e-12
+    )
+
+
+def test_stretch_moves_call_value(monkeypatch):
+    # Инвариант 12: стратегии соперника заморожены (равновесие при `κ = 0`), колл `BB` на
+    # открытие `UTG` — сразу терминал реализации. `κ > 0` растягивает эквити: колл `AA`
+    # (эквити против любого класса не ниже 0.5) дорожает, колл `72o` (против диапазона
+    # открытия хуже 0.5) дешевеет.
+    tree, node = _tree([preflop_frame(6, {7: 2.0}, folded={2, 3, 4, 5})])
+    payoffs, eps = _games(tree, node)["chip"]
+    solution = solve(tree, payoffs, eps)
+    call = [a.kind for a in tree.nodes[tree.hero_node].actions].index("call")
+    strong, weak = ("Ah", "Ad"), ("7h", "2d")
+
+    def calls():
+        return [action_values(tree, payoffs, solution, tree.hero_node, c)[call] for c in combos]
+
+    combos = (strong, weak)
+    before = calls()
+    _stretch(monkeypatch, 0.5)
+    after = calls()
+    assert after[0] > before[0]
+    assert after[1] < before[1]
+
+
+def test_check_behind_a_limp_with_realization(monkeypatch):
+    # Чек `BB` за лимпом `SB` — терминал реализации: вес победы — строка матрицы
+    # `realization.matrix(SPR, BB в позиции)` против диапазона лимпера, руками.
+    _stretch(monkeypatch, 0.5, 0.1)
+    tree, node = _tree(FIXTURES["sb_limp"]())
+    payoffs, eps = _games(tree, node)["chip"]
+    solution = solve(tree, payoffs, eps)
+    check = tree.nodes[tree.root].actions[0]
+    terminal = tree.nodes[check.child]
+    assert (check.kind, terminal.opener_in_position) == ("check", True)
+    showdown = payoffs[check.child]
+    combo = ("Ah", "Kd")
+    weights = allin_matrix.hand_weights(list(combo)) * tree.fixed_ranges[1]
+    index = allin_matrix.class_index("AKo")
+    win = (weights * realization.matrix(terminal.spr, True)[index]).sum() / weights.sum()
+    assert win > (weights * allin_matrix.equity_matrix()[index]).sum() / weights.sum()
+    expected = win * showdown[0, 0] + (1 - win) * showdown[1, 0]
+    assert action_values(tree, payoffs, solution, tree.root, combo)[0] == pytest.approx(
+        expected, abs=1e-9
+    )
+
+
+def test_small_blind_is_the_button_heads_up():
+    # За столом на двоих `SB` — кнопка и на флопе ходит последним: колл `BB` на открытие `SB`
+    # оставляет открывшего в позиции.
+    tree, _ = _tree([_heads_up_node(30.0)])
+    opened = next(a for a in tree.nodes[tree.root].actions if a.kind == "raise")
+    called = next(a for a in tree.nodes[opened.child].actions if a.kind == "call")
+    assert tree.nodes[called.child].opener_in_position is True
 
 
 def test_iteration_cap_reports_not_converged():

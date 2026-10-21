@@ -106,6 +106,69 @@ def test_chips_are_conserved_on_every_terminal(make):
             assert min(row) >= 0
 
 
+def _parents(tree):
+    """Терминал → вид действия, которое в него ведёт."""
+    return {
+        action.child: action.kind
+        for node in tree.nodes
+        if isinstance(node, Decision)
+        for action in node.actions
+    }
+
+
+@pytest.mark.parametrize("make", FIXTURES.values(), ids=FIXTURES)
+def test_realization_only_on_call_terminals(make):
+    # Спека модели колла §5.3: терминал реализации — колл (или чек) без олл-ина; у `fold` и
+    # `allin` нет ни SPR, ни позиции, а значит и матрицы реализации.
+    tree, _ = _tree(make())
+    parents = _parents(tree)
+    for at, node in enumerate(tree.nodes):
+        if not isinstance(node, Terminal):
+            continue
+        if node.kind == "realization":
+            assert parents[at] in ("call", "check")
+            assert node.spr is not None and node.opener_in_position is not None
+        else:
+            assert node.kind in ("fold", "allin")
+            assert node.spr is None and node.opener_in_position is None
+
+
+@pytest.mark.parametrize("make", FIXTURES.values(), ids=FIXTURES)
+def test_spr_is_the_short_stack_behind_over_the_pot(make):
+    # SPR из рядов: проигравший `a` сохраняет остаток `R_a`, выигравший забирает банк `P`.
+    tree, _ = _tree(make())
+    for node in tree.nodes:
+        if isinstance(node, Terminal) and node.kind == "realization":
+            a, b = node.pair
+            won, lost = node.rows
+            pot = won[a] - lost[a]
+            assert node.spr == pytest.approx(min(lost[a], won[b]) / pot, abs=1e-12)
+
+
+def test_spr_and_position_on_paper():
+    # Герой `CO` открыл до 2.0: колл `BB` — банк 2 × 2.0 + `SB` 0.5 + анте 0.75 = 5.25, за ним
+    # 38; `CO` на флопе ходит после `BB`. 3-бет `BTN` до 6.0 и колл `CO` — банк 12 + 0.5 + 1.0 +
+    # 0.75 = 14.25, за ним 34; `CO` ходит раньше `BTN`.
+    tree, _ = _tree(preflop_open())
+    opened = _child(tree, tree.root, "raise")
+    at = _child(tree, _child(tree, _child(tree, opened, "fold"), "fold"), "call")
+    assert tree.nodes[at].pair == (0, 3)
+    assert tree.nodes[at].spr == pytest.approx(38.0 / 5.25)
+    assert tree.nodes[at].opener_in_position is True
+    at = _child(tree, _child(tree, opened, "raise"), "call")
+    assert tree.nodes[at].pair == (0, 1)
+    assert tree.nodes[at].spr == pytest.approx(34.0 / 14.25)
+    assert tree.nodes[at].opener_in_position is False
+
+
+def test_big_blind_is_in_position_against_the_small_blind():
+    # Порядок флопа `SB`, `BB`, `UTG…BTN`: чек `BB` за лимпом `SB` — `BB` в позиции.
+    tree, _ = _tree(_sb_limp())
+    checked = tree.nodes[_child(tree, tree.root, "check")]
+    assert checked.opener_in_position is True
+    assert checked.spr == pytest.approx(39.0 / 2.75)
+
+
 @pytest.mark.parametrize("make", FIXTURES.values(), ids=FIXTURES)
 def test_path_leads_from_the_root_to_the_hero(make):
     tree, _ = _tree(make())
@@ -146,7 +209,7 @@ def test_open_tree_starts_at_the_hero():
     # Колл открытия без олл-ина — у закрывающего `BB` (участник 3), вскрытие без ставок.
     at = _child(tree, _child(tree, _child(tree, tree.root, "raise"), "fold"), "fold")
     called = tree.nodes[_child(tree, at, "call")]
-    assert (called.kind, called.pair) == ("checkdown", (0, 3))
+    assert (called.kind, called.pair) == ("realization", (0, 3))
 
 
 # --- колл только у закрывающего (спека модели колла §4, инвариант 1) ------------------------
@@ -223,8 +286,8 @@ def test_big_blind_checks_behind_a_small_blind_limp():
     tree, _ = _tree(_sb_limp())
     assert [seat.seat_index for seat in tree.players] == [6, 5]
     assert _hero(tree) == [("check", None), ("raise", 4.0), ("allin", 40.0)]
-    checkdown = tree.nodes[_child(tree, tree.root, "check")]
-    assert (checkdown.kind, checkdown.pair) == ("checkdown", (0, 1))
+    checked = tree.nodes[_child(tree, tree.root, "check")]
+    assert (checked.kind, checked.pair) == ("realization", (0, 1))
 
 
 def test_a_limper_allin_over_the_isolation_is_played():
@@ -441,7 +504,7 @@ def test_bounty_only_on_knockouts():
                     seen.add("covered")
             seen.add(n.kind)
             assert with_heads[r] - without[r] == pytest.approx(expected, abs=1e-12)
-    assert seen == {"knockout", "covered", "allin", "checkdown", "fold"}
+    assert seen == {"knockout", "covered", "allin", "realization", "fold"}
 
 
 def test_busted_gets_the_prize_of_his_place():
@@ -476,7 +539,7 @@ def test_fold_tree_matches_pushfold_subgame(monkeypatch):
     tree = build(read_line(nodes), node)
     assert [p.seat_index for p in tree.players] == [p.seat_index for p in spot.players]
     assert "fixed_sizing" not in tree.flags
-    assert "postflop_checkdown" not in tree.flags
+    assert "postflop_realization" not in tree.flags
 
     for payoffs, outcomes in (
         (chip_payoffs(tree), chips),
@@ -502,8 +565,8 @@ def test_fold_tree_matches_pushfold_subgame(monkeypatch):
     [
         ("fixed_sizing", preflop_open, True),
         ("fixed_sizing", _short_open, False),
-        ("postflop_checkdown", preflop_open, True),
-        ("postflop_checkdown", _short_open, False),
+        ("postflop_realization", preflop_open, True),
+        ("postflop_realization", _short_open, False),
         ("deep_stack", lambda: [preflop_frame(3, folded={7, 2}, starting=_stacks(60.0))], True),
         ("deep_stack", preflop_open, False),  # ровно 40 BB — ещё не глубоко
         # Эффективный стек — против самого большого соперника, а не стек героя.
@@ -536,3 +599,11 @@ def test_fold_tree_matches_pushfold_subgame(monkeypatch):
 def test_flags_are_true_only_when_true(no_pushfold, flag, make, expected):
     tree, _ = _tree(make())
     assert (flag in tree.flags) is expected
+
+
+def test_deep_stack_threshold_is_the_realization_trust(monkeypatch):
+    # Порог `deep_stack` — константа `REALIZATION_TRUST_BB`, а не число в коде: 40 BB глубже 30.
+    assert preflop_tree.REALIZATION_TRUST_BB == 40.0
+    monkeypatch.setattr(preflop_tree, "REALIZATION_TRUST_BB", 30.0)
+    tree, _ = _tree(preflop_open())
+    assert "deep_stack" in tree.flags

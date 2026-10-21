@@ -52,7 +52,7 @@ _TREE_FLAGS = (
     "no_cold_call",
     "fold_as_walk",
     "fixed_sizing",
-    "postflop_checkdown",
+    "postflop_realization",
     "deep_stack",
     "no_hero_limp",
     "limper_range_profile",
