@@ -36,15 +36,11 @@ fast-forward (2026-10-18, согласие пользователя).
 первым) и `docs/superpowers/specs/2026-10-18-preflop-advisor-design.md` (весь префлоп). План —
 `docs/superpowers/plans/2026-10-18-preflop-advisor.md`, 7 задач; фазы —
 `docs/superpowers/state/2026-10-18-plan5-phases.md`, 10 фаз; промпт очередной фазы —
-`docs/superpowers/state/plan5-next-prompt.md`. Фазы 1–7 сделаны (2026-10-21: 1099 passed, ~113 с
-в облаке); следующая — Фаза 8, финальное ревью ветки `feat/preflop-advisor`.
-**Фазы 1–6 закрыты** (2026-10-18, ветка `feat/preflop-advisor`): ICM на `numpy` и один пакет
-на подыгру, D27 закрыт — `advise` 9-max 0.64 с; узлы префлопа в одной раздаче (D26 закрыт),
-линия `preflop_line.py`, дерево `preflop_tree.py`, солвер CFR+ `preflop_solver.py`, советник
-`preflop_advisor.py` в реестре после `pushfold` (6-max `open` 25 BB 0.8 с, 9-max 1.8 с); 1095
-тестов за ~181–192 с (флак бюджета 6-max под нагрузкой — журнал Фазы 6). Следующая —
-Фаза 7 (ревью Задачи 6, Задача 7 — порог, README, скилл); журнал —
-`docs/superpowers/state/2026-10-18-plan5-execution-notes.md`.
+`docs/superpowers/state/plan5-next-prompt.md`. Фазы 1–8 сделаны (2026-10-21: 1099 passed,
+~106–113 с в облаке): ICM на `numpy` (D27), узлы префлопа в раздаче (D26), линия, дерево,
+солвер CFR+, советник `preflop` после `pushfold`, README и скилл. Финальное ревью (Фаза 8) — четыре
+находки, D29 закрыт доводом, вопрос пользователю D30 (модель колла); следующая — Фаза 9, починка.
+Журнал — `docs/superpowers/state/2026-10-18-plan5-execution-notes.md`.
 
 **Ветка плана 5 — `feat/preflop-advisor`, пушить только в неё** (решение пользователя,
 2026-10-21). Облачная сессия стартует из `main` на своей ветке `claude/…` — там плана 5 нет.

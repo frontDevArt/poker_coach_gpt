@@ -1228,3 +1228,218 @@ reach соперников по фишкам, `_gap` лимпера без `/ ma
 
 Фаза сделана целиком. Следующая — Фаза 8: ревью Задачи 7 (`9efac35`) и починки `d7807cd`,
 финальное ревью ветки, D29.
+
+## Фаза 8 (2026-10-21)
+
+Только ревью: Задача 7 (`9efac35`), починка Фазы 7 `d7807cd`, долг D29, финальное ревью ветки
+`git diff main..HEAD` против обеих спек. Кода не правили.
+
+Вход: ветка `feat/preflop-advisor`, HEAD `9b1b6f7` (`docs:` Фазы 7 после `9efac35`), дерево
+чистое. Облако, Linux, 4 ядра, `.venv` создан по `CLAUDE.md` на Python 3.13.16 (у Фазы 7 был
+3.12.3 — другая машина). Бюджеты отдельно первым делом: 6-max `preflop` 0.46 с, 9-max 1.34 с,
+push/fold 6/8/9-max 0.15/0.28/0.42 с — зелёные. Сьют: **1099 passed, 106.0 с** — совпадает с
+промптом. Полный прогон — один.
+
+### Ревью починки `d7807cd`
+
+`_deviates` берёт последний ответ с `advisor` не `null`, сверяет с последним действием героя в
+линии. Довод «после ответа `pushfold` узел героя бывает, только если герой ему не последовал»
+верен: `allin` по совету — `HERO_ALL_IN`, `call` олл-ина — решений на префлопе больше нет, `fold` —
+нет узла. `sizeBb` ответа `pushfold` (в `facing_allin` — добавка, а не «до») со `toBb` линии не
+сравнивается ни на одном достижимом входе: совпадение действия `call`/`allin` с советом `pushfold`
+узла `preflop` не даёт. Тесты: `test_line_deviates[pushfold]` — теперь `True`,
+`refusal_skipped`, `only_refusal`, `test_pushfold_advice_the_hero_did_not_follow` (совет
+`pushfold` любым из двух действий расходится с открытием 2.0 — тест верен при обоих),
+`test_line_deviates_on_the_last_hero_act` (4-бет 13.2 и 16.0). Мутант `mine[0]` и фильтр `==
+name` убиты (Фаза 7). Блок «Решения по находкам ревью (Фаза 7)» в Задаче 6 — есть. Находок по
+самой починке нет; выживший мутант того же модуля — находка 2 ниже.
+
+### Ревью Задачи 7 (`9efac35`)
+
+**Скрипт** `scripts/measure_pushfold_threshold.py`: сетка, позиции, обход порога через
+`read_line` при `PUSHFOLD_MAX_BB = 0` и `_solve` — константа восстанавливается в `finally`, в
+модуле не меняется (`git diff` по `pushfold_game.py` — только способ вызова ICM). `ΔEV` сравнивает
+одно и то же — стек после раздачи (фишки) и доллары модели поля (ICM), без голов: фикстура не PKO,
+`solved.icm == plain`. Граница — `argmin |push − fold|` по классам в равновесии push/fold. Решение
+против плана (обход через `read_line` + `_solve`, а не `build` с ручной `Line`) — принимаю:
+`Line` строится только `read_line`. Сверх плана — столбец «пуш push/fold»: принимаю.
+
+**README и `SKILL.md` против кода** — каждое утверждение проверено:
+- таблица спотов и действий — `preflop_line._kind`, `_Builder.root/_respond/_facing_raise/
+  _facing_allin`; «стек не выше ставки — `fold` и `allin`» — `_respond` (`total <= top`) и
+  `_facing_raise`;
+- отказы — 8 констант `preflop_line.py`, `LIMP_RERAISE` и два f-текста `build`; все пинятся
+  (мутанты L1–L10, T1–T3 ниже);
+- размеры §6.2 и имена констант, `COMMIT_SHARE = 0.4`, шаг 0.1, `CHECKDOWN_TRUST_BB = 40`,
+  `DEFAULT_VPIP = 25` (`profiles.py:28`) — совпадают;
+- форма ответа, роли, `byAction` с шагом 0.01, `line` с фолдами — `preflop_advisor.py`;
+- бюджеты README «6-max ~0.8 с, 9-max ~1.8 с; 9-max 40 BB ~2.7 с, 100 BB ~5.0 с» — журнал
+  «Фаза 6», таблица замера (0.83 / 1.81 / 2.71 / 5.01 с); `SKILL.md` «~5 с на 100 BB» — то же;
+- порог 12 BB, `pushfold` — «первым в банк до 12 BB, против одного олл-ина при любом стеке» —
+  `pushfold_game.read_spot`, `preflop_line._kind` (олл-ин до первого решения героя —
+  `PUSHFOLD_SPOT`).
+Расхождения — находки 3 и 4.
+
+### D29 — ширина открытия дерева `open`
+
+**Итог: свойство модели (спека §6.3 + §6.4), а не дефект `preflop_tree`/`preflop_solver`.**
+Довод с замером (скрипт вне репо, 6-max, `UTG`, у всех 10 и 20 BB, равновесие по фишкам,
+`preflop_advisor._solve` при пороге 0):
+
+| Стек | Корень `UTG`: фолд / рейз 2.0 / олл-ин | `HJ` против рейза 2.0: фолд / колл / 3-бет 6.0 / олл-ин |
+|---|---|---|
+| 10 BB | 35.0 / 65.0 / 0.1 % | 6.1 / 61.4 / — / 32.5 % |
+| 20 BB | 36.5 / 63.5 / 0.0 % | 6.7 / 61.9 / 0.0 / 31.4 % |
+
+1. **Механизм.** Колл открытия — терминал «вскрытие без ставок» (§6.4): `HJ` ставит 2.0 в банк
+   2.0 + 2.0 + 2.25 мёртвых (блайнды 1.5 и анте 0.75) = 6.25 BB и забирает его по эквити, без
+   постфлопа. Колл безубыточен уже при эквити 2 / 6.25 = 32%; против диапазона открытия 65% такую
+   эквити имеет почти любая рука (72o — 30.4%, 54s — 39.2%). Первый вошедший закрывает остальных
+   (§6.3), поэтому мёртвые деньги целиком достаются ему: `HJ` входит в 93–94% рук, до `CO` и
+   дальше действие доходит в 6–7% раздач. Дерево `open` `UTG` на деле — HU `UTG` против `HJ`.
+2. **Почему открытие широкое.** Для открывшего рейз 2.0 — это вскрытие без ставок против
+   коллирующего диапазона или фолд на олл-ин; полный стек в игре только при колле олл-ина.
+   EV `UTG` (стек после раздачи, BB, при 10 BB): 72o — фолд 10.0, рейз 9.46, олл-ин 8.98; T4o —
+   10.0 / 9.95 / 9.45; K9o — 10.0 / 11.14 / 10.29. Граница открытия — там, где эквити вскрытия
+   против колла окупает 2 BB и фолды на олл-ин, а не там, где окупается риск всего стека. Отсюда
+   же независимость ширины от глубины: терминал вскрытия от стеков не зависит.
+3. **Код верен модели.** EV колла `HJ`, посчитанный руками (распределение классов `UTG` —
+   стратегия рейза × веса блокеров комбинации, эквити по `allin_matrix`, ряды терминала
+   вскрытия), совпадает с `preflop_solver.action_values` до 1e-3: 72o 9.899, K9o 11.352, AKs
+   12.206, 54s 10.452 BB. Фолд корня как уход банка к `BB` (`fold_as_walk`) на EV открывшего не
+   влияет: его выплата при фолде — свой стек при любом получателе банка. Эксплуатируемость
+   решений 0.0008–0.0009 BB.
+4. **Следствие.** Советы `open` и `vs_open` в этой модели систематически шире реальных: первый
+   отвечающий защищается против открытия 94% рук, открытие с любой позиции ~60–65% на любой
+   глубине. Пометки `no_overcall` и `postflop_checkdown` стоят, но масштаб искажения ими не
+   передан. Таблица замера D28 для `UTG`/`CO`/`BTN` поэтому порог не обосновывает: рейз
+   «выгоднее» пуша там, где модель не наказывает колл. Рекомендация по D28 — (а), 12 BB.
+   Смена модели (колл без олл-ина, оверколлы) — решение пользователя, не починка: новый долг
+   **D30**, вопрос пользователю.
+
+### Финальное ревью ветки (`git diff main..HEAD`)
+
+**Не тронуто по смыслу.** `analyze.py`, `nash.py`, `cli.py` — `git diff main..HEAD` пустой.
+`pushfold_game.py` — только `icm_outcomes` через `table_equities_batch` (один пакет, `2m + 2`
+набора). `pushfold.py` — только `refactor` `_context_flags` (порядок пометок прежний). `advice.py`
+— строка `ADVISORS` и импорт. `handstate.py` — D26: убывающие улицы — прежний текст, одна улица —
+`_validate_same_street`. `test_analyze.py`, `test_icm_field.py`, `test_pushfold.py` против
+`main` не тронуты; `test_pushfold_game.py` — смена контракта счётчика (один пакет, одиночный
+вызов запрещён), спека D27 §4; `test_advice.py` — второй советник в реестре и его отказ
+`AMBIGUOUS` на узле `analyze`.
+
+**Инварианты спеки D27** (§5, §7) — тесты по именам:
+
+| Инвариант | Тест |
+|---|---|
+| §5.1 / §7.1 сверка с эталоном на сетке | `test_icm_field_speed.py::test_matches_reference_on_the_grid` |
+| §5.2 пакет = одиночные | `test_batch_equals_single_calls`, `test_batch_rows_do_not_mix` |
+| §5.3 инварианты плана 3 без правки | `test_icm_field.py` (против `main` не тронут) |
+| §5.4 `analyze`/`advise` без правки чисел | `test_analyze.py`, `test_pushfold.py` не тронуты, сьют зелёный |
+| §7.2 нулевой стек в пакете | `test_zero_stack_in_batch_gets_nothing`, `test_zero_stack_seat_is_the_same_as_no_seat`, `test_several_zero_stacks_are_the_same_as_no_seats`, `test_zero_stack_with_an_empty_field`, `test_zero_stack_beside_a_lone_survivor_and_a_field` |
+| §7.3 пустое поле | `test_empty_field_is_not_read` |
+| §7.4 один игрок, пустое поле | `test_lone_seat_takes_first_prize` |
+| §7.5 / §6 бюджет | `test_advice_budget.py::test_advice_on_{six,eight,nine}_max_first_in_fits_the_budget`, `test_icm_is_one_batch_per_subgame` |
+| гарды пакета, текст через `match=` | `test_empty_batch…`, `test_ragged_batch…`, `test_too_many_seats_in_batch…`, `test_negative/nan/infinite_stack_in_batch…`, `test_set_without_chips…`, `test_negative/fractional_field_size_in_batch…`, `test_a_non_empty_field_in_batch_needs_a_positive_stack` |
+
+Цель §2.1 (≤ 0.02 с на 9 местах) не достигнута — 0.031 с; записано Фазами 1–2, план это
+допускает, не находка.
+
+**Инварианты спеки префлопа §10** — тесты по именам:
+
+| # | Тест |
+|---|---|
+| 1 | `test_handstate.py::test_two_preflop_frames_of_one_hand_pass`, `test_streets_must_not_go_back`, `test_invested_cannot_shrink_within_a_street`, `test_invested_rounding_within_a_street_is_tolerated`, `test_a_repeated_frame_is_not_a_new_decision`, `test_a_call_behind_the_hero_is_not_a_new_decision`; доска — общее правило `test_board_must_extend_the_previous_board` |
+| 2 | `test_preflop_line.py`: `test_open`, `test_vs_open`, `test_vs_3bet_keeps_…`, `test_vs_4bet_keeps_…`, `test_vs_allin_after_raise`, `test_vs_limp`; отказы — `test_not_preflop_is_refused`, `test_hero_all_in_is_refused`, `test_two_voluntary_entrants_before_the_hero_are_refused`, `test_one_frame_after_a_hero_raise_is_ambiguous`, `test_a_5bet_not_allin_is_refused`; `test_preflop_advisor.py::test_refusals_are_the_line_and_tree_texts` |
+| 3 | `test_vs_3bet_keeps_the_hero_open_from_the_previous_frame`, `test_preflop_tree.py::test_path_replays_the_line_with_played_sizes` |
+| 4 | `test_line_deviates`, `test_line_deviates_on_the_last_hero_act`, `test_pushfold_advice_the_hero_did_not_follow`, `test_no_deviation_without_a_hero_act` |
+| 5 | `test_chips_are_conserved_on_every_terminal` |
+| 6 | `test_preflop_solver.py::test_tree_reduces_to_pushfold`, `test_preflop_tree.py::test_fold_tree_matches_pushfold_subgame` |
+| 7 | `test_rule_raise_above_commit_share_becomes_allin`, `test_rule_raise_at_commit_share_stays_a_raise`, `test_commit_share_is_of_the_effective_stack` |
+| 8 | `test_played_size_is_kept` |
+| 9 | `test_equilibrium_is_unexploitable`, `test_responder_gap_counts_every_entry`, `test_limper_gap_is_normalised_by_his_range` |
+| 10 | `test_winner_take_all_icm_equals_chips` |
+| 11 | `test_ladder_scale` |
+| 12 | `test_call_value_grows_with_covered_bounty` |
+| 13 | `test_classic_has_no_bounty` |
+| 14 | `test_steps_are_consistent` |
+| 15 | `test_pushfold_answers_unchanged` |
+| 16 | `test_a_pushfold_spot_is_refused`, `test_an_open_allin_the_pushfold_advisor_refuses_is_still_refused` |
+| 17 | через 6 (сведение к push/fold → HU-чарт плана 4) |
+| 18 | `test_preflop_open_six_max_fits_the_budget`, `test_preflop_nine_max_fits_the_budget` |
+
+Review Focus плана: 1 — `test_invested_cannot_shrink_within_a_street`; 2 —
+`test_an_open_below_or_at_two_blinds_is_a_raise`; 3 — `test_played_size_is_kept`; 4 —
+`test_limper_without_badge`; 5 — `test_short_hero_has_only_fold_and_allin`. Пометки §9 парами —
+ревью Фазы 7, не менялись.
+
+**Мутанты «снести гард целиком»** — на закоммиченном коде, скрипт вне репо, по одному,
+`PYTHONDONTWRITEBYTECODE=1`, чистка `__pycache__` перед каждым, `-p no:cacheprovider -x`, откат
+`git checkout --`; дерево после — чистое. 36 мутантов, убиты 34:
+
+| Модуль | Мутанты | Итог |
+|---|---|---|
+| `preflop_line` | L1 не префлоп, L2 герой в олл-ине, L3 спот push/fold, L4 неоднозначна, L5 мультипот, L6 спот не из таблицы, L7 `HERO_FLAT`, L8 `FIVE_BET` → `vs_4bet`, L9 `BIG_BLIND_WALK`, L10 олл-ин до героя → `vs_open` | все убиты |
+| `preflop_tree` | T1 `LIMP_RERAISE`, T2 оба отказа стека 0, T3 стек 0 вне раздачи, T4 слияние целиком, T6 слияние — только «не меньше стека» | убиты |
+| `preflop_tree` | T5 слияние — только доля `COMMIT_SHARE` (снята ветка `to >= total`) | **выжил — находка 1** |
+| `preflop_solver` | S1 `eps`, S2 предел итераций, S3/S4 масса 0 у открывшего и отвечающего | убиты |
+| `preflop_advisor` | A1 `applies` без отказа линии, A2 без отказа дерева, A3 `_deviates` без «нечего сверять» | убиты |
+| `preflop_advisor` | A4 `_deviates` без «размера нет» | **выжил — находка 2** |
+| `icm_field` | I1 пустой пакет, I2 рваный, I3 число мест, I4 стеки ≥ 0, I5 нет фишек в наборе, I6 поле, I7 `_validate` одиночного | убиты |
+| `handstate` | H1 вложенное убыло, H2 нет нового решения целиком, H3/H4 каждая половина условия, H5 правила одной улицы целиком | убиты |
+
+**Итог ревью — четыре находки:**
+
+1. `packages/poker-engine/src/poker_engine/preflop_tree.py:326` (`_Builder._aggression`):
+   условие `or to >= total` недостижимо — мёртвый код. Во всех трёх вызовах `effective` — минимум
+   из стека игрока и стека соперника (`root`: `min(totals[0], others)`, `_respond`:
+   `min(total, totals[0])`, `_facing_raise`: `min(total, totals[b])`), поэтому `effective ≤ total`
+   и `to ≥ total ⇒ to > COMMIT_SHARE · effective`. Мутант T5 эквивалентен. Докстринг модуля
+   («…или не меньше стека с вложенным (Review Focus 5)») и README («…или не меньше стека с
+   вложенным — олл-ин») описывают вторую ветку как отдельное правило. Чинить: снять `or to >=
+   total`; в докстринге и README — что короткий стек (Review Focus 5) сливается тем же правилом
+   доли, потому что эффективный стек не больше своего; `test_short_hero_has_only_fold_and_allin`
+   остаётся зелёным.
+2. `packages/poker-engine/tests/test_preflop_advisor.py` (`test_line_deviates`): гард
+   `preflop_advisor.py:239` `if size is None or act.to_bb is None: return False` без теста —
+   мутант A4 выживает. Фаза 7 признала его эквивалентным «на ответах советника», но `history` —
+   вход пользователя, у него проверяется только форма: запись `{"advisor": "preflop", "action":
+   "raise"}` без `sizeBb` при открытии героя 2.0 на коде — без пометки, у мутанта — `TypeError`
+   (`float − None`), падение `advise` не `ValueError`. Воспроизведено скриптом вне репо (кадры
+   `_vs_3bet_after_open(2.0)`). Чинить: случай `test_line_deviates` — история без `sizeBb`,
+   действие `raise` совпадает → `False`.
+3. `.claude/skills/poker-preflop-mtt/SKILL.md`, раздел «Пометки», первая строка: «Каждая пометка
+   в `flags` — что сказать пользователю: в `flags` — что сказать пользователю:» — фраза
+   задвоена. Чинить: «Каждая пометка в `flags` — что сказать пользователю:».
+4. `packages/poker-engine/README.md` (раздел «Советник `preflop`», список «Ответ» и абзац пометок)
+   и `SKILL.md` («Как читать ответ `preflop`»): «фолд — опорная точка разницы», `bountyUsd` — «из
+   разницы лучшего действия с фолдом». У `BB` против лимпа фолда нет: опорное действие — `check`
+   (`advise` берёт `usd[0]`, докстринг `preflop_advisor` это и говорит). И «все пометки `pushfold`
+   … в том же смысле» — у `close_spot` смысл другой: у `preflop` это разница **двух лучших**
+   `evUsd` не больше допуска, у `pushfold` в таблице — «активное действие и фолд». Чинить: «фолд
+   (у `BB` против лимпа — чек) — опорная точка» в обоих файлах; в README строка `close_spot` в
+   таблице пометок `preflop` с его смыслом.
+
+D29 — не находка, довод выше; новый долг D30 и вопрос пользователю.
+
+### Тесты
+
+- Вход и итог: **1099 passed, 106.0 с** (кода фаза не меняла). Бюджеты отдельно: 0.46 / 1.34 с.
+
+### Решения против текста плана
+
+Нет.
+
+### Долги
+
+- **D29** — закрыт доводом (свойство модели §6.3 + §6.4, код ему верен), без коммита кода.
+- **D30 (новый)** — колл открытия вскрытием без ставок при первом вошедшем, закрывающем
+  остальных: первый отвечающий входит 93–94%, открытие ~60–65% на любой глубине; советы
+  `open`/`vs_open` систематически шире реальных, пометки масштаб не передают. Хозяин —
+  пользователь (решение о модели); без решения — ledger финала, открытый вопрос плана 6/этапа 6.
+- **D28** — без изменений: ответа пользователя нет; рекомендация (а) усилена доводом D29.
+
+### Где остановились
+
+Фаза сделана целиком. Следующая — Фаза 9: починка находок 1–4; ответ пользователя по D28 и D30,
+если придёт, — отдельными коммитами/записями.
