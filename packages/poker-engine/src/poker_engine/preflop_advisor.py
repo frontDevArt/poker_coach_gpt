@@ -25,9 +25,10 @@
 - допуск ICM-решения — `EPS_CHIP_BB` в долларах по цене фишки участников на исходе первого
   действия корня (фолд или чек — без нокаутов, голов в нём нет); `close_spot` — разница двух
   лучших `evUsd` не больше этого допуска;
-- `line_deviates` — последний ответ `history` с `advisor == "preflop"` против последнего
-  действия героя в линии: другое действие или размер дальше `SIZE_STEP_BB`. Действия героя в
-  линии нет — сверять нечего.
+- `line_deviates` — последний ответ советника в `history` (`advisor` не `null`: `preflop` или
+  `pushfold`) против последнего действия героя в линии: другое действие или размер дальше
+  `SIZE_STEP_BB`. После ответа `pushfold` узел героя на префлопе бывает, только если герой ему
+  не последовал. Отказ в истории — не ответ; действия героя в линии нет — сверять нечего.
 """
 
 from __future__ import annotations
@@ -227,7 +228,7 @@ def _opponents(solved: _Solved, me: int, positions: dict) -> list[dict]:
 
 
 def _deviates(line: Line, node: DecisionNode, history: list[dict]) -> bool:
-    advised = [answer for answer in history if answer.get("advisor") == name]
+    advised = [answer for answer in history if answer.get("advisor") is not None]
     mine = [act for act in line.acts if act.seat_index == node.hero.seat_index]
     if not advised or not mine:
         return False

@@ -377,14 +377,63 @@ def _vs_3bet_after_open(size):
             2.0,
             False,
         ),
-        ([{"advisor": "pushfold", "action": "fold"}], 2.0, False),
+        # Ответ `pushfold` — тоже совет: герой открыл рейзом вместо фолда.
+        ([{"advisor": "pushfold", "action": "fold"}], 2.0, True),
+        # Отказ — не ответ: сверяется ответ советника до него.
+        (
+            [
+                {"advisor": "preflop", "action": "raise", "sizeBb": 2.0},
+                {"advisor": None, "notApplicable": []},
+            ],
+            2.0,
+            False,
+        ),
+        ([{"advisor": None, "notApplicable": []}], 2.0, False),
         ([], 2.0, False),
     ],
-    ids=["same", "within_step", "other_size", "fold", "allin", "last", "pushfold", "none"],
+    ids=[
+        "same", "within_step", "other_size", "fold", "allin", "last", "pushfold",
+        "refusal_skipped", "only_refusal", "none",
+    ],
 )
 def test_line_deviates(history, size, deviates):
     answer = _advise(_vs_3bet_after_open(size), history=history)
     assert answer["advisor"] == "preflop"
+    assert ("line_deviates" in answer["flags"]) == deviates
+
+
+def test_pushfold_advice_the_hero_did_not_follow():
+    # У всех 10 BB: `CO` первым в банк — спот `pushfold`. Герой открыл до 2.0 вместо его
+    # совета, `BTN` пошёл олл-ин — узел `preflop` с пометкой.
+    starting = dict.fromkeys(range(2, 8), 10.0)
+    first = [preflop_frame(3, folded={7, 2}, starting=starting)]
+    advised = _advise(first)
+    assert advised["advisor"] == "pushfold"
+    assert advised["action"] in ("allin", "fold")
+    second = [
+        *first,
+        preflop_frame(3, {3: 2.0, 4: 10.0}, folded={7, 2, 5, 6}, starting=starting),
+    ]
+    answer = _advise(second, history=[advised])
+    assert answer["spot"] == "vs_allin_after_raise"
+    assert "line_deviates" in answer["flags"]
+
+
+@pytest.mark.parametrize(("four_bet", "deviates"), [(13.2, False), (16.0, True)])
+def test_line_deviates_on_the_last_hero_act(four_bet, deviates):
+    # Два действия героя: открытие 2.0 и 4-бет против 3-бета 6.0. Совет последнего шага — 4-бет
+    # до 13.2 (2.2 × 6.0) — сверяется с 4-бетом, а не с открытием.
+    raws = [
+        preflop_frame(3, folded={7, 2}),
+        preflop_frame(3, {3: 2.0, 4: 6.0}, folded={7, 2, 5, 6}),
+        preflop_frame(3, {3: four_bet, 4: 40.0}, folded={7, 2, 5, 6}),
+    ]
+    history = [
+        {"advisor": "preflop", "action": "raise", "sizeBb": 2.0},
+        {"advisor": "preflop", "action": "raise", "sizeBb": 13.2},
+    ]
+    answer = _advise(raws, history=history)
+    assert answer["spot"] == "vs_allin_after_raise"
     assert ("line_deviates" in answer["flags"]) == deviates
 
 
