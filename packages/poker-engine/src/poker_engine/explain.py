@@ -113,8 +113,24 @@ def node_facts(node: DecisionNode, answer: dict) -> list[dict]:
     )
     if callable_ and node.to_call_bb > 0:
         call = min(node.to_call_bb, node.hero.stack_bb)
-        facts.append(fact("requiredEquity", potodds.required_equity(node.pot_bb, call), "pct"))
+        pot = _pot_before_call(node, call)
+        facts.append(fact("requiredEquity", potodds.required_equity(pot, call), "pct"))
     return facts
+
+
+def _pot_before_call(node: DecisionNode, call: float) -> float:
+    """Банк, который разыгрывает колл героя: без излишка ставок над его вложенным с коллом.
+
+    Колл на весь стек: излишек каждого места над вложенным героя в его банк не входит —
+    возвращается или уходит в побочный банк без героя. «Call» GG показывает то ставку, то стек
+    героя, поэтому излишек считается по вложенному мест, а не по `toCallBb`.
+    """
+    hero = node.hero
+    if call < hero.stack_bb:
+        return node.pot_bb
+    level = hero.invested_bb + call
+    excess = sum(max(0.0, seat.invested_bb - level) for seat in node.seats if not seat.is_hero)
+    return node.pot_bb - excess
 
 
 def refusal(answer: dict) -> list[dict]:

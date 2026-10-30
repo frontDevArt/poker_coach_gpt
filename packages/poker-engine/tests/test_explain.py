@@ -313,6 +313,24 @@ def test_the_node_facts_of_a_call_against_an_all_in():
     assert facts["requiredEquity"]["display"] == "44.4%"
 
 
+@pytest.mark.parametrize("to_call", [30.0, 5.0])
+def test_a_short_hero_calls_the_pot_without_the_excess_of_the_all_in(to_call):
+    # Герой `BTN` 5 BB против олл-ина `HJ` 30 BB: банк 30 + 0.5 + 1.0 + анте 0.75 = 32.25. Излишек
+    # 30 − 5 = 25 вернётся `HJ`: банк до колла 7.25, требуемая эквити 5 / 12.25 = 40.8%. «Call»
+    # GG показывает то ставку (30), то стек героя (5) — ответ один.
+    raw = pushfold_facing_allin_node()
+    seats = {seat["seatIndex"]: seat for seat in raw["seats"]}
+    seats[2]["investedBb"] = 30.0
+    seats[4]["stackBb"] = 5.0
+    raw.update(potBb=32.25, toCallBb=to_call)
+    facts = {
+        item["key"]: item
+        for item in explain.node_facts(node_from_dict(raw), {"spot": "facing_allin"})
+    }
+    assert facts["requiredEquity"]["value"] == pytest.approx(5 / 12.25)
+    assert facts["requiredEquity"]["display"] == "40.8%"
+
+
 def test_no_required_equity_without_a_call():
     # `CO` против открытия `UTG` — не закрывающий: колла в дереве нет (D30).
     frames = preflop_vs_open()
