@@ -54,6 +54,18 @@ def test_start_checks_the_context_at_once(tmp_path):
     assert not path.exists()
 
 
+@pytest.mark.parametrize("context", [None, [1]])
+def test_start_refuses_a_context_that_is_not_an_object(tmp_path, context):
+    # CLI требует объект сам (`_read_json`), через API отказ даёт только гард `frames`.
+    path = tmp_path / "hand.json"
+    with pytest.raises(
+        ValueError,
+        match=f"^поле 'context' должно быть объектом, получено {re.escape(repr(context))}$",
+    ):
+        coach.start(str(path), context)
+    assert not path.exists()
+
+
 def test_start_takes_the_average_stack_in_chips(tmp_path):
     # Большой блайнд придёт с кадром: на старте проверяется только само число.
     raw = {**_context(), "averageStackChips": 70700}
