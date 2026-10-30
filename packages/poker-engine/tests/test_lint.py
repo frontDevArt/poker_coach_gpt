@@ -5,14 +5,13 @@
 печать фактов в тестах написаны руками, кроме сквозных случаев через `coach`.
 """
 
-import io
 import json
 import re
 import sys
 
 import pytest
 
-from conftest import _context, flop_frame, preflop_frame, preflop_vs_3bet
+from conftest import _context, console_stdin, flop_frame, preflop_frame, preflop_vs_3bet
 from poker_engine import coach
 from poker_engine.cli import main
 from poker_engine.explain import fact, line_text
@@ -245,11 +244,23 @@ def test_coach_lint_cli(hand, tmp_path, monkeypatch, capsys):
         0,
         {"ok": False, "untraced": ["123.45"]},
     )
-    monkeypatch.setattr(sys, "stdin", io.StringIO("Шаг 1, шаг 9."))
+    monkeypatch.setattr(sys, "stdin", console_stdin("Шаг 1, шаг 9."))
     assert run(["coach", "lint", "--hand", str(hand), "--text", "-"], capsys) == (
         0,
         {"ok": False, "untraced": ["9"]},
     )
+
+
+def test_coach_lint_cli_reads_stdin_in_utf8(hand, tmp_path, monkeypatch, capsys):
+    # Кириллица из пайпа консоли Windows: без UTF-8 `3-бет` не узнаётся и `3` — ложно без следа.
+    coach.step(str(hand), preflop_vs_3bet()[0])
+    text = "Твой 3-бет до 123.45 BB."
+    path = tmp_path / "answer.md"
+    path.write_text(text, encoding="utf-8")
+    expected = (0, {"ok": False, "untraced": ["123.45"]})
+    assert run(["coach", "lint", "--hand", str(hand), "--text", str(path)], capsys) == expected
+    monkeypatch.setattr(sys, "stdin", console_stdin(text))
+    assert run(["coach", "lint", "--hand", str(hand), "--text", "-"], capsys) == expected
 
 
 def test_coach_lint_cli_errors(hand, tmp_path, capsys):

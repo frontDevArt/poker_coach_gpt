@@ -160,7 +160,11 @@ def _dispatch(args: argparse.Namespace) -> dict:
 
 
 def _read_text(source: str) -> str:
-    return sys.stdin.read() if source == "-" else _read_file(source)
+    if source != "-":
+        return _read_file(source)
+    # stdin — в UTF-8, как файл: консоль Windows открывает его в cp1252, и кириллица из пайпа
+    # приходила бы мусором (то же, что `_ensure_utf8_stdout` делает для stdout).
+    return sys.stdin.buffer.read().decode("utf-8")
 
 
 def _read_json(source: str) -> dict:

@@ -1,6 +1,18 @@
 """Общие данные тестов: корректная раздача, снятая со скриншота."""
 
+import io
+
 import pytest
+
+
+def console_stdin(text):
+    """stdin, как его открывает консоль Windows: из пайпа приходят байты UTF-8, а поток — в cp1252.
+
+    `sys.stdin.read()` на таком потоке отдаёт кириллицу мусором; CLI читает `sys.stdin.buffer`.
+    """
+    return io.TextIOWrapper(
+        io.BytesIO(text.encode("utf-8")), encoding="cp1252", errors="surrogateescape"
+    )
 
 
 def _context(seats_per_table=6):

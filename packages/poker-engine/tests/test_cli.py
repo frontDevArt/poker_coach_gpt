@@ -1,4 +1,3 @@
-import io
 import json
 import subprocess
 import sys
@@ -6,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import _context, pushfold_first_in_node
+from conftest import _context, console_stdin, pushfold_first_in_node
 from poker_engine.advice import advise, why
 from poker_engine.analyze import analyze
 from poker_engine.cli import main
@@ -417,7 +416,7 @@ def test_analyze_passes_trials_and_seed_to_the_engine(
 
 
 def _stdin(monkeypatch, payload):
-    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(payload)))
+    monkeypatch.setattr(sys, "stdin", console_stdin(json.dumps(payload, ensure_ascii=False)))
 
 
 def test_advise_reads_stdin(monkeypatch, capsys):
@@ -505,6 +504,19 @@ def test_coach_step_reads_the_frame_from_stdin(tmp_path, monkeypatch, capsys):
     code, data = run(["coach", "step", "--hand", hand, "--frame", "-"], capsys)
     assert code == 0
     assert data["answer"] == advise(_context(), [pushfold_first_in_node()], [])
+
+
+def test_coach_step_reads_a_cyrillic_frame_from_stdin(tmp_path, monkeypatch, capsys):
+    # Ник кириллицей через пайп консоли Windows: кадр в файле раздачи — как пришёл.
+    hand = tmp_path / "hand.json"
+    _stdin(monkeypatch, _context())
+    assert run(["coach", "start", "--hand", str(hand), "--context", "-"], capsys)[0] == 0
+    frame = pushfold_first_in_node()
+    frame["seats"][0]["name"] = "Игрок"
+    _stdin(monkeypatch, frame)
+    code, _ = run(["coach", "step", "--hand", str(hand), "--frame", "-"], capsys)
+    assert code == 0
+    assert json.loads(hand.read_text(encoding="utf-8"))["frames"] == [frame]
 
 
 def test_coach_errors_are_json_with_code_1(tmp_path, capsys):
