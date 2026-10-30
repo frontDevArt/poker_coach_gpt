@@ -232,6 +232,44 @@ def test_preflop_fact_values(preflop_answer):
     assert sum(shares) == pytest.approx(1.0, abs=0.005 * len(answer["actions"]))
 
 
+def _hand_made_answer(chip_evs):
+    """Ответ `preflop`, собранный руками: фолд, рейз до 2.0 и олл-ин 40.0 BB; по ICM лучший — рейз.
+
+    `chip_evs` — `evBb` трёх действий по порядку; `evUsd` — 0, 0.10, 0.05.
+    """
+    actions = [
+        {"action": "fold", "evUsd": 0.0, "evBb": chip_evs[0]},
+        {"action": "raise", "toBb": 2.0, "evUsd": 0.10, "evBb": chip_evs[1]},
+        {"action": "allin", "toBb": 40.0, "evUsd": 0.05, "evBb": chip_evs[2]},
+    ]
+    hero = {"byAction": {}, "reach": {}, "handFreq": {"raise": 1.0}, "reachPct": 1.0}
+    return {
+        "action": "raise",
+        "sizeBb": 2.0,
+        "actions": actions,
+        "ranges": {"hero": hero, "opponents": []},
+        "effectiveStackBb": 40.0,
+        "line": [],
+        "flags": [],
+    }
+
+
+@pytest.mark.parametrize(
+    ("chip_evs", "printed"),
+    [
+        ((0.0, 0.2, 0.5), "олл-ин 40.0 BB"),
+        ((0.3, 0.2, 0.1), "фолд"),
+        ((0.0, 0.2, 0.1), None),
+        # Равенство `evBb` — к раннему действию, как у совета: лучшее по фишкам — тот же рейз.
+        ((0.0, 0.2, 0.2), None),
+    ],
+)
+def test_the_chip_best_action_is_a_fact_only_when_it_differs(chip_evs, printed):
+    # ICM-поправка (спека тренера §8): лучшее по фишкам называется, только когда оно другое.
+    facts = preflop_advisor.explain(_hand_made_answer(chip_evs))
+    assert {item["key"]: item["display"] for item in facts}.get("chipBestAction") == printed
+
+
 def test_preflop_pko_has_the_bounty_fact():
     answer = advise(_context(), _bounties(preflop_vs_open()), [])
     facts = {item["key"]: item for item in preflop_advisor.explain(answer)}
