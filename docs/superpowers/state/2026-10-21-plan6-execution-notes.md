@@ -2587,3 +2587,238 @@ Z1–Z4 убивает вторая половина `test_pressure_is_scale_inv
 
 Фаза сделана целиком, Задачи 8 и 9 закрыты ревью. Следующая — **Фаза 11**: ревью Задачи 10 и
 финальное ревью ветки, только ревью; D35.
+
+## Фаза 11 (2026-10-30)
+
+Ревью: Задача 10 — `bd24155`, `d013668`, `941accf`; финальное ревью ветки — `git diff
+main..HEAD` против обеих спек целиком. Только ревью, без починки; долг D35.
+
+Вход: сессия **локальная**, вторая машина пользователя (Windows 11, 24 ядра, Python 3.14).
+Стартовая ветка — `feat/preflop-trainer`, HEAD `530e8db` (коммит `docs:` Фазы 10), дерево чистое,
+совпадает с `origin`; переключение не понадобилось.
+
+База: **1431 passed, 164.1 с** — число совпадает с промптом. Полный прогон — один: код фаза не
+меняла.
+
+### Ревью Задачи 10
+
+- **Удалённые тесты.** `test_field.py` на `bd24155~1` — 25 `def test` и две пары параметров,
+  27 собранных; импортирует только `poker_engine.field`. Три теста `test_types.py` звали только
+  `TableSnapshot`/`ChipConservationError`. Имён `reduce_field`, `TableSnapshot`,
+  `ChipConservationError`, `field.py`, `_check_bounty`, `_check_chip_value`, `_check_villain_stack`
+  нет нигде в `src`, `tests`, README, скиллах (только в `CLAUDE.md` — как история фазы).
+- **`bounty.py`.** Прямые вызовы `check_non_negative(bounty, "bounty")`,
+  `check_positive(chip_value, "chip_value")`, `check_positive(villain_stack, "villain_stack")` —
+  те же имена и шаблоны, тексты байт в байт; `test_bounty.py` в ветке не тронут. Ушёл комментарий
+  о NaN и `inf` до арифметики — свойство осталось (общие гарды), тесты гардов его держат.
+- **`_check_seat` → `_check_seat_count`.** Тексты обоих гардов не менялись; меняется только
+  какой из них срабатывает первым на столе больше `MAX_TABLE_SEATS` с местом вне него — решение
+  Фазы 10. `test_an_empty_table_is_named_not_its_range` — все четыре входа, `match=` с `^…$`.
+- **D19.** Допуск `PRESSURE_TOL · sum(payouts)` (`icm.py`) и `PRESSURE_TOL · ladder.total()`
+  (`icm_field._tol`) — во всех пяти `isclose` пути давления; других `abs_tol` в `src` нет. При
+  нулевой сумме призов допуск 0, а `rel_tol` по умолчанию прежний — точное сравнение, как было.
+  Тесты 941accf и d013668 — только добавления, ожидания сьюта не правились.
+- **Вторая половина `test_pressure_is_scale_invariant` — довод на бумаге.** Одна фишка против
+  1e11, победитель-всё, приз `100·k`: `now = 100k·1e-11 = 1e-9·k`, `win = 2e-9·k`, `lose = 0`,
+  `money_up = 1e-9·k`, допуск `1e-9·100k = 1e-7·k`. Отношение сдвига к призам — `1e-11` при любом
+  `k`, в 100 раз ниже доли допуска: отказ проверяет, что вердикт «не определено» зависит только
+  от доли призов, то есть масштабную инвариантность отказа, а не случайное число.
+
+**Мутанты** (закоммиченный код, скрипт вне репо: замена строки, прогон, `git checkout --`,
+чистка `__pycache__`, `PYTHONDONTWRITEBYTECODE=1`, `-p no:cacheprovider`):
+
+| Мутант | Итог |
+|---|---|
+| Z1 `icm_field`: снос `isclose(money_up, 0)` | убит, 2 |
+| Z2 `icm`: то же | убит, 2 |
+| Z3 `icm_field`: RP `isclose(now, 0)` → `now != 0` | убит, 2 |
+| Z5 `icm_field`: `_tol` абсолютный | убит, 2 |
+| Z6 `icm`: допуск RP абсолютный | убит, 2 |
+| Z8 `_check_seat` без `_check_seat_count` | убит, 1 |
+| Z9 снос гарда `knockout_cash` | убит, 1 |
+| Z13 снос гарда `villain_stack` | убит, 4 |
+| Z14 снос гарда `chip_value` в `bounty_in_chips` | убит, 2 |
+| Z16 снос гарда `own_bounty_growth` (свой) | убит, 1 |
+| Z17 снос гарда `bounty` в `required_equity_with_bounty` (свой) | убит, 2 |
+| Z18 снос проверки места `_check_seat` (свой) | убит, 5 |
+
+**Итог ревью Задачи 10 — `НАХОДОК НЕТ`.** Задача 10 закрыта.
+
+### Финальное ревью ветки
+
+Объём — `git diff main..HEAD`: 44 коммита, 60 файлов вне `docs`, +7502 / −799. Прочитаны новые
+модули целиком (`realization`, `hand`, `advice`, `frames`, `coach`, `lint`, `explain`), диффы
+`preflop_tree`, `preflop_line`, `preflop_advisor`, `pushfold`, `pushfold_game`, `handstate`,
+`cli`, README, скиллы `poker-review-method`, `poker-hand-vision`, ссылки остальных.
+
+**Сквозное.** `analyze.py` и `nash.py` в ветке не тронуты; `pushfold_game.py` — только
+`PUSHFOLD_MAX_BB`; новые проверки `validate_hand` — ровно две из спеки тренера §6.2. CLI:
+`coach start/step/undo/lint` по спеке §5.2, отказы — `{"error"}` и код 1. README и скиллы — без
+следов `checkdown`, `no_hero_limp`, порога 12 BB вне исторических абзацев.
+
+### Находки финального ревью (записаны до починки)
+
+- **F1. `explain.node_facts`, `src/poker_engine/explain.py:114–116` — требуемая эквити колла
+  короткого героя занижена.** Колл берётся `min(toCallBb, стек героя)`, а банк — полный
+  `potBb`, в котором лежит и неуравниваемый излишек олл-ина соперника. Герой `BTN` 5 BB против
+  олл-ина `HJ` 30 BB (банк 32.25, `toCallBb` 30 или 5 — «Call» GG показывает стек героя, скилл
+  L6): факт `requiredEquity` печатает `13.4%` (5 / 37.25), верно 5 / (7.25 + 5) = `40.8%`
+  (уравненные 5 + блайнды 1.5 + анте 0.75). Ветка `min(…)` без теста. Как чинить: банк до колла —
+  `potBb − (toCallBb − call)`, где `call = min(toCallBb, стек)` (излишек возвращается: в споте
+  против героя ровно один олл-ин, остальные сфолдили; у `preflop` колл короче ставки — тот же
+  случай); тест с `match`-точностью на бумаге — 5 / 12.25 при `toCallBb` 30 и при 5; мутанты «банк
+  без вычета» и «колл = `toCallBb`» убиты.
+- **F2. `.claude/skills/poker-review-method/SKILL.md`, «Форма ответа» — пример сам себе
+  противоречит.** «Ты открылся с `UTG1` … его 3-бет» — значит, ответ героя рейзом — 4-бет, а не
+  «3-бет до 6.0 BB»; «3-бет лучше колла» — колл предложен, а «Допущения: колл тебе не
+  предложен» — нет. Скилл учит форме ответа, модель перепишет противоречие. Пример взят из
+  спеки тренера §2 (там то же). Как чинить: связный пример одного спота, например герой `CO`
+  против открытия `UTG1` — «Шаг 1. 3-бет до 6.0 BB», разницы против фолда и олл-ина,
+  `opponent.UTG1.reachPct`, допущение `no_cold_call`; спеку не править (историческое), в журнал —
+  строка.
+- **F3 (D35). Роль соперника печатается кодом: `3bettor`/`4bettor` дают след `3`/`4`
+  линтеру.** `explain.street` (`explain.py:137`, `preflop.<позиция>.role`) и
+  `preflop_advisor.explain` (`preflop_advisor.py:406`, `opponent.<позиция>.role`) печатают
+  `display` = `value` (у `pushfold` роли `shover`/`caller` — без цифр). `lint.numbers("3bettor")`
+  — `["3"]`: в раздаче из 1–2 шагов вписанное `3` или `4` (`3 BB` при печати `3.0 BB`) проходит
+  линтер. Решение D35 — печать роли словом: `value` прежний (ключ ответа), `display` — `открывший`,
+  `3-беттор`, `4-беттор`, `лимпер`, `олл-инщик`, `отвечающий` (слова — на выбор починки, без
+  цифр вне `N-бет`). Тест: `lint.numbers(display)` пуст для каждой роли; `coach lint` текста
+  `3 BB` на раздаче из одного шага с ролью `3bettor` — `untraced: ["3"]`. Таблица скилла L7
+  («Соперники») — что роль печатается словом.
+- **F4. `src/poker_engine/frames.py:71–72` — гард «контекст — объект» без теста.** Мутант
+  «снести гард» (G8) выжил на `test_frames`, `test_coach`: CLI требует объект в `_read_json`,
+  но `coach.start(path, None)` через API доходит до гарда; без него — `TypeError` вместо текста.
+  Как чинить: тест `coach.start` (или `frames.context_payload`) с `None` и списком,
+  `match="^поле 'context' должно быть объектом, получено None$"`.
+- **F5. `src/poker_engine/cli.py:162–163` — stdin читается не в UTF-8.** `_ensure_utf8_stdout`
+  переводит только stdout; на Windows (Python 3.14, кодировка stdin `cp1252`, `surrogateescape`)
+  русский текст из пайпа приходит мусором. `printf 'Твой 3-бет до 6.0 BB.' | … coach lint
+  --text -` — линтер видит `['3', '6.0']` вместо `['6.0']`: исключение `N-бет` не узнаёт
+  кириллицу, ложное `untraced`. Кадр с кириллицей в нике через `coach step --frame -` несёт
+  суррогаты, и `_write` (`encode("utf-8")`) по построению упадёт `UnicodeEncodeError` (прогоном
+  не проверено). Тесты подменяют `sys.stdin` на
+  `StringIO` и этого не видят. Как чинить: `_read_text` читает `sys.stdin.buffer` и декодирует
+  `utf-8` (как `_read_file`); тест — `sys.stdin` с `io.TextIOWrapper(io.BytesIO(…), encoding="cp1252",
+  errors="surrogateescape")` и кириллицей, ответ — как из файла.
+- **F6. `src/poker_engine/explain.py:109` — гард «факт `toCallBb` только при колле > 0» без
+  теста.** Мутант «`if True`» (E2) выжил на `test_explain`, `test_hand`, `test_coach`,
+  `test_coach_series`, `test_lint`, `test_preflop_advisor`, `test_advice`, `test_cli` (280
+  тестов): никто не проверяет отсутствие `toCallBb` на узле без колла (`BB` против лимпа,
+  кадр флопа с чеком); без гарда в `why` ложится `0.0 BB` колла. Как чинить: тест узла с
+  `toCallBb = 0` (например `preflop_vs_limp` героя `BB`) — ключей `toCallBb` и `requiredEquity` в
+  фактах нет.
+- **F7. `src/poker_engine/preflop_advisor.py:395–398` — факт `chipBestAction` (ICM-поправка,
+  спека тренера §8) не проверен ни одним тестом.** Мутант «`if False`» (PA9) выжил на тех же
+  280 тестах: фикстуры не дают спота, где лучшее по фишкам отличается от лучшего по ICM, а
+  ключ в `test_preflop_fact_keys`, видимо, выводится тем же условием. Как чинить: тест
+  `preflop_advisor.explain` на ответе-словаре, собранном руками (два действия, `evUsd` лучше у
+  одного, `evBb` — у другого): `chipBestAction` есть и печатает действие с размером; при
+  совпадении лучших — нет. Равенство `evBb` — к раннему, как у совета.
+
+**Мутанты «снести гард целиком»** по новым и изменённым модулям — 48, с чистым кэшем, тем же
+скриптом; прогон — тест-файлы модуля (у выживших повтор на 280 тестах `test_explain`,
+`test_hand`, `test_coach`, `test_coach_series`, `test_lint`, `test_preflop_advisor`,
+`test_advice`, `test_cli`):
+
+| Модуль | Мутанты | Итог |
+|---|---|---|
+| `frames` | G1 кадр не объект, G2 единица, G3 смешение единиц, G4 два банка, G5 `blinds.bb`, G6 два средних стека, G7 средний стек > 0, G8 контекст не объект | убиты, кроме **G8 — выжил** (F4) |
+| `coach` | C1 файл уже есть, C2 проверка контекста на `start`, C3 отменять нечего, C4 `why` в `lint`, C5 `format`, C6 `version` — не `bool`, C7 имена улиц, C8 кадры — объекты, C9 шаг на кадр, C10 форма полей, C11 удаление временного файла, C12 итог улицы снимается `undo` | убиты все |
+| `handstate` | H1 `seatsPerTable`, H2 стек не растёт | убиты |
+| `advice` | A1 `history` — список, A2 ответ истории — объект | убиты |
+| `explain` | E1 вид печати, E2 `toCallBb` только при колле, E3 пустой диапазон, E4 требуемая эквити только при колле, E5 причина итога | убиты, кроме **E2 — выжил** (F6) |
+| `hand` | HD1 итог только у закрытой улицы, HD2 кеш итога | убиты |
+| `realization` | R1 зажим эквити | убит |
+| `preflop_tree` | T1 лимп только у `SB`, T2 `LIMP_RERAISE`, T3 колл только у закрывающего, T4 ход вне дерева, T5 лимп сливается с олл-ином | убиты |
+| `preflop_line` | P1 `vs_allin_after_limp` | убит |
+| `preflop_advisor` | PA1 нет кадров префлопа, PA2 мультипот, PA3 `hero_node != -1`, PA4 конец — фолд, PA5 конец — олл-ин, PA6 сверка без ответов в истории, PA7 пустая доля, PA8 смешанная рука, PA9 `chipBestAction`, PA10 опорное действие | убиты, кроме **PA3** (эквивалентен) и **PA9 — выжил** (F7) |
+
+**PA3 — эквивалентный, не находка.** Без `tree.hero_node != -1` закрытая линия, оборвавшаяся
+на решении героя, доходит до `end = …child` — это `Decision`, и следующий гард
+`not isinstance(end, Terminal)` отвечает тем же `OFF_TREE_LINE`. Пустой путь (герой в корне без
+хода) на закрытой линии недостижим: в корне герой первым в банк или `BB` без рейза — его ход
+виден по кадру флопа (вложенное изменилось или чек `BB`), а без хода героя флопа нет.
+
+**D35 — решён: печать роли словом, находка F3.** Довод «номера шагов и так дают след `1..N`» не
+держится: в раздаче из одного-двух шагов (открытие, ответ на 3-бет) следов `3` и `4` иначе нет,
+а роль `3bettor` их даёт — вписанное `3 BB` проходит линтер. Печать словом (`3-беттор`) правило
+`N-бет` линтера уже не считает числом — след пропадает без правки линтера.
+
+**Наблюдение вне ветки — новый долг D36.** `analyze` (`analyze.py:221, 326`) считает
+`requiredEquity` как `toCallBb / (potBb + toCallBb)` и при стеке героя меньше колла тоже
+ошибается (излишек ставки в банке; при «Call» = стек героя — то же занижение, что F1). План 6
+`analyze` по смыслу не меняет (Global Constraints), тренер его не зовёт — хозяин «финал, в
+ledger журнала» (Фаза 13), решение — план 7.
+
+### Таблица инвариантов спек → тесты
+
+**Спека модели колла §10 → тесты**
+
+| # | Инвариант | Тест |
+|---|---|---|
+| 1 | колл только у закрывающего; против олл-ина — у всех | `test_preflop_tree`: `test_non_closing_responder_has_no_call`, `test_limper_closes_against_isolation`, `test_call_against_an_open_allin_stays` |
+| 2 | `no_cold_call`: `CO` против открытия — есть, `BB` — нет | `test_preflop_tree`, таблица пометок (`preflop_vs_open` — да; `BB` против открытия, `open`, `vs_limp`, `vs_allin_after_raise` — нет) |
+| 3 | колд-колл незакрывающего до героя — `MULTIWAY` | `test_preflop_line::test_cold_call_before_the_hero_is_multiway` |
+| 4 | `κ = λ = 0` — вскрытие без ставок | `test_preflop_solver::test_zero_kappa_is_the_plain_showdown` |
+| 5 | `SPR = 0` — `p = e`; `e = 0.5`, `λ = 0` — `0.5` | `test_realization`: `test_zero_spr_is_the_allin`, `test_a_coin_flip_stays_a_coin_flip` |
+| 6 | дополнение до 1 | `test_realization`: `test_complement_without_position_shift`, `test_complement_with_position_shift`, `test_matrix_orientation_and_complement` |
+| 7 | монотонность по `e`, `p ≥ e` и рост по SPR при `e > 0.5` | `test_realization`: `test_monotone_in_equity`, `test_stretch_favours_the_stronger_hand` |
+| 8 | бумажная точка `p = 0.9` | `test_realization::test_paper_point` |
+| 9 | сохранение фишек на каждом терминале | `test_preflop_tree::test_chips_are_conserved_on_every_terminal` |
+| 10 | сведение к push/fold при любых `κ`, `λ` | `test_preflop_solver::test_tree_reduces_to_pushfold[plain, stretched]` |
+| 11 | эксплуатируемость ≤ `eps` при подобранных константах; WTA ICM = фишки | `test_preflop_solver`: `test_equilibrium_is_unexploitable` (константы модуля 0.25 / 0), `test_equilibrium_is_unexploitable_with_realization`, `test_winner_take_all_icm_equals_chips` |
+| 12 | `κ > 0` двигает EV колла по знаку средней эквити | `test_preflop_solver::test_stretch_moves_call_value` |
+| 13 | T2 в допуске | `test_mtt_reference::test_model_is_within_the_reference_tolerance` |
+| 14 | лимп `SB`: корень, `BB` против лимпа, `SB` против изоляции; `vs_iso`, `vs_allin_after_limp` по двум кадрам; `no_hero_limp` нет | `test_preflop_tree::test_sb_root_has_limp`, `test_short_sb_limp_merges_with_allin`; `test_preflop_line`: `test_vs_iso`, `test_vs_allin_after_limp`, `test_one_frame_after_a_hero_limp_is_ambiguous`; `test_preflop_advisor::test_no_hero_limp_is_gone` |
+| 15 | `reach` героя в `vs_iso` ∝ `byAction.limp` | `test_preflop_advisor::test_steps_are_consistent_after_limp` |
+| 16 | правило порога; маршрут на пороге и +0.1 BB | таблица журнала «Фаза 5»; `test_advice::test_first_in_route_follows_the_threshold` |
+| 17 | бюджеты | `test_advice_budget`: `test_preflop_open_six_max_fits_the_budget`, `test_preflop_nine_max_fits_the_budget` |
+
+**Спека тренера §12 → тесты**
+
+| # | Инвариант | Тест |
+|---|---|---|
+| 1 | фишки = BB поделённые; смешение, нет `blinds.bb`, два банка — отказы | `test_frames`: `test_a_frame_in_chips_is_the_frame_in_big_blinds_divided`, `test_chips_are_divided_without_rounding`, `test_mixed_units_are_refused`, `test_a_frame_in_chips_needs_the_big_blind`, `test_two_pots_are_refused` |
+| 2 | `potCenter*` + вложенное = `pot*` | `test_frames::test_the_pot_center_plus_the_street_investment_is_the_full_pot` |
+| 3 | неудачный `step`, `step` + `undo` — байт в байт | `test_coach`: `test_a_failed_step_leaves_the_file_byte_for_byte`, `test_a_write_that_fails_on_disk_leaves_the_file_byte_for_byte`, `test_step_and_undo_leave_the_file_byte_for_byte`; `test_coach_series::test_undo_after_each_step_restores_the_file` |
+| 4 | `history` шага N; `line_deviates` | `test_coach`: `test_the_history_of_step_n_is_the_answers_of_steps_before_it`, `test_a_deviation_of_the_hero_is_flagged`; `test_coach_series::test_the_deviation_series_deviates` |
+| 5 | проверки §6.2 с `match=`; `seatsPerTable` у фикстур | `test_handstate`: `test_a_stack_cannot_grow_within_a_hand`, `test_a_stack_cannot_grow_between_streets`, `test_a_stack_grows_within_the_printing_step`, `test_seats_cannot_exceed_seats_per_table`, `test_fewer_seats_than_seats_per_table_pass`; `conftest._context(seats_per_table)` |
+| 6 | у каждого советника `explain`, `STREET_CLOSERS` знает префлоп; ответы прежние | `test_hand::test_every_advisor_explains_and_the_preflop_closes`; `refactor` `ae7a77b` — сьют без правки ожиданий (Фаза 8) |
+| 7 | итог префлопа и причины | `test_hand`: `test_open_and_the_big_blind_call`, `test_a_three_bet_and_the_call`, `test_a_limp_and_the_check`, `test_no_preflop_frames`, `test_three_on_the_flop_is_multiway`, `test_a_cold_call_is_off_the_tree`, `test_everyone_folded_to_the_open_is_off_the_tree`, `test_an_all_in_and_the_call_is_a_pushfold_line`, `test_a_pushfold_spot_on_the_last_preflop_frame_is_a_pushfold_line` |
+| 8 | `display` — печать `value`; ключи на каждом споте | `test_explain`: `test_the_print_rules`, `test_preflop_facts_print_their_values`, `test_preflop_fact_keys`, `test_pushfold_facts`, `test_the_summary_facts` — **но** значение `requiredEquity` при стеке героя меньше колла не проверено и неверно (F1) |
+| 9 | линтер | `test_lint` (20 тестов: след, не след, исключения, запятая, знак, `2.0`/`2`, номера шагов, печать тем же правилом) — **но** stdin CLI на Windows (F5) и след ролей (F3) |
+| 10 | сквозные серии | `test_coach_series` (6 тестов, 7 серий) |
+
+**Review Focus плана → тесты:** 1 — `test_realization::test_almost_no_chips_behind`; 2 —
+`test_zero_weight_pairs_stay_finite`; 3 — `test_preflop_tree::test_short_sb_limp_merges_with_allin`;
+4 — `test_frames::test_chips_are_divided_without_rounding`; 5 —
+`test_hand::test_a_hand_that_starts_on_the_flop_is_a_refusal_with_a_reason`; 6 —
+`test_hand::test_the_closing_frame_brings_the_summary_and_undo_takes_it_away`; 7 —
+`test_lint::test_a_number_inside_a_refusal_reason_is_traced`.
+
+**Итог финального ревью — семь находок, F1–F7** (выше, записаны до починки). Чинит Фаза 12:
+меньше ~15 — одна фаза.
+
+### Коммиты
+
+- Кода фаза не меняла. Коммит отчёта — `docs:` этой фазы.
+
+### Тесты
+
+- До: **1431 passed, 164.1 с**. После — то же (код не менялся). Полных прогонов — один.
+
+### Решения против текста плана
+
+- Нет.
+
+### Долги
+
+- Закрыт: **D35** — решение «печать роли словом», починка — F3 в Фазе 12.
+- Новый: **D36** — `requiredEquity` `analyze` при стеке героя меньше колла; хозяин — финал, в
+  ledger журнала (план 7).
+
+### Где остановились
+
+Фаза сделана целиком: Задача 10 закрыта, финальное ревью ветки — F1–F7. Следующая — **Фаза
+12**: починка F1–F7, весь сьют и тесты бюджета зелёные.
