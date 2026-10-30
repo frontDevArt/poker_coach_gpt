@@ -29,13 +29,13 @@ def knockout_cash(bounty: float) -> float:
     Равны показанному на экране числу. Это не половина — половиной оно уже
     является по отношению к полному баунти выбитого.
     """
-    _check_bounty(bounty)
+    check_non_negative(bounty, "bounty")
     return bounty
 
 
 def own_bounty_growth(bounty: float) -> float:
     """На сколько вырастет собственный ценник героя после нокаута."""
-    _check_bounty(bounty)
+    check_non_negative(bounty, "bounty")
     return bounty * PROGRESSIVE_SHARE
 
 
@@ -45,7 +45,7 @@ def bounty_in_chips(bounty: float, chip_value: float) -> float:
     chip_value — сколько долларов стоит одна фишка на текущей стадии.
     Берётся как призовой фонд, делённый на общее число фишек в турнире.
     """
-    _check_chip_value(chip_value)
+    check_positive(chip_value, "chip_value")
     return knockout_cash(bounty) / chip_value
 
 
@@ -71,9 +71,9 @@ def required_equity_with_bounty(
     есть слой валидации CLI-ввода: `--chip-value -5` обязан падать
     одинаково вне зависимости от того, что передано в `--bounty`.
     """
-    _check_bounty(bounty)
-    _check_villain_stack(villain_stack)
-    _check_chip_value(chip_value)
+    check_non_negative(bounty, "bounty")
+    check_positive(villain_stack, "villain_stack")
+    check_positive(chip_value, "chip_value")
     check_positive(call_amount, "call_amount")
     check_non_negative(pot_before_call, "pot_before_call")
 
@@ -82,22 +82,3 @@ def required_equity_with_bounty(
         return required_equity(pot_before_call, call_amount)
     extra = bounty_in_chips(bounty, chip_value)
     return required_equity(pot_before_call + extra, call_amount)
-
-
-# `bounty`, `chip_value` и `villain_stack` проверяются общими гардами: шаблоны у прежних копий
-# были те же, поэтому тексты не изменились, а NaN и `inf` теперь
-# отвергаются здесь же, до арифметики. Иначе `--bounty inf` доходил до
-# `required_equity` внутри сдвинутого банка и отказ называл
-# `pot_before_call`, а `--villain-stack nan` молча выключал баунти.
-
-
-def _check_bounty(value: float) -> None:
-    check_non_negative(value, "bounty")
-
-
-def _check_chip_value(value: float) -> None:
-    check_positive(value, "chip_value")
-
-
-def _check_villain_stack(value: float) -> None:
-    check_positive(value, "villain_stack")
