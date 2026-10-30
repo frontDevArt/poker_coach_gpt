@@ -104,6 +104,8 @@ def test_digits_inside_other_words_are_numbers():
     assert untraced("UTG2x, 3bet, x3, 8max, D30, 77x, x55", [], 0) == [
         "2", "3", "8", "30", "77", "55"
     ]
+    # `N-бет` и `N-max` — с начала слова: цифра, приклеенная слева, остаётся числом.
+    assert untraced("x3-бет, D4-bet, ф8-max", [], 0) == ["3", "4", "8"]
     # Хвост дроби — часть числа, а не рука.
     assert untraced("0.77 и 1,55", [], 0) == ["0.77", "1.55"]
 
