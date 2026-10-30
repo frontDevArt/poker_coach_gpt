@@ -94,7 +94,8 @@ def test_a_number_with_a_unit_is_a_number():
     # «Рядом» — с любой стороны и через любой пробел: перенос строки в Markdown — тоже пробел.
     for text in ("22\nBB", "77 \nBB", "77\t%", "77 %", "77 %", "77 bb", "77 $", "77$"):
         assert untraced(text, [], 0) == [text[:2]], repr(text)
-    assert untraced("$ 77", [], 0) == ["77"]
+    for text in ("$ 77", "$\xa077", "$\n77", "$\t77"):
+        assert untraced(text, [], 0) == ["77"], repr(text)
     # Не пара — рука и рядом с `BB`-позицией: числа в ней нет.
     assert untraced("A5s BB коллирует", [], 0) == []
 
