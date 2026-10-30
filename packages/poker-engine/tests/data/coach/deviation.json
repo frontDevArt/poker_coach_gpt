@@ -1,0 +1,242 @@
+{
+  "description": "UTG и HJ сфолдили, герой CO открыл до 2.5, BTN — 3-бет до 7.5, блайнды сфолдили. Размер открытия в ответе — правило OPEN_BB, а не 2.5: шаг 2 помечен line_deviates.",
+  "context": {
+    "payouts": [
+      {
+        "from": 1,
+        "to": 1,
+        "amount": 1090.51
+      },
+      {
+        "from": 2,
+        "to": 2,
+        "amount": 840.37
+      },
+      {
+        "from": 3,
+        "to": 3,
+        "amount": 648.01
+      },
+      {
+        "from": 4,
+        "to": 6,
+        "amount": 400.0
+      }
+    ],
+    "placesPaid": 165,
+    "entrants": 1107,
+    "playersLeft": 782,
+    "lateRegOpen": true,
+    "seatsPerTable": 6,
+    "averageStackBb": 50.5
+  },
+  "frames": [
+    {
+      "street": "preflop",
+      "level": 13,
+      "blinds": {
+        "sb": 700,
+        "bb": 1400,
+        "ante": 175
+      },
+      "heroRank": 90,
+      "playersLeft": 496,
+      "seats": [
+        {
+          "seatIndex": 2,
+          "name": "p2",
+          "stackBb": 40.0,
+          "investedBb": 0.0,
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 3,
+          "name": "p3",
+          "stackBb": 40.0,
+          "investedBb": 0.0,
+          "inHand": true,
+          "isHero": true,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 4,
+          "name": "p4",
+          "stackBb": 40.0,
+          "investedBb": 0.0,
+          "inHand": true,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 5,
+          "name": "p5",
+          "stackBb": 39.5,
+          "investedBb": 0.5,
+          "inHand": true,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 6,
+          "name": "p6",
+          "stackBb": 39.0,
+          "investedBb": 1.0,
+          "inHand": true,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 7,
+          "name": "p7",
+          "stackBb": 40.0,
+          "investedBb": 0.0,
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        }
+      ],
+      "buttonSeat": 4,
+      "heroCards": [
+        "Jh",
+        "Th"
+      ],
+      "board": [],
+      "potBb": 2.25,
+      "toCallBb": 1.0,
+      "raiseToBb": null
+    },
+    {
+      "street": "preflop",
+      "level": 13,
+      "blinds": {
+        "sb": 700,
+        "bb": 1400,
+        "ante": 175
+      },
+      "heroRank": 90,
+      "playersLeft": 496,
+      "seats": [
+        {
+          "seatIndex": 2,
+          "name": "p2",
+          "stackBb": 40.0,
+          "investedBb": 0.0,
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 3,
+          "name": "p3",
+          "stackBb": 37.5,
+          "investedBb": 2.5,
+          "inHand": true,
+          "isHero": true,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 4,
+          "name": "p4",
+          "stackBb": 32.5,
+          "investedBb": 7.5,
+          "inHand": true,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 5,
+          "name": "p5",
+          "stackBb": 39.5,
+          "investedBb": 0.5,
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 6,
+          "name": "p6",
+          "stackBb": 39.0,
+          "investedBb": 1.0,
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 7,
+          "name": "p7",
+          "stackBb": 40.0,
+          "investedBb": 0.0,
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        }
+      ],
+      "buttonSeat": 4,
+      "heroCards": [
+        "Jh",
+        "Th"
+      ],
+      "board": [],
+      "potBb": 12.25,
+      "toCallBb": 5.0,
+      "raiseToBb": null
+    }
+  ],
+  "expect": [
+    {
+      "advisor": "preflop",
+      "spot": "open",
+      "flagsHas": [
+        "mh_bias",
+        "field_homogeneous",
+        "ladder_incomplete",
+        "late_reg_open",
+        "no_overcall",
+        "fixed_sizing"
+      ],
+      "flagsNot": [
+        "pko",
+        "deep_stack",
+        "limper_range_profile",
+        "line_deviates"
+      ],
+      "streets": {}
+    },
+    {
+      "advisor": "preflop",
+      "spot": "vs_3bet",
+      "flagsHas": [
+        "mh_bias",
+        "field_homogeneous",
+        "ladder_incomplete",
+        "late_reg_open",
+        "no_overcall"
+      ],
+      "flagsNot": [
+        "pko",
+        "deep_stack",
+        "limper_range_profile"
+      ],
+      "lineDeviates": {
+        "unlessStep": 1,
+        "action": "raise",
+        "sizeBb": 2.5
+      },
+      "streets": {}
+    }
+  ]
+}

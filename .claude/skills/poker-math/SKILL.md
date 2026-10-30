@@ -67,4 +67,5 @@ packages/poker-engine/.venv/Scripts/poker-engine.exe <команда> [опци�
 ## Связанные скиллы
 
 - `poker-ontology` — что означают позиции, улицы, SPR, эффективный стек.
-- `poker-review-method` — как из этих чисел собрать разбор руки.
+- `poker-review-method` — разбор раздачи по кадрам через `coach`: числа ответа — только из
+  печати фактов шагов, проверка `coach lint`.

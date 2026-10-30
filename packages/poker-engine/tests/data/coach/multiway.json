@@ -1,0 +1,225 @@
+{
+  "description": "UTG открыл до 2.0, HJ заколлировал, CO, BTN и SB сфолдили: колд-колл до героя BB — отказ. Герой заколлировал — флоп втроём: итога префлопа нет, причина — мультипот.",
+  "context": {
+    "payouts": [
+      {
+        "from": 1,
+        "to": 1,
+        "amount": 1090.51
+      },
+      {
+        "from": 2,
+        "to": 2,
+        "amount": 840.37
+      },
+      {
+        "from": 3,
+        "to": 3,
+        "amount": 648.01
+      },
+      {
+        "from": 4,
+        "to": 6,
+        "amount": 400.0
+      }
+    ],
+    "placesPaid": 165,
+    "entrants": 1107,
+    "playersLeft": 782,
+    "lateRegOpen": true,
+    "seatsPerTable": 6,
+    "averageStackBb": 50.5
+  },
+  "frames": [
+    {
+      "street": "preflop",
+      "level": 13,
+      "blinds": {
+        "sb": 700,
+        "bb": 1400,
+        "ante": 175
+      },
+      "heroRank": 90,
+      "playersLeft": 496,
+      "seats": [
+        {
+          "seatIndex": 2,
+          "name": "p2",
+          "stackBb": 38.0,
+          "investedBb": 2.0,
+          "inHand": true,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 3,
+          "name": "p3",
+          "stackBb": 40.0,
+          "investedBb": 0.0,
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 4,
+          "name": "p4",
+          "stackBb": 40.0,
+          "investedBb": 0.0,
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 5,
+          "name": "p5",
+          "stackBb": 39.5,
+          "investedBb": 0.5,
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 6,
+          "name": "p6",
+          "stackBb": 39.0,
+          "investedBb": 1.0,
+          "inHand": true,
+          "isHero": true,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 7,
+          "name": "p7",
+          "stackBb": 38.0,
+          "investedBb": 2.0,
+          "inHand": true,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        }
+      ],
+      "buttonSeat": 4,
+      "heroCards": [
+        "Jh",
+        "Th"
+      ],
+      "board": [],
+      "potBb": 6.25,
+      "toCallBb": 1.0,
+      "raiseToBb": null
+    },
+    {
+      "street": "flop",
+      "level": 13,
+      "blinds": {
+        "sb": 700,
+        "bb": 1400,
+        "ante": 175
+      },
+      "heroRank": 90,
+      "playersLeft": 496,
+      "seats": [
+        {
+          "seatIndex": 2,
+          "name": "p2",
+          "stackBb": 38.0,
+          "investedBb": 0.0,
+          "inHand": true,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 3,
+          "name": "p3",
+          "stackBb": 40.0,
+          "investedBb": 0.0,
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 4,
+          "name": "p4",
+          "stackBb": 40.0,
+          "investedBb": 0.0,
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 5,
+          "name": "p5",
+          "stackBb": 39.5,
+          "investedBb": 0.0,
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 6,
+          "name": "p6",
+          "stackBb": 38.0,
+          "investedBb": 0.0,
+          "inHand": true,
+          "isHero": true,
+          "vpip": 25.0,
+          "vpipHands": 60
+        },
+        {
+          "seatIndex": 7,
+          "name": "p7",
+          "stackBb": 38.0,
+          "investedBb": 0.0,
+          "inHand": true,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60
+        }
+      ],
+      "buttonSeat": 4,
+      "heroCards": [
+        "Jh",
+        "Th"
+      ],
+      "board": [
+        "8c",
+        "2s",
+        "9d"
+      ],
+      "potBb": 7.25,
+      "toCallBb": 0.0,
+      "raiseToBb": null
+    }
+  ],
+  "expect": [
+    {
+      "advisor": null,
+      "reasons": {
+        "pushfold": "банк открыт не олл-ином: это не спот push/fold",
+        "preflop": "в банк до героя вошли двое и больше: мультипот вне модели"
+      },
+      "streets": {}
+    },
+    {
+      "advisor": null,
+      "reasons": {
+        "pushfold": "push/fold советует только на префлопе",
+        "preflop": "советник префлопа работает только на префлопе"
+      },
+      "streets": {
+        "preflop": {
+          "reason": "итога префлопа нет: на флоп пришли трое и больше — мультипот вне модели"
+        }
+      }
+    }
+  ]
+}

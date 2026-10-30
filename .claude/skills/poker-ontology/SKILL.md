@@ -101,4 +101,5 @@ PREFLOP → FLOP → TURN → RIVER. Сравнимы по порядку.
 ## Связанные скиллы
 
 - `poker-math` — все числа.
-- `poker-review-method` — процедура разбора руки.
+- `poker-review-method` — процедура разбора руки: по кадрам, через `coach`.
+- `poker-hand-vision` — кадр и контекст со скриншота.

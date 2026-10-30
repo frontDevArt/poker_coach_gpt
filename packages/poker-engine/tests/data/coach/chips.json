@@ -1,0 +1,289 @@
+{
+  "description": "Серия open_3bet_flop в фишках (большой блайнд 1400), с банком «середина» и средним стеком в фишках: каждый шаг равен шагу серии open_3bet_flop.",
+  "context": {
+    "payouts": [
+      {
+        "from": 1,
+        "to": 1,
+        "amount": 1090.51
+      },
+      {
+        "from": 2,
+        "to": 2,
+        "amount": 840.37
+      },
+      {
+        "from": 3,
+        "to": 3,
+        "amount": 648.01
+      },
+      {
+        "from": 4,
+        "to": 6,
+        "amount": 400.0
+      }
+    ],
+    "placesPaid": 165,
+    "entrants": 1107,
+    "playersLeft": 782,
+    "lateRegOpen": true,
+    "seatsPerTable": 6,
+    "averageStackChips": 70700
+  },
+  "frames": [
+    {
+      "street": "preflop",
+      "level": 13,
+      "blinds": {
+        "sb": 700,
+        "bb": 1400,
+        "ante": 175
+      },
+      "heroRank": 90,
+      "playersLeft": 496,
+      "seats": [
+        {
+          "seatIndex": 2,
+          "name": "p2",
+          "inHand": true,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60,
+          "stackChips": 56000,
+          "investedChips": 0
+        },
+        {
+          "seatIndex": 3,
+          "name": "p3",
+          "inHand": true,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60,
+          "stackChips": 56000,
+          "investedChips": 0
+        },
+        {
+          "seatIndex": 4,
+          "name": "p4",
+          "inHand": true,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60,
+          "stackChips": 56000,
+          "investedChips": 0
+        },
+        {
+          "seatIndex": 5,
+          "name": "p5",
+          "inHand": true,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60,
+          "stackChips": 55300,
+          "investedChips": 700
+        },
+        {
+          "seatIndex": 6,
+          "name": "p6",
+          "inHand": true,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60,
+          "stackChips": 54600,
+          "investedChips": 1400
+        },
+        {
+          "seatIndex": 7,
+          "name": "p7",
+          "inHand": true,
+          "isHero": true,
+          "vpip": 25.0,
+          "vpipHands": 60,
+          "stackChips": 56000,
+          "investedChips": 0
+        }
+      ],
+      "buttonSeat": 4,
+      "heroCards": [
+        "Jh",
+        "Th"
+      ],
+      "board": [],
+      "unit": "chips",
+      "potCenterChips": 1050,
+      "toCallChips": 1400,
+      "raiseToChips": null
+    },
+    {
+      "street": "preflop",
+      "level": 13,
+      "blinds": {
+        "sb": 700,
+        "bb": 1400,
+        "ante": 175
+      },
+      "heroRank": 90,
+      "playersLeft": 496,
+      "seats": [
+        {
+          "seatIndex": 2,
+          "name": "p2",
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60,
+          "stackChips": 56000,
+          "investedChips": 0
+        },
+        {
+          "seatIndex": 3,
+          "name": "p3",
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60,
+          "stackChips": 56000,
+          "investedChips": 0
+        },
+        {
+          "seatIndex": 4,
+          "name": "p4",
+          "inHand": true,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60,
+          "stackChips": 46200,
+          "investedChips": 9800
+        },
+        {
+          "seatIndex": 5,
+          "name": "p5",
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60,
+          "stackChips": 55300,
+          "investedChips": 700
+        },
+        {
+          "seatIndex": 6,
+          "name": "p6",
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60,
+          "stackChips": 54600,
+          "investedChips": 1400
+        },
+        {
+          "seatIndex": 7,
+          "name": "p7",
+          "inHand": true,
+          "isHero": true,
+          "vpip": 25.0,
+          "vpipHands": 60,
+          "stackChips": 53200,
+          "investedChips": 2800
+        }
+      ],
+      "buttonSeat": 4,
+      "heroCards": [
+        "Jh",
+        "Th"
+      ],
+      "board": [],
+      "unit": "chips",
+      "potCenterChips": 1050,
+      "toCallChips": 7000,
+      "raiseToChips": null
+    },
+    {
+      "street": "flop",
+      "level": 13,
+      "blinds": {
+        "sb": 700,
+        "bb": 1400,
+        "ante": 175
+      },
+      "heroRank": 90,
+      "playersLeft": 496,
+      "seats": [
+        {
+          "seatIndex": 2,
+          "name": "p2",
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60,
+          "stackChips": 56000,
+          "investedChips": 0
+        },
+        {
+          "seatIndex": 3,
+          "name": "p3",
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60,
+          "stackChips": 56000,
+          "investedChips": 0
+        },
+        {
+          "seatIndex": 4,
+          "name": "p4",
+          "inHand": true,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60,
+          "stackChips": 46200,
+          "investedChips": 0
+        },
+        {
+          "seatIndex": 5,
+          "name": "p5",
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60,
+          "stackChips": 55300,
+          "investedChips": 0
+        },
+        {
+          "seatIndex": 6,
+          "name": "p6",
+          "inHand": false,
+          "isHero": false,
+          "vpip": 25.0,
+          "vpipHands": 60,
+          "stackChips": 54600,
+          "investedChips": 0
+        },
+        {
+          "seatIndex": 7,
+          "name": "p7",
+          "inHand": true,
+          "isHero": true,
+          "vpip": 25.0,
+          "vpipHands": 60,
+          "stackChips": 46200,
+          "investedChips": 0
+        }
+      ],
+      "buttonSeat": 4,
+      "heroCards": [
+        "Jh",
+        "Th"
+      ],
+      "board": [
+        "8c",
+        "2s",
+        "9d"
+      ],
+      "unit": "chips",
+      "potCenterChips": 22750,
+      "toCallChips": 0,
+      "raiseToChips": null
+    }
+  ],
+  "sameAs": "open_3bet_flop"
+}
