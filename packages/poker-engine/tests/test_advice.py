@@ -11,6 +11,7 @@ from poker_engine import advice, preflop_advisor, pushfold
 from poker_engine.pushfold_game import PUSHFOLD_MAX_BB
 from poker_engine.advice import advise
 from poker_engine.analyze import analyze
+from poker_engine.hand import Hand
 from poker_engine.handstate import context_from_dict, node_from_dict
 from poker_engine.preflop_line import AMBIGUOUS
 
@@ -25,18 +26,18 @@ class _Fake:
         self.takes = takes
         self.seen: list = []
 
-    def applies(self, context, nodes):
+    def applies(self, hand):
         return None if self.takes else f"{self.name} не берёт"
 
-    def advise(self, context, nodes, history):
-        self.seen.append((context, nodes, history))
+    def advise(self, hand, history):
+        self.seen.append((hand.context, hand.nodes, history))
         return {"advisor": self.name}
 
 
 def _direct(raw: dict) -> dict:
     """Ответ `pushfold` в обход реестра — на тех же разобранных данных."""
     context = context_from_dict(_context())
-    return pushfold.advise(context, [node_from_dict(raw)], [])
+    return pushfold.advise(Hand(context, [node_from_dict(raw)]), [])
 
 
 # --- реестр ----------------------------------------------------------------------------------
@@ -84,7 +85,7 @@ def test_first_in_route_follows_the_threshold(stack, advisor, spot):
 
 def test_the_reason_comes_from_the_advisor_itself():
     context = context_from_dict(_context())
-    assert pushfold.applies(context, [node_from_dict(_node())]) == _NOT_ALL_IN
+    assert pushfold.applies(Hand(context, [node_from_dict(_node())])) == _NOT_ALL_IN
 
 
 # --- второй советник регистрацией ------------------------------------------------------------

@@ -11,32 +11,34 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Protocol
 
 from . import preflop_advisor, pushfold
-from .handstate import DecisionNode, TournamentContext, context_from_dict, node_from_dict
-from .handstate import validate_hand
+from .hand import Hand
+from .handstate import context_from_dict, node_from_dict, validate_hand
 
-__all__ = ["ADVISORS", "Advisor", "advise"]
+__all__ = ["ADVISORS", "STREET_CLOSERS", "Advisor", "advise"]
 
 
 class Advisor(Protocol):
     """Советник: `name`, `applies` — `None` или причина отказа, `advise` — ответ.
 
-    `context` и `nodes` приходят разобранными и проверенными; `history` — прошлые ответы
+    `hand` приходит разобранной и проверенной (спека тренера §7.1); `history` — прошлые ответы
     `advise` в этой раздаче, по порядку.
     """
 
     name: str
 
-    def applies(self, context: TournamentContext, nodes: list[DecisionNode]) -> str | None: ...
+    def applies(self, hand: Hand) -> str | None: ...
 
-    def advise(
-        self, context: TournamentContext, nodes: list[DecisionNode], history: list[dict]
-    ) -> dict: ...
+    def advise(self, hand: Hand, history: list[dict]) -> dict: ...
 
 
 ADVISORS: tuple[Advisor, ...] = (pushfold, preflop_advisor)
+
+# Итог улицы считает её советник: улица → функция `Hand → итог` (спека тренера §7.1, §7.3).
+STREET_CLOSERS: dict[str, Callable[[Hand], dict]] = {}
 
 
 def advise(context_raw: dict, nodes_raw: list[dict], history_raw: list[dict]) -> dict:
@@ -62,11 +64,12 @@ def advise(context_raw: dict, nodes_raw: list[dict], history_raw: list[dict]) ->
     context = context_from_dict(context_raw)
     nodes = [node_from_dict(raw) for raw in nodes_raw]
     validate_hand(context, nodes)
+    hand = Hand(context, nodes)
 
     refusals = []
     for advisor in ADVISORS:
-        reason = advisor.applies(context, nodes)
+        reason = advisor.applies(hand)
         if reason is None:
-            return advisor.advise(context, nodes, history_raw)
+            return advisor.advise(hand, history_raw)
         refusals.append({"advisor": advisor.name, "reason": reason})
     return {"advisor": None, "notApplicable": refusals}

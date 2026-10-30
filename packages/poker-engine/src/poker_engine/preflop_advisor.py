@@ -36,6 +36,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from . import allin_matrix, nash, preflop_solver
+from .hand import Hand
 from .handstate import DecisionNode, TournamentContext, assign_positions
 from .preflop_line import Act, Line, read_line
 from .preflop_solver import Solution, action_values, reach
@@ -60,12 +61,12 @@ _TREE_FLAGS = (
 _SIZE_NOISE = 1e-9
 
 
-def applies(context: TournamentContext, nodes: list[DecisionNode]) -> str | None:
+def applies(hand: Hand) -> str | None:
     """`None`, если линия и дерево последнего узла строятся, иначе причина отказа."""
-    line = read_line(nodes)
+    line = read_line(hand.nodes)
     if isinstance(line, str):
         return line
-    tree = build(line, nodes[-1])
+    tree = build(line, hand.nodes[-1])
     return tree if isinstance(tree, str) else None
 
 
@@ -113,10 +114,10 @@ def _icm_eps(tree: Tree, chips: list, plain: list) -> float:
     return nash.EPS_CHIP_BB * float(plain[at][0].sum()) / float(chips[at][0].sum())
 
 
-def advise(context: TournamentContext, nodes: list[DecisionNode], history: list[dict]) -> dict:
+def advise(hand: Hand, history: list[dict]) -> dict:
     """Совет на последнем узле. Предусловие — `applies` вернул `None`."""
-    node = nodes[-1]
-    solved = _solve(context, nodes)
+    context, node = hand.context, hand.nodes[-1]
+    solved = _solve(context, hand.nodes)
     tree = solved.tree
     hero = tree.nodes[tree.hero_node]
     me = hero.player
@@ -129,11 +130,11 @@ def advise(context: TournamentContext, nodes: list[DecisionNode], history: list[
             best = at
     chosen = hero.actions[best]
 
-    hand = allin_matrix.class_of(node.hero_cards)
+    hero_class = allin_matrix.class_of(node.hero_cards)
     result: dict = {"advisor": name, "spot": solved.line.kind, "action": chosen.kind}
     if chosen.kind not in _PASSIVE:
         result["sizeBb"] = chosen.to_bb
-    result["heroHand"] = hand
+    result["heroHand"] = hero_class
     result["effectiveStackBb"] = _effective(tree, me)
     positions = assign_positions(node)
     result["line"] = [_act(act, positions) for act in solved.line.acts]
@@ -151,7 +152,7 @@ def advise(context: TournamentContext, nodes: list[DecisionNode], history: list[
         result["bountyUsd"] = (usd[best] - usd[0]) - (plain[best] - plain[0])
 
     strategy = solved.by_icm.strategy[tree.hero_node]
-    index = allin_matrix.class_index(hand)
+    index = allin_matrix.class_index(hero_class)
     result["ranges"] = {
         "hero": {
             "byAction": {a.kind: _classes(row) for a, row in zip(hero.actions, strategy)},

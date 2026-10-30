@@ -31,6 +31,7 @@ from poker_engine import (
     profiles,
     pushfold,
 )
+from poker_engine.hand import Hand
 from poker_engine.handstate import context_from_dict, node_from_dict, validate_hand
 from poker_engine.preflop_line import MULTIWAY, PUSHFOLD_SPOT, read_line
 from poker_engine.preflop_tree import LIMP_RERAISE, build, chip_payoffs, icm_payoffs
@@ -131,10 +132,10 @@ def test_pushfold_answers_unchanged(make):
     context_raw = _context(len(raw["seats"]))
     nodes = _nodes([raw], context_raw)
     context = context_from_dict(context_raw)
-    assert preflop_advisor.applies(context, nodes) == PUSHFOLD_SPOT
+    assert preflop_advisor.applies(Hand(context, nodes)) == PUSHFOLD_SPOT
     answer = _advise([raw], context_raw)
     assert answer["advisor"] == "pushfold"
-    assert answer == pushfold.advise(context, nodes, [])
+    assert answer == pushfold.advise(Hand(context, nodes), [])
 
 
 def test_refusals_are_the_line_and_tree_texts():

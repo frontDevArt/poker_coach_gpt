@@ -17,6 +17,7 @@ from conftest import (
 )
 from poker_engine import bounty, nash, pushfold
 from poker_engine.allin_matrix import CLASSES, class_index, equity_matrix, hand_weights
+from poker_engine.hand import Hand
 from poker_engine.handstate import context_from_dict, node_from_dict, validate_hand
 from poker_engine.nash import Game, opener_ev, range_share, solve
 from poker_engine.pushfold_game import chip_outcomes, icm_outcomes, read_spot
@@ -56,8 +57,8 @@ def _advise(raw: dict, context_raw: dict | None = None, history: list | None = N
     context = context_from_dict(_context() if context_raw is None else context_raw)
     nodes = [node_from_dict(raw)]
     validate_hand(context, nodes)
-    assert pushfold.applies(context, nodes) is None
-    return pushfold.advise(context, nodes, [] if history is None else history)
+    assert pushfold.applies(Hand(context, nodes)) is None
+    return pushfold.advise(Hand(context, nodes), [] if history is None else history)
 
 
 def _games(raw: dict, context_raw: dict | None = None) -> tuple[Game, Game, float]:
@@ -100,8 +101,8 @@ def test_applies_gives_the_spot_refusal_verbatim():
     raw["board"] = ["2c", "7d", "Ks"]
     context = context_from_dict(_context())
     node = node_from_dict(raw)
-    assert pushfold.applies(context, [node]) == "push/fold советует только на префлопе"
-    assert pushfold.applies(context, [node]) == read_spot(node)
+    assert pushfold.applies(Hand(context, [node])) == "push/fold советует только на префлопе"
+    assert pushfold.applies(Hand(context, [node])) == read_spot(node)
 
 
 # --- форма ответа ----------------------------------------------------------------------------

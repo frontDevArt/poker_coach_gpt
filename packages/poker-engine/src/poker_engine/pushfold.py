@@ -50,6 +50,7 @@ from __future__ import annotations
 import numpy
 
 from . import allin_matrix, nash
+from .hand import Hand
 from .handstate import DecisionNode, TournamentContext, assign_positions
 from .pushfold_game import (
     Outcomes,
@@ -68,16 +69,16 @@ CLASS_FREQ_STEP = 0.01
 _ACTIVE = {"first_in": "allin", "facing_allin": "call"}
 
 
-def applies(context: TournamentContext, nodes: list[DecisionNode]) -> str | None:
+def applies(hand: Hand) -> str | None:
     """`None`, если последний узел — спот push/fold, иначе причина отказа."""
-    spot = read_spot(nodes[-1])
+    spot = read_spot(hand.nodes[-1])
     return spot if isinstance(spot, str) else None
 
 
-def advise(context: TournamentContext, nodes: list[DecisionNode], history: list[dict]) -> dict:
+def advise(hand: Hand, history: list[dict]) -> dict:
     """Совет на последнем узле. Предусловие — `applies` вернул `None`; `history` не читается:
     после олл-ина героя решений в раздаче больше нет."""
-    node = nodes[-1]
+    context, node = hand.context, hand.nodes[-1]
     spot = read_spot(node)
     responders = len(spot.players) - 1
     pko = any(seat.bounty_usd is not None for seat in node.seats)
@@ -89,9 +90,9 @@ def advise(context: TournamentContext, nodes: list[DecisionNode], history: list[
     by_icm = nash.solve(icm_game, icm_eps, nash.MAX_ITERATIONS)
     by_chip = nash.solve(chip_game, nash.EPS_CHIP_BB, nash.MAX_ITERATIONS)
 
-    hand = allin_matrix.class_of(node.hero_cards)
+    hero_class = allin_matrix.class_of(node.hero_cards)
     weights = allin_matrix.hand_weights(node.hero_cards)
-    equity = allin_matrix.equity_matrix()[allin_matrix.class_index(hand)]
+    equity = allin_matrix.equity_matrix()[allin_matrix.class_index(hero_class)]
 
     def hero_ev(game: nash.Game, equilibrium: nash.Equilibrium) -> tuple[float, float]:
         if spot.hero_at == 0:
@@ -109,7 +110,7 @@ def advise(context: TournamentContext, nodes: list[DecisionNode], history: list[
     result: dict = {"advisor": name, "spot": spot.kind, "action": action}
     if action != "fold":
         result["sizeBb"] = _size(spot)
-    result["heroHand"] = hand
+    result["heroHand"] = hero_class
     result["effectiveStackBb"] = _effective(spot)
 
     ev: dict = {
@@ -121,7 +122,7 @@ def advise(context: TournamentContext, nodes: list[DecisionNode], history: list[
         ev["bountyUsd"] = margin_usd - (plain_active - plain_fold)
     result["ev"] = ev
 
-    index = allin_matrix.class_index(hand)
+    index = allin_matrix.class_index(hero_class)
     hero_icm, hero_chip = _row(by_icm, spot.hero_at), _row(by_chip, spot.hero_at)
     positions = assign_positions(node)
     result["ranges"] = {
