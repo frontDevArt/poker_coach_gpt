@@ -2401,3 +2401,189 @@ README шире Step 4 (`ranges.hero.reach`, «Что реализовано»).
 
 Фаза сделана целиком. Следующая — **Фаза 10**: ревью починки `bf5a845` и Задачи 9 (`0540467`),
 Задача 10 (гигиена D13, D19).
+
+## Фаза 10 (2026-10-30)
+
+Ревью: починка Фазы 9b — `bf5a845` (тест `$` перед парой через любой пробел); Задача 9 —
+`0540467` (серии, скиллы L6/L7, README). Реализация по карточке: Задача 10 (гигиена D13, D19).
+
+Вход: сессия **локальная**, вторая машина пользователя (Windows 11, 24 ядра, Python 3.14).
+Стартовая ветка — `feat/preflop-trainer`, HEAD `fbf424a` (коммит `docs:` Фазы 9b), дерево чистое,
+совпадает с `origin`; переключение не понадобилось.
+
+База: **1456 passed, 163.3 с** — число совпадает с промптом.
+
+### Ревью починки Фазы 9b
+
+**`bf5a845`.** `$ 77`, `$\xa077`, `$\n77`, `$\t77` — числа (`["77"]`, запись в `repr` для
+сообщения). Код не менялся, тест закрепляет решение Фазы 9 «пробел — любой (`\s`)» перед парой.
+Мутант X1 журнала «Фаза 9b» (`(?<!\$ )`) — **убит** (1 тест). С этим Задача 8 закрыта.
+
+### Ревью Задачи 9
+
+**Серии против спеки §11.1 и Step 1 плана.** Семь файлов, `test_the_series_of_the_plan_are_all_here`
+пинит состав. Ожидания — из правил движка, чисел ответа нет:
+
+- пометки — только следующие из входа: контекст (`lateRegOpen`, лесенка до 6-го места при 165
+  платных — `ladder_incomplete`, поле — `field_homogeneous`, `mh_bias` всегда); `no_overcall` ⇔
+  `len(players) > 2` в `preflop_tree.build` (у `SB` против `BB` — нет, у `CO` с тремя за спиной —
+  да); `deep_stack` — `effective > REALIZATION_TRUST_BB`, у всех 40 BB — нет; `limper_range_profile`
+  — лимпер-соперник (`BB` против лимпа `SB` — да, лимп самого героя — нет); `fixed_sizing` —
+  рейз правила (`_Builder._aggression`);
+- `line_deviates` — связью `unlessStep`: `_deviates` теста повторяет правило советника (другое
+  действие или размер дальше `SIZE_STEP_BB`); `deviation` — безусловно, с `OPEN_BB = 2.0`
+  против 2.5;
+- `chips` — `played(name) == played(same)`: выводы шагов целиком (ответ, факты, итоги);
+  `undo` — цикл по **всем** кадрам, включая флоп, закрывший префлоп (Review Focus 6);
+- вписанное `1234.5`: в печати BB — один знак и не больше суммы стеков стола (240 BB), EV в BB и
+  доллары — два знака (`1234.50` — другая строка, сравнение строкой), доли — не больше `100.0%`,
+  номера шагов — до 3; тексты причин и ролей таких чисел не содержат. В печать попасть не может.
+
+**Мутанты** (закоммиченный код, по одному скриптом вне репо, `PYTHONDONTWRITEBYTECODE=1`, откат
+`git checkout --`, чистка `__pycache__`; прогон `test_coach_series`, кроме X1 и Y1b). S1–S4 журнала
+«Фаза 9b» повторены, Y1–Y6 — свои:
+
+| Мутант | Итог |
+|---|---|
+| X1 перед парой — только обычный пробел (`test_lint`) | убит, 1 |
+| S1 `coach.step`: `history` пустая | убит, 2 |
+| S2 банк «середина» без вложенного | убит, 2 |
+| S3 `undo` не снимает итог улицы | убит, 1 |
+| S4 итог улицы не пишется в `streets` | убит, 3 |
+| Y1 факты итога улицы не пишутся в `why` | **выжил** в сериях |
+| Y1b то же, прогон `test_coach`, `test_hand`, `test_lint`, `test_explain` | убит, 3 |
+| Y2 `coach.lint` без номеров шагов | убит, 7 |
+| Y3 `line_deviates` никогда | убит, 2 |
+| Y4 `line_deviates` всегда | убит, 4 |
+| Y5 фишки: место не переводится в BB | убит, 2 |
+| Y6 `averageStackChips` не делится как надо | убит, 1 |
+
+**Не находка — Y1 в сериях.** Серии проверяют итог улицы по `streets` вывода, а текст шага
+флопа собирается из `why`: без фактов итога он короче, но линтер проходит. Факты итога в `why`
+закреплены юнит-тестами (`test_hand.py:233`, `test_lint.py:181`) — сьют мутант убивает. Спека
+§11.1 требует от серий итог улицы, его они проверяют.
+
+**Скиллы против спеки §10.** L6 (`poker-hand-vision`): таблицы полей кадра, места и контекста с
+местом на экране; «только видимое», один точный вопрос; без арифметики (`*Chips`, банк как
+показан); ошибка `coach step` — перечитать названное поле, при сомнении спросить, подгонять
+нельзя; «кадр прошёл, но прочитан неверно» — `undo`; раздел «Проверить на приёмке» (банк,
+единицы, VPIP, олл-ин, ценник головы). Тексты ошибок сверены с кодом: «стек на месте N вырос
+внутри раздачи» (`handstate.py:570`, начало текста), «мест за столом (7) больше, чем
+seatsPerTable (6)» (`:410`), «в кадре два банка» (`frames.py:52`, начало), «поле stackBb не для
+кадра в chips» (`frames.py:38`, шаблон). L7 (`poker-review-method`): сессия `start` → (L6,
+`step`, текст, `lint`) → `undo`; форма §2; правила — все пункты §10. Ключи таблицы «строка →
+факты» сверены с `fact(…)` в `preflop_advisor.py`, `pushfold.py`, `explain.py` — все есть, имена
+те же; вывод `step` — `{"step", "advisor", "answer", "why", "streets"}`; аргументы CLI — как в
+`cli.py:271–283`. Правила «не чисел» L7 — каждое прогнано через `lint.untraced`: `2 BB`, `15%`,
+`5A`, `89s`, `9T`, `77 BB`, `77%`, `$77`, `3bet`, `8max`, `77 BB коллирует` — числа; `2.0 BB`
+(в следе), `BB 77`, `UTG1`, `UTG+1`, `3-бет`, `4-bet`, `8-max`, `77`, `A5s`, `T9o`, `98s`, `A5`,
+`K9`, `AhKd`, `BB коллирует с 77`, `` `3.5 BB` ``, `0.35 BB` и `0,35 BB` при следе `+0.35 BB` —
+нет. Все пометки ответов `preflop`/`pushfold` есть в таблице `poker-preflop-mtt`.
+
+**README** против кода: тексты ошибок `coach` (`coach.py:37, 98, 141, 173`), атомарная запись
+(`mkstemp` + `os.replace`), `ROUNDING_STEP_BB = 0.1`, `averageStackChips`, ключи фактов, реестры
+`ADVISORS`/`STREET_CLOSERS` — совпадают.
+
+**Ссылки D13:** `poker-ontology:104`, `poker-math:70` → `poker-review-method`, плюс
+`poker-hand-vision` в `poker-ontology` и `poker-preflop-mtt`; скилл существует. Пункт Задачи 9
+D13 закрыт `0540467` — подтверждено.
+
+**Итог ревью — `НАХОДОК НЕТ`** (и `bf5a845`, и Задача 9). Задачи 8 и 9 закрыты.
+
+**Чекпоинт:** находок нет — Задача 10 начинается в этой фазе.
+
+### Задача 10
+
+Решения — блок «Решения по ходу (Фаза 10, 2026-10-30)» Задачи 10 плана. `positions_for` в
+`_validate_node` не делался — действует план, а не спека §14 (промпт фазы).
+
+1. `bd24155` — `refactor(engine): удалить мёртвые field и TableSnapshot, гарды bounty через
+   _checks`. Удалены `field.py` (`reduce_field`, `SCALE`) с `tests/test_field.py`;
+   `types.TableSnapshot` и `ChipConservationError` (бросал только `TableSnapshot.validate`) с
+   тремя тестами `test_types.py`. Обёртки `bounty.py` заменены прямыми вызовами `check_*` с теми
+   же именами; `test_bounty.py` не тронут и зелёный — тексты байт в байт. README: строки `field` и
+   `types`. **Поправка к сообщению коммита:** там «22 теста» `test_field.py` — посчитано по `def
+   test` с ошибкой; собиралось **27** (сбор `--collect-only` на `fbf424a`).
+2. `d013668` — `fix(engine): текст hero_equity на пустом диапазоне`. `_check_seat` сначала зовёт
+   `_check_seat_count`: `hero_equity`, `risk_premium`, `bubble_factor`, `pressure` на `[]` —
+   «за столом нет игроков». Тест `test_an_empty_table_is_named_not_its_range` (`match=`), до
+   починки красный.
+3. `941accf` — `fix(engine): относительный допуск давления ICM (D19)`. `icm.PRESSURE_TOL = 1e-9`,
+   допуск — `PRESSURE_TOL · sum(payouts)` (`icm.py`) и `PRESSURE_TOL · ladder.total()`
+   (`icm_field._tol`, все пять сравнений `isclose`). Тесты `test_pressure_is_scale_invariant[1.0,
+   1e-12]` в `test_icm.py` и `test_icm_field_pressure.py`: на старом коде красные все четыре
+   (×1e-12 — «не определён»; ×1 — вторая половина не бросала: сдвиг эквити `1e-9` долларов
+   проходил абсолютный допуск).
+
+**Удалённые тесты** (30):
+
+- `test_field.py` (27): `test_hero_stack_survives_scaling`, `test_table_stacks_come_first_and_in_order`,
+  `test_node_count_is_capped`, `test_total_chips_are_preserved`, `test_hero_share_of_chips_is_preserved`,
+  `test_field_equal_to_the_table_is_left_alone`, `test_field_equal_to_the_table_needs_no_average_stack`,
+  `test_a_field_larger_than_the_table_still_needs_the_average_stack`,
+  `test_a_useless_average_stack_is_still_rejected`, `test_every_stack_is_a_positive_integer`,
+  `test_field_smaller_than_the_table_is_rejected`, `test_average_inconsistent_with_the_table_is_rejected`,
+  `test_hero_index_outside_the_table_is_rejected`, `test_cap_below_table_size_is_rejected`,
+  `test_stack_below_the_printed_precision_is_rejected`, `test_empty_table_is_rejected`,
+  `test_non_positive_table_stack_is_rejected[0.0, -5.0]`,
+  `test_non_positive_average_stack_is_rejected[0.0, -1.0]`, `test_negative_hero_index_is_rejected`,
+  `test_cap_equal_to_table_size_leaves_no_room_for_the_rest`,
+  `test_cap_equal_to_table_size_is_fine_when_the_table_is_the_field`,
+  `test_average_leaving_exactly_zero_for_the_rest_is_rejected`,
+  `test_seat_labels_name_the_seat_instead_of_the_list_position`,
+  `test_seat_labels_of_the_wrong_length_are_rejected`, `test_smallest_printable_stack_is_accepted`;
+- `test_types.py` (3): `test_snapshot_conserves_chips`, `test_snapshot_rejects_chip_leak`,
+  `test_effective_stack_is_second_largest_when_heads_up`.
+
+Ни один не проверял код вне удалённого: `reduce_field` и `TableSnapshot` не звал никто (`grep` по
+`src`, `tests`, README, скиллам).
+
+**Самопроверка мутантами** (закоммиченный код, тем же порядком; прогон своего тест-файла, у
+`bounty.py` — `test_bounty` и `test_cli`):
+
+| Мутант | Итог |
+|---|---|
+| Z1 `icm_field`: снос `isclose(money_up, 0)` | **убит**, 2 (D19: в плане 3 выживал) |
+| Z2 `icm`: снос `isclose(money_up, 0)` | **убит**, 2 |
+| Z3 `icm_field`: RP `isclose(now, 0)` → `now != 0` | **убит**, 2 (в плане 3 выживал) |
+| Z4 `icm`: то же | убит, 2 |
+| Z5 `icm_field`: допуск снова абсолютный | убит, 2 |
+| Z6 `icm`: допуск снова абсолютный | убит, 2 |
+| Z7 `icm_field`: ветвь BF `1.0` без проверки `now` | убит, 3 |
+| Z8 `_check_seat` без `_check_seat_count` | убит, 1 |
+| Z9–Z12, Z14 снос каждого гарда `bounty`/`chip_value` по функциям | убиты, 1–2 |
+| Z13 снос гарда `villain_stack` | убит, 4 |
+| Z15 имя `villain_stack` → `chip_value` | убит, 4 |
+
+Z1–Z4 убивает вторая половина `test_pressure_is_scale_invariant` (одна фишка против 1e11 при
+победителе-всё: сдвиг эквити ~1e-11 от призов — давление не определено на обоих масштабах);
+лесенка ×1e-12 сама их не убивает — мутант там совпадает с кодом.
+
+### Коммиты
+
+- `bd24155`, `d013668`, `941accf` — Задача 10.
+- Коммит отчёта — `docs:` этой фазы.
+
+### Тесты
+
+- До: **1456 passed, 163.3 с**.
+- После: **1431 passed, 161.1 с** (−27 `test_field`, −3 `test_types`, +1 пустой стол, +2 + 2
+  `test_pressure_is_scale_invariant`).
+- Полных прогонов — два (база; после Задачи 10).
+
+### Решения против текста плана
+
+Блок «Решения по ходу (Фаза 10, 2026-10-30)» Задачи 10: `ChipConservationError` удалён с
+`TableSnapshot`; обёртки `bounty.py` сняты; `hero_equity` — в `icm_field.py`, а не `equity.py`;
+`_check_seat` проверяет размер стола раньше места; `icm._icm_branches` с пустым `stacks` не тронут
+(с CLI недостижим); тест D19 — в обоих модулях, мутант убивает вторая половина.
+
+### Долги
+
+- Закрыт: **D13** целиком (пункты Задачи 10 — `bd24155`, `d013668`), **D19** (`941accf`).
+- Новых нет. Открыт D35 — хозяин Фаза 11.
+
+### Где остановились
+
+Фаза сделана целиком, Задачи 8 и 9 закрыты ревью. Следующая — **Фаза 11**: ревью Задачи 10 и
+финальное ревью ветки, только ревью; D35.

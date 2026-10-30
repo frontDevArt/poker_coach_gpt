@@ -772,17 +772,41 @@
 - Modify: `src/poker_engine/bounty.py` (гарды через `_checks`), `src/poker_engine/equity.py` (текст
   `hero_equity([], …)`), `src/poker_engine/icm.py`, `src/poker_engine/icm_field.py` (D19), README
 
-- [ ] **Step 1: `refactor(engine)`** — удалить `field.py`, `TableSnapshot` с тестами (список удалённых
+- [x] **Step 1: `refactor(engine)`** — удалить `field.py`, `TableSnapshot` с тестами (список удалённых
   тестов — в журнал); гарды `bounty.py` через `_checks` — тексты байт в байт прежние (тесты
   `test_bounty.py` без правки); строка README «`field`» убрана. Коммит
   `refactor(engine): удалить мёртвые field и TableSnapshot, гарды bounty через _checks`.
-- [ ] **Step 2: `fix(engine)`** — текст `hero_equity` на пустом диапазоне называет пустой диапазон, а
+- [x] **Step 2: `fix(engine)`** — текст `hero_equity` на пустом диапазоне называет пустой диапазон, а
   не `[0, -1]`; тест `match=`. Коммит `fix(engine): текст hero_equity на пустом диапазоне`.
-- [ ] **Step 3: `fix(engine)` D19** — `abs_tol` давления ICM — доля суммы призов лесенки; тест
+- [x] **Step 3: `fix(engine)` D19** — `abs_tol` давления ICM — доля суммы призов лесенки; тест
   `test_pressure_is_scale_invariant` (лесенка ×1e-12 и ×1 — одно и то же давление с
   относительным допуском `1e-9`); мутант «снос `isclose(money_up, 0)`» теперь убит — в журнал.
   Коммит `fix(engine): относительный допуск давления ICM (D19)`.
-- [ ] **Step 4: Прогнать сьют** — зелёные.
+- [x] **Step 4: Прогнать сьют** — зелёные.
+
+**Решения по ходу (Фаза 10, 2026-10-30):**
+- **`positions_for` в `_validate_node`** — не делается: действует таблица «Решения по открытым
+  вопросам» (вызов уже прокомментирован), а не спека тренера §14.
+- **Step 1.** Вместе с `TableSnapshot` удалён `ChipConservationError` — его бросал только
+  `TableSnapshot.validate`; импорт `dataclass, field` из `types.py` ушёл с ними. В `bounty.py`
+  гарды и раньше шли через `_checks`, но обёртками `_check_bounty`, `_check_chip_value`,
+  `_check_villain_stack` (план 3, Задача 2 оставил их, «Задача 5 зовёт их по имени»); вызывающих
+  обёртки больше нет — обёртки заменены прямыми вызовами с теми же именами. README: кроме строки
+  `field` — строка `types` («сохранение фишек» ушло с `TableSnapshot`).
+- **Step 2.** `hero_equity` живёт в `icm_field.py`, а не в `equity.py` (Files выше). Тот же
+  `[0, -1]` давали `risk_premium`, `bubble_factor`, `pressure` — общий `_check_seat`; он сначала
+  проверяет размер стола общим `_check_seat_count`: пустой стол — «за столом нет игроков», тем же
+  текстом, что `table_equities`. Стол больше `MAX_TABLE_SEATS` теперь отвергается на проверке
+  места, а не позже — текст прежний. `icm._icm_branches` с пустым `stacks` даёт тот же `[0, -1]`, но
+  с CLI недостижим (`--stacks ""` отвергает `argparse`), а один стек отвечает верным `[0, 0]` — не
+  тронут.
+- **Step 3.** Допуск — одна константа `icm.PRESSURE_TOL = 1e-9`, доля `sum(payouts)` в `icm.py` и
+  `ladder.total()` в `icm_field.py` (импорт из `icm`). Тест `test_pressure_is_scale_invariant` — в
+  обоих модулях (`test_icm.py`, `test_icm_field_pressure.py`), параметры ×1 и ×1e-12. Мутант
+  «снос `isclose(money_up, 0)`» убивает вторая половина теста: сдвиг эквити меньше доли `1e-9`
+  призов (одна фишка против 1e11 при победителе-всё) — давление не определено на обоих масштабах;
+  лесенка ×1e-12 сама его не убивает — мутант там совпадает с кодом. Та же половина убивает
+  выживший в плане 3 мутант «`isclose(now, 0)` → `now != 0`» ветви плоской лесенки RP.
 
 ---
 
