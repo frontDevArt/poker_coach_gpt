@@ -152,13 +152,19 @@ def _dispatch(args: argparse.Namespace) -> dict:
             return coach.start(args.hand, _read_json(args.context))
         if args.coach_command == "step":
             return coach.step(args.hand, _read_json(args.frame))
+        if args.coach_command == "lint":
+            return coach.lint(args.hand, _read_text(args.text))
         return coach.undo(args.hand)
 
     raise ValueError(f"неизвестная команда: {args.command}")
 
 
+def _read_text(source: str) -> str:
+    return sys.stdin.read() if source == "-" else _read_file(source)
+
+
 def _read_json(source: str) -> dict:
-    text = sys.stdin.read() if source == "-" else _read_file(source)
+    text = _read_text(source)
     try:
         payload = json.loads(text)
     except json.JSONDecodeError as exc:
@@ -272,6 +278,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p_step.add_argument("--frame", required=True, help="файл с JSON или '-' для stdin")
     p_undo = co_sub.add_parser("undo", help="снять последний кадр и его шаг")
     p_undo.add_argument("--hand", required=True, help="файл раздачи")
+    p_lint = co_sub.add_parser("lint", help="числа текста ответа без следа в фактах шагов")
+    p_lint.add_argument("--hand", required=True, help="файл раздачи")
+    p_lint.add_argument("--text", required=True, help="файл с текстом ответа или '-' для stdin")
 
     return parser
 

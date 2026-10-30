@@ -1,4 +1,4 @@
-"""Файл раздачи и команды `coach` (спека тренера §5).
+"""Файл раздачи и команды `coach` (спека тренера §5): `start`, `step`, `undo`, `lint`.
 
 Одна раздача — один JSON-файл: контекст и кадры как пришли, шаги с ответами советников, итоги
 улиц. Файл — единственное состояние разбора: модель-тренер ничего не помнит и не считает, каждый
@@ -19,6 +19,7 @@ import tempfile
 from . import explain, frames
 from .advice import advise, read_hand, why
 from .handstate import STREETS, _validate_context, context_from_dict
+from .lint import untraced
 
 FORMAT = "poker-coach-hand"
 VERSION = 1
@@ -110,6 +111,29 @@ def undo(path: str) -> dict:
     }
     _write(path, data)
     return {"undone": number, "steps": number - 1}
+
+
+def lint(path: str, text: str) -> dict:
+    """Числа текста ответа без следа в фактах всех шагов файла (спека тренера §9).
+
+    След — `display` фактов `why` каждого шага, вместе с фактами итога улицы на шаге, что её
+    закрыл, и номера шагов `1..N`. Файл не меняется. Ответ — `{"ok": true}` или
+    `{"ok": false, "untraced": [...]}`.
+    """
+    data = _load(path)
+    # `why` пишет только `step`; без него или с фактом без печати следа не собрать.
+    if not all(_has_facts(done) for done in data["steps"]):
+        raise _damaged("steps")
+    facts = [item for done in data["steps"] for item in done["why"]]
+    missing = untraced(text, facts, len(data["steps"]))
+    return {"ok": False, "untraced": missing} if missing else {"ok": True}
+
+
+def _has_facts(done: dict) -> bool:
+    why = done.get("why")
+    return isinstance(why, list) and all(
+        isinstance(item, dict) and isinstance(item.get("display"), str) for item in why
+    )
 
 
 def _load(path: str) -> dict:

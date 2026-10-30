@@ -9,7 +9,13 @@ import json
 
 import pytest
 
-from conftest import _context, preflop_frame, preflop_vs_allin_after_raise, preflop_vs_3bet
+from conftest import (
+    _context,
+    flop_frame,
+    preflop_frame,
+    preflop_vs_allin_after_raise,
+    preflop_vs_3bet,
+)
 from poker_engine import advice, coach, preflop_advisor
 from poker_engine.advice import advise, read_hand
 from poker_engine.handstate import context_from_dict, node_from_dict
@@ -22,31 +28,6 @@ from poker_engine.preflop_advisor import (
 )
 from poker_engine.preflop_solver import reach
 from poker_engine.pushfold import _classes
-
-BOARD = ["8c", "2s", "9d"]
-
-
-def flop_frame(hero, put, folded, starting=None, bets=None):
-    """Кадр флопа на столе `preflop_frame`: `put` — вложенное префлопа по местам поверх блайндов
-    0.5 и 1.0, `folded` — вне раздачи на флопе, `bets` — ставки флопа до героя."""
-    put = {5: 0.5, 6: 1.0, **put}
-    bets = bets or {}
-    totals = {**{seat: 40.0 for seat in range(2, 8)}, **(starting or {})}
-    frame = preflop_frame(hero, folded=folded, starting=starting)
-    for seat in frame["seats"]:
-        index = seat["seatIndex"]
-        seat.update(
-            investedBb=bets.get(index, 0.0),
-            stackBb=totals[index] - put.get(index, 0.0) - bets.get(index, 0.0),
-        )
-    frame.update(
-        street="flop",
-        board=BOARD,
-        potBb=sum(put.values()) + 0.75 + sum(bets.values()),
-        toCallBb=max(bets.values(), default=0.0) - bets.get(hero, 0.0),
-    )
-    return frame
-
 
 def _summary(frames):
     return read_hand(_context(), frames).street_summary("preflop")

@@ -168,6 +168,28 @@ def preflop_frame(hero, invested=None, folded=(), starting=None):
     return node
 
 
+def flop_frame(hero, put, folded, starting=None, bets=None):
+    """Кадр флопа на столе `preflop_frame`: `put` — вложенное префлопа по местам поверх блайндов
+    0.5 и 1.0, `folded` — вне раздачи на флопе, `bets` — ставки флопа до героя."""
+    put = {5: 0.5, 6: 1.0, **put}
+    bets = bets or {}
+    totals = {**{seat: 40.0 for seat in range(2, 8)}, **(starting or {})}
+    frame = preflop_frame(hero, folded=folded, starting=starting)
+    for seat in frame["seats"]:
+        index = seat["seatIndex"]
+        seat.update(
+            investedBb=bets.get(index, 0.0),
+            stackBb=totals[index] - put.get(index, 0.0) - bets.get(index, 0.0),
+        )
+    frame.update(
+        street="flop",
+        board=["8c", "2s", "9d"],
+        potBb=sum(put.values()) + 0.75 + sum(bets.values()),
+        toCallBb=max(bets.values(), default=0.0) - bets.get(hero, 0.0),
+    )
+    return frame
+
+
 def preflop_open():
     """`open`: `UTG` и `HJ` сфолдили, герой — `CO`."""
     return [preflop_frame(3, folded={7, 2})]
