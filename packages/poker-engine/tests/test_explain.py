@@ -394,6 +394,24 @@ def test_a_short_hero_calls_the_pot_without_the_excess_of_the_all_in(to_call):
     assert facts["requiredEquity"]["display"] == "40.8%"
 
 
+@pytest.mark.parametrize("to_call", [29.0, 4.0])
+def test_a_short_hero_with_chips_in_counts_them_in_the_level_of_the_excess(to_call):
+    # Герой `BB`: вложено 1.0, за спиной 4 BB, против олл-ина `HJ` 30 BB; банк 32.25. Уровень —
+    # 1 + 4 = 5: излишек `HJ` 25, банк до колла 7.25, 4 / 11.25 = 35.6%. Уровень без вложенного
+    # героя (4) дал бы излишек 26 и 4 / 10.25 = 39.0%.
+    raw = pushfold_facing_allin_node()
+    seats = {seat["seatIndex"]: seat for seat in raw["seats"]}
+    seats[2]["investedBb"] = 30.0
+    seats[4].update(isHero=False, inHand=False)
+    seats[6].update(stackBb=4.0, isHero=True)
+    raw.update(potBb=32.25, toCallBb=to_call)
+    node = node_from_dict(raw)
+    assert node.hero.invested_bb == 1.0
+    facts = {item["key"]: item for item in explain.node_facts(node, {"spot": "facing_allin"})}
+    assert facts["requiredEquity"]["value"] == pytest.approx(4 / 11.25)
+    assert facts["requiredEquity"]["display"] == "35.6%"
+
+
 def test_no_required_equity_without_a_call():
     # `CO` против открытия `UTG` — не закрывающий: колла в дереве нет (D30).
     frames = preflop_vs_open()
