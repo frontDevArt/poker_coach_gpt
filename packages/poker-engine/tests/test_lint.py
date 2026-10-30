@@ -108,6 +108,14 @@ def test_digits_inside_other_words_are_numbers():
     assert untraced("0.77 и 1,55", [], 0) == ["0.77", "1.55"]
 
 
+def test_a_hand_is_written_high_card_first():
+    # Класс — старшей картой вперёд, как его печатает движок: `5K` — тысячи фишек, а не рука.
+    assert untraced("5K фишек, стек 8K, 9T, 25s, 89s, 77s", [], 0) == [
+        "5", "8", "9", "25", "89", "77"
+    ]
+    assert untraced("98s, 32o, T9o, K9, A5, KQs", [], 0) == []
+
+
 def test_a_display_is_read_by_the_same_rule():
     # `1` из `UTG+1` в печати линии следом не становится, `2.5` — становится.
     line = line_text([{"seatIndex": 3, "position": "UTG+1", "action": "raise", "toBb": 2.5}])
