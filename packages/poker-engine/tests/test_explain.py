@@ -365,6 +365,18 @@ def test_no_required_equity_without_a_call():
     assert {"potBb", "toCallBb"} <= keys and "requiredEquity" not in keys
 
 
+def test_no_call_facts_without_a_bet_to_call():
+    # `BB` против лимпа `SB`: колла нет — фактов колла и требуемой эквити тоже, `0.0 BB` колла в
+    # `why` не ложится.
+    frames = [preflop_frame(6, {5: 1.0}, folded={7, 2, 3, 4})]
+    answer = advise(_context(), frames, [])
+    assert (answer["advisor"], answer["spot"]) == ("preflop", "vs_limp")
+    node = node_from_dict(frames[-1])
+    assert node.to_call_bb == 0
+    keys = {item["key"] for item in why(answer, node)}
+    assert "potBb" in keys and not keys & {"toCallBb", "requiredEquity"}
+
+
 def test_a_refusal_gives_its_reasons():
     answer = advise(_context(), [_node()], [])
     assert answer["advisor"] is None
