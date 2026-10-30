@@ -27,6 +27,9 @@ from .types import Position, positions_for
 
 # Ставки печатаются с шагом `ROUNDING_STEP_BB`: «равно максимуму» — в пределах полушага.
 _SAME_BB = ROUNDING_STEP_BB / 2
+# Вложенное на исходе префлопа — разность двух сумм «стек плюс вложенное», четыре числа экрана по
+# полшага ошибки каждое: от уравненного или прежнего вложенного оно отходит до двух шагов.
+_DERIVED_BB = 2 * ROUNDING_STEP_BB
 
 _VOLUNTARY = frozenset({"limp", "call", "raise", "allin"})
 
@@ -120,10 +123,21 @@ def _closing(preflop_nodes: list[DecisionNode], next_node: DecisionNode) -> dict
     До следующей улицы дошёл тот, кто в раздаче на её кадре, и тот, кто уравнял наибольшее
     вложенное префлопа: место, сфолдившее на флопе до героя, на его кадре уже вне раздачи, а на
     префлопе фолда у него не было.
+
+    Вложенное в пределах `_DERIVED_BB` от наибольшего вложенного последнего кадра префлопа или
+    от своего вложенного там — оно и есть: это шум округления стеков, а не ставка (рейз меньше
+    большого блайнда не бывает, олл-ин виден по стеку 0).
     """
     began = {seat.seat_index: seat.stack_bb + seat.invested_bb for seat in preflop_nodes[0].seats}
     starts = {seat.seat_index: seat.stack_bb + seat.invested_bb for seat in next_node.seats}
-    put = {index: began[index] - start for index, start in starts.items() if index in began}
+    last = {seat.seat_index: seat.invested_bb for seat in preflop_nodes[-1].seats}
+    known = max(last.values())
+    put = {}
+    for index, start in starts.items():
+        if index in began:
+            amount = began[index] - start
+            near = [at for at in (known, last.get(index, 0.0)) if abs(amount - at) <= _DERIVED_BB]
+            put[index] = min(near, key=lambda at: abs(amount - at)) if near else amount
     top = max(put.values())
     return {
         seat.seat_index: replace(

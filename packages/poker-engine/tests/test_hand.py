@@ -129,6 +129,22 @@ def test_a_three_bet_and_the_call():
     assert ranges[4]["reach"] == btn["reach"]
 
 
+@pytest.mark.parametrize("seat, noise", [(4, -0.1), (3, -0.1), (3, 0.1), (5, -0.1)])
+def test_rounding_of_the_flop_stacks_is_not_an_action(seat, noise):
+    # Приёмка, Фаза 14 (WSOP, кадр флопа): стек на экране округлён до 0.1 BB, и вложенное
+    # префлопа — разность стеков двух кадров — уходит на шаг от уравненного 7.0. Это колл, а не
+    # рейз до 7.1 (`BTN` — 3-беттор, не 4-беттор) и не колл до 6.9; у сфолдившего `SB` — фолд.
+    frames = preflop_vs_3bet()
+    flop = flop_frame(3, {3: 7.0, 4: 7.0}, {7, 2, 5, 6})
+    exact = _summary([*frames, flop])
+    next(s for s in flop["seats"] if s["seatIndex"] == seat)["stackBb"] += noise
+    summary = _summary([*frames, flop])
+
+    assert summary["line"] == exact["line"]
+    assert summary["line"][-1] == {"seatIndex": 3, "position": "CO", "action": "call", "toBb": 7.0}
+    assert {s: e["role"] for s, e in _by_seat(summary).items()} == {3: "opener", 4: "3bettor"}
+
+
 def test_a_limp_and_the_check():
     # Чек виден только тем, что вложенное `BB` не выросло: линия дочитывает его чеком. Герой
     # `SB` первым в банк залимпил — `reach` героя — его частоты лимпа шага 1.
