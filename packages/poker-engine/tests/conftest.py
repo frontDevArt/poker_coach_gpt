@@ -64,7 +64,8 @@ def pushfold_first_in_node():
     """Спот `first_in` плана 4: стол фикстуры `_node()`, все в раздаче, герой — UTG.
 
     Кнопка — место 4, значит `SB` — 5, `BB` — 6, `UTG` — 7, `HJ` — 2, `CO` — 3. Банк —
-    блайнды и анте по 0.125 BB с шести мест: 0.5 + 1.0 + 0.75 = 2.25.
+    блайнды и анте по 0.125 BB с шести мест: 0.5 + 1.0 + 0.75 = 2.25. У героя 8 BB —
+    порог `PUSHFOLD_MAX_BB` (план 6, Задача 5): спот берёт советник `pushfold`.
     """
     node = _node()
     seats = _seats_by_index(node)
@@ -74,7 +75,7 @@ def pushfold_first_in_node():
         seat["isHero"] = False
     seats[5]["investedBb"] = 0.5
     seats[6]["investedBb"] = 1.0
-    seats[7].update(stackBb=10.0, isHero=True)
+    seats[7].update(stackBb=8.0, isHero=True)
     node.update(potBb=2.25, toCallBb=1.0, raiseToBb=None)
     return node
 

@@ -1,6 +1,6 @@
 """Советник push/fold: ответ, совет из EV, головы, пометки (план 4, Задача 4).
 
-Фикстуры споток — `conftest.py`: `first_in` (герой `UTG` 10 BB, 6-max, пятеро отвечающих) и
+Фикстуры споток — `conftest.py`: `first_in` (герой `UTG` 8 BB, 6-max, пятеро отвечающих) и
 `facing_allin` (`HJ` олл-ин на 9 BB, герой `BTN` 30 BB, за ним `SB` и `BB`). Вариант `SB`
 против `BB` строится здесь: все сфолдили до малого блайнда героя.
 """
@@ -22,7 +22,7 @@ from poker_engine.nash import Game, opener_ev, range_share, solve
 from poker_engine.pushfold_game import chip_outcomes, icm_outcomes, read_spot
 
 
-def _sb_vs_bb(stack: float = 10.0, cards: list[str] | None = None) -> dict:
+def _sb_vs_bb(stack: float = 8.0, cards: list[str] | None = None) -> dict:
     """Все до `SB` сфолдили; герой — `SB` с `stack` BB вместе с блайндом, за ним только `BB`."""
     raw = pushfold_first_in_node()
     seats = _seats_by_index(raw)
@@ -127,8 +127,8 @@ def test_first_in_answer_shape(first_in_answer):
     assert answer["spot"] == "first_in"
     assert answer["action"] in {"allin", "fold"}
     assert answer["heroHand"] == "JTs"
-    # Эффективный — стек героя 10 против наибольшего после него (`HJ` 94.4).
-    assert answer["effectiveStackBb"] == 10.0
+    # Эффективный — стек героя 8 против наибольшего после него (`HJ` 94.4).
+    assert answer["effectiveStackBb"] == 8.0
     assert set(answer["ev"]) == {"icm", "chip"}
     assert set(answer["ev"]["icm"]) == {"allinUsd", "foldUsd", "marginUsd"}
     assert set(answer["ev"]["chip"]) == {"allinBb", "foldBb", "marginBb"}
@@ -172,7 +172,7 @@ def test_facing_allin_answer_shape(facing_answer):
 @pytest.mark.parametrize(
     ("make", "cards", "action", "size"),
     [
-        (pushfold_first_in_node, ["Ah", "As"], "allin", 10.0),
+        (pushfold_first_in_node, ["Ah", "As"], "allin", 8.0),
         (pushfold_facing_allin_node, ["Ah", "As"], "call", 9.0),
     ],
 )
@@ -236,15 +236,15 @@ def test_on_the_bubble_icm_overrules_chips():
 
 
 def test_effective_stack_is_against_the_deepest_behind():
-    # `BTN` с 5 BB короче героя, но за героем есть стеки глубже: эффективный — 10, не 5.
+    # `BTN` с 5 BB короче героя, но за героем есть стеки глубже: эффективный — 8, не 5.
     raw = pushfold_first_in_node()
     _seats_by_index(raw)[4]["stackBb"] = 5.0
-    assert _advise(raw)["effectiveStackBb"] == 10.0
+    assert _advise(raw)["effectiveStackBb"] == 8.0
 
 
 def test_opener_fold_is_the_walk(first_in_answer):
     # Фолд героя-открывающего — исход `walk`: по фишкам у `UTG` остаётся его стек.
-    assert first_in_answer["ev"]["chip"]["foldBb"] == 10.0
+    assert first_in_answer["ev"]["chip"]["foldBb"] == 8.0
 
 
 # --- диапазоны -------------------------------------------------------------------------------

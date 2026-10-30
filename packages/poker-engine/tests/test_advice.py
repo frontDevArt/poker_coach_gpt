@@ -8,6 +8,7 @@ import pytest
 
 from conftest import _context, _node, pushfold_facing_allin_node, pushfold_first_in_node
 from poker_engine import advice, preflop_advisor, pushfold
+from poker_engine.pushfold_game import PUSHFOLD_MAX_BB
 from poker_engine.advice import advise
 from poker_engine.analyze import analyze
 from poker_engine.handstate import context_from_dict, node_from_dict
@@ -63,6 +64,22 @@ def test_a_node_nobody_takes_is_a_refusal_with_reasons():
             {"advisor": "preflop", "reason": AMBIGUOUS},
         ],
     }
+
+
+@pytest.mark.parametrize(
+    ("stack", "advisor", "spot"),
+    [(PUSHFOLD_MAX_BB, "pushfold", "first_in"), (PUSHFOLD_MAX_BB + 0.1, "preflop", "open")],
+    ids=["at_threshold", "above_threshold"],
+)
+def test_first_in_route_follows_the_threshold(stack, advisor, spot):
+    # Инвариант 16 спеки модели колла: герой `UTG` первым в банк, за ним стеки глубже — его стек
+    # и есть эффективный. На пороге отвечает `pushfold`, на 0.1 BB выше — `preflop` (`open`).
+    raw = pushfold_first_in_node()
+    raw["seats"][-1]["stackBb"] = stack
+    assert raw["seats"][-1]["isHero"]
+    answer = advise(_context(), [raw], [])
+    assert (answer["advisor"], answer["spot"]) == (advisor, spot)
+    assert answer["effectiveStackBb"] == pytest.approx(stack)
 
 
 def test_the_reason_comes_from_the_advisor_itself():

@@ -132,7 +132,7 @@ def _payoffs(tree, node, payout):
 
 
 SUBGAMES = pytest.mark.parametrize(
-    "make", [lambda: _heads_up_node(10.0), pushfold_first_in_node], ids=["hu_10bb", "6max"]
+    "make", [lambda: _heads_up_node(8.0), pushfold_first_in_node], ids=["hu_8bb", "6max"]
 )
 
 

@@ -43,10 +43,10 @@ def _all_rows(outcomes: dict) -> list[list[float]]:
 
 
 def _hu_node() -> dict:
-    """Хедз-ап: кнопка — `SB` (место 4, герой, 8 BB), `BB` — место 7, без анте."""
+    """Хедз-ап: кнопка — `SB` (место 4, герой, 8 BB с блайндом), `BB` — место 7, без анте."""
     raw = pushfold_first_in_node()
     raw["seats"] = [seat for seat in raw["seats"] if seat["seatIndex"] in (4, 7)]
-    _seat(raw, 4).update(stackBb=8.0, investedBb=0.5, isHero=True)
+    _seat(raw, 4).update(stackBb=7.5, investedBb=0.5, isHero=True)
     _seat(raw, 7).update(stackBb=20.0, investedBb=1.0, isHero=False)
     raw.update(potBb=1.5, toCallBb=0.5)
     return raw
@@ -68,7 +68,7 @@ def test_first_in_starts_with_the_hero_and_everyone_after_him_responds(pushfold_
     assert spot.hero_at == 0 and spot.players[0].is_hero
     assert spot.bb_at == 5
     assert spot.bystanders == []
-    assert spot.totals == [10.0, 94.4, 35.3, 23.2, 39.7, 36.7]
+    assert spot.totals == [8.0, 94.4, 35.3, 23.2, 39.7, 36.7]
     # Банк 2.25 минус вложения участников 1.5 — анте.
     assert spot.dead_bb == pytest.approx(0.75, abs=1e-12)
 
@@ -193,19 +193,19 @@ def test_refuses_a_big_blind_out_of_the_hand_before_acting(pushfold_first_in):
 def test_refuses_an_effective_stack_above_the_threshold(pushfold_first_in):
     _seat(pushfold_first_in, 7)["stackBb"] = 15.0
     assert _refusal(pushfold_first_in) == (
-        "эффективный стек 15.0 BB выше порога push/fold 12 BB"
+        "эффективный стек 15.0 BB выше порога push/fold 8 BB"
     )
 
 
 def test_effective_stack_is_capped_by_the_biggest_responder(pushfold_first_in):
-    # У героя 30, но больше 11.5 за ним ни у кого нет: эффективный стек 11.5.
+    # У героя 30, но больше 7.5 за ним ни у кого нет: эффективный стек 7.5.
     raw = pushfold_first_in
     _seat(raw, 7)["stackBb"] = 30.0
     for index in (2, 3, 4, 5, 6):
-        _seat(raw, index)["stackBb"] = 10.5
+        _seat(raw, index)["stackBb"] = 6.5
     assert _spot(raw).kind == "first_in"
-    _seat(raw, 2)["stackBb"] = 12.5
-    assert _refusal(raw) == "эффективный стек 12.5 BB выше порога push/fold 12 BB"
+    _seat(raw, 2)["stackBb"] = 8.5
+    assert _refusal(raw) == "эффективный стек 8.5 BB выше порога push/fold 8 BB"
 
 
 def test_effective_stack_at_the_threshold_is_still_push_fold(pushfold_first_in):
@@ -285,19 +285,19 @@ def test_uncovered_surplus_goes_back_to_the_bigger_stack(pushfold_facing_allin):
 def test_steal_and_walk_give_the_whole_pot(pushfold_first_in):
     spot = _spot(pushfold_first_in)
     chips = chip_outcomes(spot)
-    assert chips.steal[0] == pytest.approx(10.0 + 2.25, abs=1e-12)
+    assert chips.steal[0] == pytest.approx(8.0 + 2.25, abs=1e-12)
     assert chips.steal[1:] == [seat.stack_bb for seat in spot.players[1:]]
     # Фолд героя: банк большому блайнду, герой ничего не вкладывал.
     assert chips.walk[spot.bb_at] == pytest.approx(35.7 + 2.25, abs=1e-12)
-    assert chips.walk[0] == 10.0
+    assert chips.walk[0] == 8.0
 
 
 def test_a_blind_responder_who_loses_keeps_the_rest_of_his_total(pushfold_first_in):
-    # Герой 10 против `BB` 35.7 + 1.0: `BB` теряет 10 из своих 36.7.
+    # Герой 8 против `BB` 35.7 + 1.0: `BB` теряет 8 из своих 36.7.
     spot = _spot(pushfold_first_in)
     chips = chip_outcomes(spot)
     k = spot.bb_at - 1
-    assert chips.win[k][spot.bb_at] == pytest.approx(36.7 - 10.0, abs=1e-12)
+    assert chips.win[k][spot.bb_at] == pytest.approx(36.7 - 8.0, abs=1e-12)
     assert chips.lose[k][0] == 0.0
 
 

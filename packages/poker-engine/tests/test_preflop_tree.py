@@ -636,7 +636,7 @@ def test_fold_tree_matches_pushfold_subgame(monkeypatch):
         (chip_payoffs(tree), chips),
         (icm_payoffs(tree, node, context, bounties=False), icm),
     ):
-        assert _actions(tree, tree.root) == [("fold", None), ("allin", 10.0)]
+        assert _actions(tree, tree.root) == [("fold", None), ("allin", 8.0)]
         assert payoffs[_child(tree, tree.root, "fold")][0] == pytest.approx(outcomes.walk)
         at = _child(tree, tree.root, "allin")
         for j in range(len(tree.players) - 1):

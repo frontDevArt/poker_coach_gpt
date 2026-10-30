@@ -473,16 +473,16 @@ def test_line_deviates(history, size, deviates):
 
 
 def test_pushfold_advice_the_hero_did_not_follow():
-    # У всех 10 BB: `CO` первым в банк — спот `pushfold`. Герой открыл до 2.0 вместо его
+    # У всех 8 BB (порог `PUSHFOLD_MAX_BB`): `CO` первым в банк — спот `pushfold`. Герой открыл до 2.0 вместо его
     # совета, `BTN` пошёл олл-ин — узел `preflop` с пометкой.
-    starting = dict.fromkeys(range(2, 8), 10.0)
+    starting = dict.fromkeys(range(2, 8), 8.0)
     first = [preflop_frame(3, folded={7, 2}, starting=starting)]
     advised = _advise(first)
     assert advised["advisor"] == "pushfold"
     assert advised["action"] in ("allin", "fold")
     second = [
         *first,
-        preflop_frame(3, {3: 2.0, 4: 10.0}, folded={7, 2, 5, 6}, starting=starting),
+        preflop_frame(3, {3: 2.0, 4: 8.0}, folded={7, 2, 5, 6}, starting=starting),
     ]
     answer = _advise(second, history=[advised])
     assert answer["spot"] == "vs_allin_after_raise"
