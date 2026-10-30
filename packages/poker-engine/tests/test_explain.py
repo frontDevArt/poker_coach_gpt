@@ -26,6 +26,7 @@ from poker_engine import allin_matrix, explain, preflop_advisor, pushfold
 from poker_engine.advice import advise, why
 from poker_engine.explain import display, fact
 from poker_engine.handstate import node_from_dict
+from poker_engine.lint import numbers
 
 # Вид печати по ключу факта: точный ключ или его хвост после последней точки.
 _KIND = {
@@ -51,7 +52,7 @@ _KIND = {
     "potBb": "bb",
     "toCallBb": "bb",
     "requiredEquity": "pct",
-    "role": "text",
+    "role": "role",
     "stackBb": "bb",
     "reachPct": "pct",
     "icmPct": "pct",
@@ -107,6 +108,30 @@ def _bounties(frames):
 )
 def test_the_print_rules(value, kind, printed):
     assert fact("x", value, kind) == {"key": "x", "value": value, "display": printed}
+
+
+@pytest.mark.parametrize(
+    ("role", "word"),
+    [
+        ("opener", "открывший"),
+        ("3bettor", "3-беттор"),
+        ("4bettor", "4-беттор"),
+        ("limper", "лимпер"),
+        ("shover", "олл-инщик"),
+        ("responder", "отвечающий"),
+        ("caller", "отвечающий"),
+    ],
+)
+def test_a_role_is_printed_as_a_word(role, word):
+    # Код роли в печати — след `3` или `4` линтеру (D35); слово — не число.
+    assert fact("x.role", role, "role") == {"key": "x.role", "value": role, "display": word}
+    assert numbers(word) == []
+
+
+def test_every_role_of_the_advisors_has_a_word():
+    assert set(explain.ROLES) == {
+        *preflop_advisor._RAISE_ROLES, "limper", "shover", "responder", "caller"
+    }
 
 
 def test_an_unknown_kind_is_refused():
@@ -364,10 +389,11 @@ def test_the_summary_facts():
     }
     assert explain.street(summary) == [
         fact("preflop.line", "CO рейз до 2.0 BB, BB колл до 2.0 BB", "text"),
-        fact("preflop.CO.role", "opener", "text"),
+        fact("preflop.CO.role", "opener", "role"),
         fact("preflop.CO.stackBb", 38.0, "bb"),
         fact("preflop.CO.reachPct", 0.3, "pct"),
     ]
+    assert explain.street(summary)[1]["display"] == "открывший"
     assert explain.street({"street": "preflop", "reason": "нет"}) == [
         fact("preflop.reason", "нет", "text")
     ]

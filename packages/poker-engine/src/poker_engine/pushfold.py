@@ -257,7 +257,7 @@ def explain(answer: dict) -> list[dict]:
     for opponent in answer["ranges"]["opponents"]:
         at = f"opponent.{opponent['position']}"
         facts += [
-            fact(f"{at}.role", opponent["role"], "text"),
+            fact(f"{at}.role", opponent["role"], "role"),
             fact(f"{at}.stackBb", opponent["stackBb"], "bb"),
             fact(f"{at}.icmPct", opponent["icmPct"], "pct"),
             fact(f"{at}.chipPct", opponent["chipPct"], "pct"),

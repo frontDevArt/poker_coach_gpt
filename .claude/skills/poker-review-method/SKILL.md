@@ -64,7 +64,7 @@ poker-engine coach undo  --hand hand.json                          # «кадр 
 | ICM-поправка | `chipBestAction` — лучшее по фишкам, когда оно другое; совет всё равно по ICM |
 | Головы PKO | `bountyUsd` |
 | Диапазон героя | `heroReachPct` — что соперник видит у героя после его линии; `heroRange.<действие>` — доля диапазона героя на каждое действие; `heroHandFreq.<действие>` — рука смешанная |
-| Соперники | `opponent.<позиция>.role`, `.stackBb`, `.reachPct` |
+| Соперники | `opponent.<позиция>.role` — роль словом (`открывший`, `3-беттор`, `лимпер`…), `.stackBb`, `.reachPct` |
 | Стек и банк | `effectiveStackBb`, `potBb`, `toCallBb`, `requiredEquity` (пот-оддсы колла) |
 | Линия | `line` |
 | Допущения | `flag.<пометка>` — что сказать, по таблице пометок `poker-preflop-mtt` |

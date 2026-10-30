@@ -11,7 +11,14 @@ import sys
 
 import pytest
 
-from conftest import _context, console_stdin, flop_frame, preflop_frame, preflop_vs_3bet
+from conftest import (
+    _context,
+    console_stdin,
+    flop_frame,
+    preflop_frame,
+    preflop_vs_3bet,
+    preflop_vs_4bet,
+)
 from poker_engine import coach
 from poker_engine.cli import main
 from poker_engine.explain import fact, line_text
@@ -198,6 +205,20 @@ def test_a_number_inside_a_refusal_reason_is_traced(hand):
         "ok": False,
         "untraced": ["7"],
     }
+
+
+@pytest.mark.parametrize(
+    ("frames", "position", "role", "digit"),
+    [(preflop_vs_3bet, "BTN", "3bettor", "3"), (preflop_vs_4bet, "UTG", "4bettor", "4")],
+)
+def test_a_role_leaves_no_trace_of_its_digit(hand, frames, position, role, digit):
+    # D35: роль печатается словом — цифра кода `3bettor`/`4bettor` следом не становится, и
+    # вписанное `3 BB` в раздаче из двух шагов линтер называет.
+    for frame in frames():
+        last = coach.step(str(hand), frame)
+    facts = {item["key"]: item for item in last["why"]}
+    assert facts[f"opponent.{position}.role"]["value"] == role
+    assert coach.lint(str(hand), f"Рейз до {digit} BB.") == {"ok": False, "untraced": [digit]}
 
 
 def test_lint_needs_the_hand_file(tmp_path):

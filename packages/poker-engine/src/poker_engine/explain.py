@@ -8,7 +8,9 @@
 - `ev_bb` — EV в BB со знаком, два знака: `+0.35 BB`;
 - `usd` — доллары со знаком, два знака: `+$0.14`;
 - `pct` — доля как проценты, один знак: `15.0%`;
-- `int` — целое; `text` — строка как есть.
+- `int` — целое; `text` — строка как есть;
+- `role` — роль участника словом: `3bettor` → `3-беттор`. Код роли в печати дал бы линтеру след `3`
+  или `4`, которого нет в остальной печати (D35); `N-бет` линтер числом не считает.
 
 Здесь же — факты, общие для советников: узел (банк, колл, требуемая эквити), отказ (причины) и
 итог улицы (форма §7.3 спеки тренера: линия и диапазоны или причина).
@@ -19,7 +21,7 @@ from __future__ import annotations
 from . import allin_matrix, potodds
 from .handstate import DecisionNode
 
-KINDS = ("bb", "ev_bb", "usd", "pct", "int", "text")
+KINDS = ("bb", "ev_bb", "usd", "pct", "int", "text", "role")
 
 # Слова действий в печати линии и действия с размером.
 WORDS = {
@@ -29,6 +31,17 @@ WORDS = {
     "limp": "лимп",
     "raise": "рейз",
     "allin": "олл-ин",
+}
+
+# Роли участников словом (`role` ответов `preflop` и `pushfold`, итога улицы).
+ROLES = {
+    "opener": "открывший",
+    "3bettor": "3-беттор",
+    "4bettor": "4-беттор",
+    "limper": "лимпер",
+    "shover": "олл-инщик",
+    "responder": "отвечающий",
+    "caller": "отвечающий",
 }
 
 
@@ -52,6 +65,8 @@ def display(value, kind: str) -> str:
         return str(int(value))
     if kind == "text":
         return str(value)
+    if kind == "role":
+        return ROLES[value]
     raise ValueError(f"вид факта должен быть одним из {', '.join(KINDS)}, получено {kind!r}")
 
 
@@ -150,7 +165,7 @@ def street(summary: dict) -> list[dict]:
     for entry in summary["ranges"]:
         at = f"{name}.{entry['position']}"
         facts += [
-            fact(f"{at}.role", entry["role"], "text"),
+            fact(f"{at}.role", entry["role"], "role"),
             fact(f"{at}.stackBb", entry["stackBb"], "bb"),
             fact(f"{at}.reachPct", entry["reachPct"], "pct"),
         ]
