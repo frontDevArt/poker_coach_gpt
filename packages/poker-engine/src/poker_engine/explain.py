@@ -87,9 +87,20 @@ def line_text(line: list[dict]) -> str:
     )
 
 
-def range_share(classes: dict[str, float]) -> float:
-    """Доля диапазона из 1326 комбинаций по частотам классов, взвешенно по комбинациям."""
-    return sum(freq * allin_matrix.combos_of(name) for name, freq in classes.items()) / 1326
+def share_within(classes: dict[str, float], within: dict[str, float]) -> float | None:
+    """Доля диапазона `within`, которую занимают частоты `classes`, взвешенно по комбинациям.
+
+    `within` — частоты классов, дошедших до узла (`reach`); `classes` — стратегия узла по классам
+    (`byAction`). `None` — диапазон пуст: долю посчитать не из чего.
+    """
+    total = sum(freq * allin_matrix.combos_of(name) for name, freq in within.items())
+    if total == 0:
+        return None
+    part = sum(
+        freq * classes.get(name, 0.0) * allin_matrix.combos_of(name)
+        for name, freq in within.items()
+    )
+    return part / total
 
 
 def node_facts(node: DecisionNode, answer: dict) -> list[dict]:

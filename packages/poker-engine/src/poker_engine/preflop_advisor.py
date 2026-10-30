@@ -37,7 +37,7 @@ from dataclasses import dataclass
 
 from . import allin_matrix, nash, preflop_solver
 from .explain import WORDS, action_text, fact, line_text
-from .explain import range_share as class_share
+from .explain import share_within
 from .hand import Hand
 from .handstate import DecisionNode, TournamentContext, assign_positions
 from .preflop_line import (
@@ -390,8 +390,12 @@ def explain(answer: dict) -> list[dict]:
         facts.append(fact("bountyUsd", answer["bountyUsd"], "usd"))
 
     hero = answer["ranges"]["hero"]
+    # Доля диапазона героя — того, что дошёл до узла (`reach`), а не всех рук: на втором решении
+    # у классов, которых в диапазоне нет, стратегия тоже есть.
     for kind, classes in hero["byAction"].items():
-        facts.append(fact(f"heroRange.{kind}", class_share(classes), "pct"))
+        share = share_within(classes, hero["reach"])
+        if share is not None:
+            facts.append(fact(f"heroRange.{kind}", share, "pct"))
     mixed = [kind for kind, freq in hero["handFreq"].items() if freq >= CLASS_FREQ_STEP / 2]
     if len(mixed) > 1:
         facts += [fact(f"heroHandFreq.{kind}", hero["handFreq"][kind], "pct") for kind in mixed]

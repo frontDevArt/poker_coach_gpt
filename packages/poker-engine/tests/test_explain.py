@@ -192,10 +192,16 @@ def test_preflop_fact_values(preflop_answer):
     assert facts["vsSecondBb"] == actions[best]["evBb"] - runner["evBb"]
     if best != 0:
         assert facts["vsBaseUsd"] == actions[best]["evUsd"] - actions[0]["evUsd"]
+    # Доля действия — в диапазоне героя, дошедшем до узла (`reach`), взвешенно по комбинациям.
+    reach = answer["ranges"]["hero"]["reach"]
+    total = sum(freq * allin_matrix.combos_of(name) for name, freq in reach.items())
     for kind, classes in answer["ranges"]["hero"]["byAction"].items():
-        combos = sum(freq * allin_matrix.combos_of(name) for name, freq in classes.items())
-        assert facts[f"heroRange.{kind}"] == pytest.approx(combos / 1326)
-    # Доли действий героя — весь диапазон: в сумме 1 с точностью округления частот — до
+        part = sum(
+            freq * classes.get(name, 0.0) * allin_matrix.combos_of(name)
+            for name, freq in reach.items()
+        )
+        assert facts[f"heroRange.{kind}"] == pytest.approx(part / total)
+    # Доли действий героя — весь его диапазон: в сумме 1 с точностью округления частот — до
     # полушага 0.005 на класс на каждое действие узла.
     shares = [value for key, value in facts.items() if key.startswith("heroRange.")]
     assert sum(shares) == pytest.approx(1.0, abs=0.005 * len(answer["actions"]))
@@ -205,6 +211,26 @@ def test_preflop_pko_has_the_bounty_fact():
     answer = advise(_context(), _bounties(preflop_vs_open()), [])
     facts = {item["key"]: item for item in preflop_advisor.explain(answer)}
     assert facts["bountyUsd"]["value"] == answer["bountyUsd"]
+
+
+def test_on_the_first_decision_the_hero_range_is_every_hand():
+    # Находка ревью Фазы 8: доля действия — в диапазоне, который герой довёл до узла (`reach`).
+    # На первом решении `reach` — все руки, и доля — та же, что по 1326 комбинациям.
+    answer = advise(_context(), preflop_open(), [])
+    facts = {item["key"]: item["value"] for item in preflop_advisor.explain(answer)}
+    for kind, classes in answer["ranges"]["hero"]["byAction"].items():
+        everyone = sum(freq * allin_matrix.combos_of(name) for name, freq in classes.items())
+        assert facts[f"heroRange.{kind}"] == pytest.approx(everyone / 1326)
+
+
+def test_an_empty_hero_range_has_no_shares():
+    # Герой сыграл линию, которой равновесие не играет: частоты `reach` ниже полушага, диапазон
+    # пуст — долей нет, исключения нет (ключа, который посчитать нельзя, нет).
+    answer = advise(_context(), preflop_vs_3bet(), [])
+    answer["ranges"]["hero"]["reach"] = {}
+    keys = {item["key"] for item in preflop_advisor.explain(answer)}
+    assert not any(key.startswith("heroRange.") for key in keys)
+    assert "heroReachPct" in keys
 
 
 # --- ranges.hero.reach -----------------------------------------------------------------------
@@ -228,9 +254,9 @@ def test_the_hero_reach_after_the_open_is_the_raise_of_step_one():
     two = advise(_context(), frames, [one])
     assert two["spot"] == "vs_3bet"
     assert two["ranges"]["hero"]["reach"] == one["ranges"]["hero"]["byAction"]["raise"]
-    assert two["ranges"]["hero"]["reachPct"] == pytest.approx(
-        explain.range_share(one["ranges"]["hero"]["byAction"]["raise"]), abs=0.005
-    )
+    raised = one["ranges"]["hero"]["byAction"]["raise"]
+    share = sum(freq * allin_matrix.combos_of(name) for name, freq in raised.items()) / 1326
+    assert two["ranges"]["hero"]["reachPct"] == pytest.approx(share, abs=0.005)
 
 
 # --- pushfold --------------------------------------------------------------------------------
