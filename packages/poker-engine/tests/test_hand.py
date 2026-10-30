@@ -197,6 +197,14 @@ def test_a_cold_call_is_off_the_tree():
     assert _summary([first, flop]) == {"street": "preflop", "reason": OFF_TREE_LINE}
 
 
+def test_everyone_folded_to_the_open_is_off_the_tree():
+    # Находка ревью Фазы 8: `CO` открыл, все сфолдили, а кадр флопа есть — герой на нём один.
+    # Валидатор серию пропускает; путь кончается терминалом `fold`, диапазонов дошедших нет.
+    first = preflop_frame(3, folded={7, 2})
+    flop = flop_frame(3, {3: 2.0}, {7, 2, 4, 5, 6})
+    assert _summary([first, flop]) == {"street": "preflop", "reason": OFF_TREE_LINE}
+
+
 def test_an_all_in_and_the_call_is_a_pushfold_line():
     # Герой `CO` открыл, `BTN` пошёл олл-ин, герой заколлировал — на флопе решений нет.
     frames = preflop_vs_allin_after_raise()
