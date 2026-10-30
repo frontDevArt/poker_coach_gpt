@@ -11,6 +11,7 @@ import io
 import json
 import sys
 
+from . import coach
 from .advice import advise
 from .analyze import analyze
 from .bounty import required_equity_with_bounty
@@ -145,6 +146,14 @@ def _dispatch(args: argparse.Namespace) -> dict:
             raise ValueError("во входном JSON нужны ключи 'context' и 'nodes'")
         return advise(payload["context"], payload["nodes"], payload.get("history", []))
 
+    if args.command == "coach":
+        # Форму контекста и кадра проверяет движок (`coach`, `frames`), здесь — только чтение.
+        if args.coach_command == "start":
+            return coach.start(args.hand, _read_json(args.context))
+        if args.coach_command == "step":
+            return coach.step(args.hand, _read_json(args.frame))
+        return coach.undo(args.hand)
+
     raise ValueError(f"неизвестная команда: {args.command}")
 
 
@@ -252,6 +261,17 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_ad = sub.add_parser("advise", help="совет на последнем узле раздачи (push/fold)")
     p_ad.add_argument("--input", required=True, help="файл с JSON или '-' для stdin")
+
+    p_co = sub.add_parser("coach", help="пошаговый разбор раздачи в файле раздачи")
+    co_sub = p_co.add_subparsers(dest="coach_command", required=True)
+    p_start = co_sub.add_parser("start", help="новый файл раздачи с контекстом")
+    p_start.add_argument("--hand", required=True, help="файл раздачи")
+    p_start.add_argument("--context", required=True, help="файл с JSON или '-' для stdin")
+    p_step = co_sub.add_parser("step", help="кадр в конец раздачи и совет на нём")
+    p_step.add_argument("--hand", required=True, help="файл раздачи")
+    p_step.add_argument("--frame", required=True, help="файл с JSON или '-' для stdin")
+    p_undo = co_sub.add_parser("undo", help="снять последний кадр и его шаг")
+    p_undo.add_argument("--hand", required=True, help="файл раздачи")
 
     return parser
 

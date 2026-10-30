@@ -3,7 +3,8 @@
 import pytest
 
 
-def _context():
+def _context(seats_per_table=6):
+    """Контекст фикстур: стол 6-max; 8/9-max — `seats_per_table` по числу мест (план 6, Задача 6)."""
     return {
         "payouts": [
             {"from": 1, "to": 1, "amount": 1090.51},
@@ -15,7 +16,7 @@ def _context():
         "entrants": 1107,
         "playersLeft": 782,
         "lateRegOpen": True,
-        "seatsPerTable": 6,
+        "seatsPerTable": seats_per_table,
         "averageStackBb": 50.5,
     }
 

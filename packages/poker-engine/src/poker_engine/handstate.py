@@ -403,6 +403,13 @@ def validate_hand(
     _validate_context(context)
     for node in nodes:
         _validate_node(node)
+        # После `_validate_node`: границы 2..9 у `positions_for` — первыми. Меньше мест, чем
+        # `seatsPerTable`, — законно: часть игроков стола выбыла (D13, спека тренера §6.2).
+        if len(node.seats) > context.seats_per_table:
+            raise ValueError(
+                f"мест за столом ({len(node.seats)}) больше, чем seatsPerTable "
+                f"({context.seats_per_table})"
+            )
     for earlier, later in zip(nodes, nodes[1:]):
         _validate_transition(earlier, later)
 
@@ -549,6 +556,20 @@ def _validate_transition(earlier: DecisionNode, later: DecisionNode) -> None:
         raise ValueError(f"игрок вернулся в раздачу после фолда: место {min(returned)}")
     if later.street == earlier.street:
         _validate_same_street(earlier, later)
+
+    # Стек растёт внутри раздачи лишь при возврате неуплаченного излишка, а после него у героя
+    # решений нет — и кадра нет (спека тренера §6.2). Рост глубже шага печати — ошибка чтения
+    # одного места, и правило называет его раньше, чем сумма фишек разойдётся (D13: вместе с
+    # ней это сильнее, чем «банк не убывает»). После правила улицы: убывшее вложенное — тот же
+    # рост стека, и его текст точнее.
+    stacks = {seat.seat_index: seat.stack_bb for seat in earlier.seats}
+    for seat in later.seats:
+        was = stacks.get(seat.seat_index)
+        if was is not None and seat.stack_bb > was + ROUNDING_STEP_BB:
+            raise ValueError(
+                f"стек на месте {seat.seat_index} вырос внутри раздачи: "
+                f"было {was:.1f} BB, стало {seat.stack_bb:.1f} BB"
+            )
 
     before = sum(seat.stack_bb for seat in earlier.seats) + earlier.pot_bb
     after = sum(seat.stack_bb for seat in later.seats) + later.pot_bb

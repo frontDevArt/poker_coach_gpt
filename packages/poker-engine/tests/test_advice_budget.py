@@ -25,7 +25,7 @@ NINE_MAX_PREFLOP_SECONDS = 8.0
 
 def _assert_fits_the_budget(node, advisor="pushfold", budget=BUDGET_SECONDS):
     start = time.perf_counter()
-    answer = advise(_context(), [node], [])
+    answer = advise(_context(len(node["seats"])), [node], [])
     elapsed = time.perf_counter() - start
     assert answer["advisor"] == advisor
     assert elapsed < budget, f"совет занял {elapsed:.2f} с при бюджете {budget} с"

@@ -466,3 +466,57 @@ def test_advise_reads_a_file(tmp_path, capsys):
     code, data = run(["advise", "--input", str(path)], capsys)
     assert code == 0
     assert data["spot"] == "first_in"
+
+
+# --- coach (план 6, Задача 6) ----------------------------------------------------------------
+
+
+def _write(path, payload):
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return str(path)
+
+
+def test_coach_start_step_undo(tmp_path, capsys):
+    hand = str(tmp_path / "hand.json")
+    context = _write(tmp_path / "context.json", _context())
+    frame = _write(tmp_path / "frame.json", pushfold_first_in_node())
+
+    code, data = run(["coach", "start", "--hand", hand, "--context", context], capsys)
+    assert (code, data) == (0, {"hand": hand, "steps": 0})
+
+    code, data = run(["coach", "step", "--hand", hand, "--frame", frame], capsys)
+    answer = advise(_context(), [pushfold_first_in_node()], [])
+    assert code == 0
+    assert data == {"step": 1, "advisor": "pushfold", "answer": answer, "why": [], "streets": {}}
+
+    code, data = run(["coach", "undo", "--hand", hand], capsys)
+    assert (code, data) == (0, {"undone": 1, "steps": 0})
+
+
+def test_coach_step_reads_the_frame_from_stdin(tmp_path, monkeypatch, capsys):
+    hand = str(tmp_path / "hand.json")
+    _stdin(monkeypatch, _context())
+    assert run(["coach", "start", "--hand", hand, "--context", "-"], capsys)[0] == 0
+    _stdin(monkeypatch, pushfold_first_in_node())
+    code, data = run(["coach", "step", "--hand", hand, "--frame", "-"], capsys)
+    assert code == 0
+    assert data["answer"] == advise(_context(), [pushfold_first_in_node()], [])
+
+
+def test_coach_errors_are_json_with_code_1(tmp_path, capsys):
+    hand = str(tmp_path / "hand.json")
+    code, data = run(["coach", "undo", "--hand", hand], capsys)
+    assert (code, data) == (1, {"error": f"файла раздачи нет: {hand}"})
+    context = _write(tmp_path / "context.json", _context())
+    run(["coach", "start", "--hand", hand, "--context", context], capsys)
+    code, data = run(["coach", "start", "--hand", hand, "--context", context], capsys)
+    assert (code, data) == (1, {"error": f"файл раздачи уже есть: {hand}"})
+    frame = _write(tmp_path / "frame.json", {**pushfold_first_in_node(), "potChips": 3150})
+    code, data = run(["coach", "step", "--hand", hand, "--frame", frame], capsys)
+    assert (code, data) == (1, {"error": "поле potChips не для кадра в bb"})
+
+
+def test_coach_needs_a_subcommand(capsys):
+    code, data = run(["coach"], capsys)
+    assert code == 1
+    assert "coach_command" in data["error"] or "required" in data["error"]

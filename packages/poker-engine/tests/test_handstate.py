@@ -287,6 +287,57 @@ def test_chips_must_be_conserved_between_nodes():
         _validate([first, second])
 
 
+def test_a_stack_cannot_grow_within_a_hand():
+    # Спека тренера §6.2: vision прочитала стек `HJ` (место 2, сфолдил) на 3 BB больше, а банк —
+    # на 3 BB меньше. Сумма сходится, отказ даёт правило стека, и оно называет место.
+    first, second = preflop_vs_3bet()
+    _seat_of(second, 2)["stackBb"] += 3.0
+    second["potBb"] -= 3.0
+    with pytest.raises(
+        ValueError,
+        match=re.escape("стек на месте 2 вырос внутри раздачи: было 40.0 BB, стало 43.0 BB"),
+    ):
+        _validate([first, second])
+
+
+def test_a_stack_grows_within_the_printing_step():
+    # Шаг печати 0.1 BB: 40.0 → 40.1 — шум, а не рост.
+    first, second = preflop_vs_3bet()
+    _seat_of(second, 2)["stackBb"] += 0.1
+    _validate([first, second])
+
+
+def test_a_stack_cannot_grow_between_streets():
+    first = _node()
+    seats = _node()["seats"]
+    seats[0]["stackBb"] = 80.0
+    second = _node(street="flop", board=["8c", "2s", "9d"], seats=seats, potBb=1.6)
+    with pytest.raises(
+        ValueError,
+        match=re.escape("стек на месте 0 вырос внутри раздачи: было 72.2 BB, стало 80.0 BB"),
+    ):
+        _validate([first, second])
+
+
+def test_seats_cannot_exceed_seats_per_table():
+    # D13: `seatsPerTable` контекста читается. За столом 8 мест, контекст — 6-max.
+    with pytest.raises(
+        ValueError, match=re.escape("мест за столом (8) больше, чем seatsPerTable (6)")
+    ):
+        validate_hand(
+            context_from_dict({**CONTEXT, "seatsPerTable": 6}), [node_from_dict(_node())]
+        )
+
+
+def test_fewer_seats_than_seats_per_table_pass():
+    # Стол 9-max, за ним 8 мест: часть игроков выбыла — это не ошибка чтения.
+    validate_hand(context_from_dict({**CONTEXT, "seatsPerTable": 9}), [node_from_dict(_node())])
+
+
+def _seat_of(raw, index):
+    return next(seat for seat in raw["seats"] if seat["seatIndex"] == index)
+
+
 def test_rounding_between_nodes_is_tolerated():
     # Клиент печатает стеки с точностью 0.1 BB: место 0 "похудело" на 0.1 BB
     # между скриншотами без компенсации в банке — это и есть расхождение,

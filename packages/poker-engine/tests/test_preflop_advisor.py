@@ -128,10 +128,11 @@ def test_pushfold_answers_unchanged(make):
     # Инварианты 15 и 16: узлы плана 4 берёт `pushfold` с тем же ответом, `preflop` их
     # отвергает своим текстом.
     raw = make()
-    nodes = _nodes([raw])
-    context = context_from_dict(_context())
+    context_raw = _context(len(raw["seats"]))
+    nodes = _nodes([raw], context_raw)
+    context = context_from_dict(context_raw)
     assert preflop_advisor.applies(context, nodes) == PUSHFOLD_SPOT
-    answer = _advise([raw])
+    answer = _advise([raw], context_raw)
     assert answer["advisor"] == "pushfold"
     assert answer == pushfold.advise(context, nodes, [])
 
