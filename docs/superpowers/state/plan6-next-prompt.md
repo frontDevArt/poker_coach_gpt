@@ -28,7 +28,7 @@
 `docs/superpowers/plans/2026-10-21-preflop-trainer.md` — «Приёмка»; из спеки тренера — §10, §11.2.
 Скиллы: `poker-review-method`, `poker-hand-vision`.
 
-Состояние на входе: ветка `feat/preflop-trainer` (или `main`, если ветка влита), дерево чистое;
+Состояние на входе: ветка `main` (план 6 влит, fast-forward), дерево чистое;
 1454 passed — ~160–190 с на 24 ядрах, ~510–700 с на i5-4460 (один прогон); на Windows вывод
 pytest и скриптов в подпроцессе — с `PYTHONIOENCODING=utf-8`.
 
@@ -50,7 +50,7 @@ pytest и скриптов в подпроцессе — с `PYTHONIOENCODING=ut
 
 План 6 закрыт: модель колла (D30) и MVP префлоп-тренера (`coach`, `Hand`, факты `why`, линтер,
 скиллы L6/L7), 1454 passed (~160–190 с на 24 ядрах, ~510–700 с на i5-4460); ветка
-`feat/preflop-trainer` не влита в `main` — вливание fast-forward ждёт согласия пользователя;
+`feat/preflop-trainer` влита в `main` fast-forward (2026-10-30, согласие пользователя);
 приёмка (Фаза 14) ждёт данных пользователя.
 
 Прочитай `CLAUDE.md`, затем:
