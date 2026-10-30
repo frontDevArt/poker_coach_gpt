@@ -13,7 +13,12 @@
 против изоляции `fold`, `call`, `allin`. Рейз лимпера не олл-ином — вне дерева, отказ.
 
 **Ход.** Корень: `fold`, рейз, `allin` (у `BB` против лимпа `check` вместо `fold`); фолд корня —
-банк большому блайнду (`fold_as_walk`, как в плане 4). Отвечающие — по порядку хода: `fold`,
+банк большому блайнду (`fold_as_walk`, как в плане 4). У `SB` первым в банк ещё `limp` до
+`LIMP_BB` (спека модели колла §7): за ним `BB` — `check` (терминал реализации), изоляция до
+`ISO_FROM_BB_BB`, `allin`; `SB` против изоляции — `fold`, `call`, `allin`, против олл-ина — `fold`,
+`call`. Лимп — пара `SB`–`BB` прямо под корнем, без цепочки. Лимп правила, как рейз правила,
+выше `COMMIT_SHARE` эффективного стека сливается с олл-ином (Review Focus 3: лимп на весь стек —
+олл-ин); сыгранный лимп — как есть. Отвечающие — по порядку хода: `fold`,
 3-бет, `allin`; `call` — только у закрывающего действие (`BB`, против лимпа — лимпер), а против
 олл-ина — у всех (спека модели колла §4); у героя-незакрывающего — пометка `no_cold_call`.
 Первый вошедший закрывает остальных (§6.3), и дальше идёт пара: открывший
@@ -57,6 +62,8 @@ OPEN_SB_BB = 3.0
 ISO_BB = 3.0
 ISO_PER_LIMPER_BB = 1.0
 ISO_FROM_BB_BB = 4.0
+# Правило игры, а не калибровка: лимп — доставка до большого блайнда.
+LIMP_BB = 1.0
 THREEBET_IP = 3.0
 THREEBET_OOP = 4.0
 FOURBET = 2.2
@@ -122,7 +129,13 @@ def build(line: Line, node: DecisionNode) -> Tree | str:
     seats = sorted(node.seats, key=lambda seat: order.index(positions[seat.seat_index]))
     hero = node.hero
     voluntary = [act for act in line.acts if act.action != "fold"]
-    limper = voluntary[0].seat_index if voluntary and voluntary[0].action == "limp" else None
+    limp = voluntary[0] if voluntary and voluntary[0].action == "limp" else None
+    if limp is not None and any(
+        act.seat_index == limp.seat_index and act.action == "raise" for act in line.acts
+    ):
+        return LIMP_RERAISE
+    # Лимп героя (`SB` первым в банк) — ход корня дерева, лимп соперника — до дерева (§6.6).
+    limper = limp.seat_index if limp is not None and limp.seat_index != hero.seat_index else None
 
     if limper is None:
         root = voluntary[0].seat_index if voluntary else hero.seat_index
@@ -130,8 +143,6 @@ def build(line: Line, node: DecisionNode) -> Tree | str:
         players = seats[start:]
         acts = line.acts
     else:
-        if any(act.seat_index == limper and act.action == "raise" for act in line.acts):
-            return LIMP_RERAISE
         players = [*seats[seats.index(hero) :], *(s for s in seats if s.seat_index == limper)]
         acts = [act for act in line.acts if act.action != "limp"]
 
@@ -170,9 +181,6 @@ def build(line: Line, node: DecisionNode) -> Tree | str:
     if limper is not None:
         fixed[len(players) - 1] = _profile_range(players[-1])
         flags.add("limper_range_profile")
-    if line.kind == "open" and positions[hero.seat_index] is Position.SB:
-        flags.add("no_hero_limp")
-
     return Tree(
         players=players,
         nodes=builder.nodes,
@@ -249,9 +257,37 @@ class _Builder:
             bb = self.roles.index(Position.BB)
             passive = ("fold", None, lambda on: self._fold(bb, inv))
         options = [passive]
-        for kind, to in self._aggression(0, rule, min(self.totals[0], others), played):
+        effective = min(self.totals[0], others)
+        if self._limps(effective, played):
+            options.append(("limp", LIMP_BB, self._limp_child(_put(inv, 0, LIMP_BB))))
+        for kind, to in self._aggression(0, rule, effective, played):
             options.append((kind, to, self._open_child(to, inv)))
         return self._decide(at, 0, options, played)
+
+    def _limps(self, effective: float, played: Act | None) -> bool:
+        """У корня лимп: только `SB` первым в банк; лимп правила выше `COMMIT_SHARE`
+        эффективного стека сливается с олл-ином, сыгранный — как есть (как рейз в `_aggression`)."""
+        if self.vs_limp or self.roles[0] is not Position.SB:
+            return False
+        if played is not None and played.action == "limp":
+            return True
+        return LIMP_BB <= COMMIT_SHARE * effective
+
+    def _limp_child(self, inv: list[float]) -> _Child:
+        """`BB` против лимпа `SB`: `check` — терминал реализации пары, изоляция, `allin`."""
+
+        def child(on_path: bool) -> int:
+            at = self._reserve()
+            played = self._take(1, at, on_path)
+            options: list = [("check", None, self._end("realization", 0, 1, inv))]
+            effective = min(self.totals[1], self.totals[0])
+            for kind, to in self._aggression(1, ISO_FROM_BB_BB, effective, played):
+                # Против изоляции у `SB` — `fold`, `call`, `allin`: узел без рейза, как против
+                # 4-бета (уровень 3).
+                options.append((kind, to, self._raise_child(0, 1, inv, to, 3)))
+            return self._decide(at, 1, options, played)
+
+        return child
 
     def _open_child(self, to: float, inv: list[float]) -> _Child:
         return lambda on: self._respond(1, _put(inv, 0, to), on)

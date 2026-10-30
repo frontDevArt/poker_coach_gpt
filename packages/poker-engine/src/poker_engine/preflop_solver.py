@@ -6,7 +6,9 @@
 **Строение дерева.** Участник 0 — открывший, корень — его решение. Действие корня ведёт либо в
 терминал (фолд — банк большому блайнду, `check` — терминал реализации с лимпером), либо в
 **цепочку** отвечающих: узел отвечающего `k`, его фолд — узел `k + 1` или терминал «все
-сфолдили», любое другое действие — **пара** `(0, k)`: поддерево, где ходят только 0 и `k`.
+сфолдили», любое другое действие — **пара** `(0, k)`: поддерево, где ходят только 0 и `k`. Узел
+под корнем без фолда — сразу голова пары (лимп `SB`: `BB` чекает, изолирует или идёт олл-ин,
+спека модели колла §7); цепочки у него нет.
 
 **Модель EV — та же, что у `nash` плана 4.** Блокеры попарные: класс открывшего `h` меняет
 распределение каждого отвечающего, `x ∝ f_k(x)·w[h, x]`, но отвечающие друг на друга не влияют;
@@ -38,10 +40,11 @@
 **Эксплуатируемость** — наибольший выигрыш одного игрока от лучшего ответа на среднюю
 стратегию, в единицах выплат. Открывший — `Σ_h prior(h)·(BR(h) − EV(h))`, `prior` — доля
 комбинаций класса из 1326. Отвечающий — то же по его классам, EV — условное, при входе
-открывшего в банк (действие корня, ведущее в цепочку), как у `nash`; у лимпера `prior` взвешен
-его диапазоном. На дереве push/fold она совпадает с `nash.exploitability` (инвариант 6).
-Проверка — каждые 10 шагов и на последнем. Лучший ответ здесь — только значение, наибольшее
-по действиям: у CFR+ нет шага к лучшему ответу, и выбор между равными на результат не влияет.
+открывшего в банк (действие корня, ведущее в цепочку или в пару под корнем), как у `nash`; у
+лимпера `prior` взвешен его диапазоном. На дереве push/fold она совпадает с
+`nash.exploitability` (инвариант 6). Проверка — каждые 10 шагов и на последнем. Лучший ответ
+здесь — только значение, наибольшее по действиям: у CFR+ нет шага к лучшему ответу, и выбор
+между равными на результат не влияет.
 """
 
 from __future__ import annotations
@@ -112,6 +115,7 @@ class _Shape:
     groups: tuple[tuple[tuple[int | None, int], numpy.ndarray], ...]
     by_matrix: tuple[tuple[int, numpy.ndarray], ...]
     hung: dict[int, numpy.ndarray]  # узел цепочки → позиции в `terms` его пар
+    tops: tuple[int, ...]  # узлы решения отвечающего прямо под корнем: головы пар без цепочки
     free: tuple[int, ...]  # фолд корня и «все сфолдили»
     opener_wins: numpy.ndarray  # (узлы, игроки): выплаты, когда пару выиграл открывший
     other_wins: numpy.ndarray  # (узлы, игроки): когда выиграл `k`; у фолда — тот же ряд
@@ -135,6 +139,7 @@ def _shape(tree: Tree, payoffs: list[numpy.ndarray | None]) -> _Shape:
     terms: list[int] = []
     free: list[int] = []
     chains: list[tuple[tuple[int, ...], int]] = []
+    tops: list[int] = []
 
     def mark(at: int, k: int, top: int) -> None:
         responder[at], head[at] = k, top
@@ -151,6 +156,10 @@ def _shape(tree: Tree, payoffs: list[numpy.ndarray | None]) -> _Shape:
                 free.append(at)
             else:
                 mark(at, next(p for p in node.pair if p != 0), tree.root)
+            continue
+        if all(a.kind != "fold" for a in node.actions):
+            tops.append(at)
+            mark(at, node.player, tree.root)
             continue
         links = []
         while isinstance(tree.nodes[at], Decision):
@@ -219,6 +228,7 @@ def _shape(tree: Tree, payoffs: list[numpy.ndarray | None]) -> _Shape:
             for at in range(count)
             if chain[at]
         },
+        tops=tuple(tops),
         free=tuple(free),
         opener_wins=opener_wins,
         other_wins=other_wins,
@@ -426,10 +436,15 @@ def _gap(
     fold_values = _fold_values(shape, r0, shares, folds)
     own, _ = _responder_values(shape, sigma, r0, fold_values, responder_side, best=False)
     better, _ = _responder_values(shape, sigma, r0, fold_values, responder_side, best=True)
-    entered = sum(r0[links[0]] for links, _ in shape.chains) @ weight
+    heads = [links[0] for links, _ in shape.chains] + list(shape.tops)
+    entered = sum(r0[at] for at in heads) @ weight
     seen = entered > 0
     for k in range(1, shape.players):
-        nodes = [at for at in shape.decisions if shape.chain[at] and shape.responder[at] == k]
+        nodes = [
+            at
+            for at in shape.decisions
+            if (shape.chain[at] or at in shape.tops) and shape.responder[at] == k
+        ]
         gain = sum(better[at] - own[at] for at in nodes)
         mass = prior * shape.fixed.get(k, 1.0)
         conditional = numpy.divide(gain, entered, out=numpy.zeros(169), where=seen)

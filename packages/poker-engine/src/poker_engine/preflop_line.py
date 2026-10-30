@@ -12,7 +12,9 @@
 доставка малого блайнда. Стек 0 — олл-ин; олл-ин выше максимума поднимает его, как рейз.
 
 Спот читается по линии (таблица §4 спеки), отказ — первая сработавшая причина. `history` линию
-не задаёт: её задают кадры (§5.2).
+не задаёт: её задают кадры (§5.2). Лимп героя — только с `SB` первым в банк (спека модели колла
+§7): за ним споты `vs_iso` (`BB` изолировал не олл-ином) и `vs_allin_after_limp`; лимп не с `SB` и
+колл героя — отказ `HERO_FLAT`.
 """
 
 from __future__ import annotations
@@ -132,7 +134,16 @@ def read_line(nodes: list[DecisionNode]) -> Line | str:
 
 
 _KINDS = frozenset(
-    {"open", "vs_open", "vs_3bet", "vs_4bet", "vs_allin_after_raise", "vs_limp"}
+    {
+        "open",
+        "vs_open",
+        "vs_3bet",
+        "vs_4bet",
+        "vs_allin_after_raise",
+        "vs_limp",
+        "vs_iso",
+        "vs_allin_after_limp",
+    }
 )
 
 
@@ -193,6 +204,11 @@ def _kind(walk: _Walk, hero: Seat, position: Position) -> str:
         # Олл-ин до первого решения героя — спот `facing_allin` советника `pushfold`
         # при любом стеке (спека §4), даже если сам `pushfold` узел не взял.
         return PUSHFOLD_SPOT
+    if walk.acts[mine[-1]].action == "limp" and position is Position.SB:
+        # Первым в банк: лимп после чужого лимпа — два вошедших, отказ `MULTIWAY` выше.
+        if theirs and theirs[-1] > mine[-1]:
+            reply = walk.acts[theirs[-1]].action
+            return "vs_allin_after_limp" if reply == "allin" else "vs_iso"
     if walk.acts[mine[-1]].action != "raise":
         return HERO_FLAT
     reply = walk.acts[theirs[-1]].action

@@ -31,7 +31,7 @@ from poker_engine import (
 from poker_engine.handstate import context_from_dict, node_from_dict, validate_hand
 from poker_engine.preflop_line import read_line
 from poker_engine.preflop_solver import action_values, exploitability, reach, solve
-from poker_engine.preflop_tree import Decision, build, chip_payoffs, icm_payoffs
+from poker_engine.preflop_tree import Decision, Terminal, build, chip_payoffs, icm_payoffs
 from poker_engine.pushfold import icm_eps_usd
 
 FIXTURES = {
@@ -42,6 +42,8 @@ FIXTURES = {
     "vs_4bet": preflop_vs_4bet,
     "vs_allin_after_raise": preflop_vs_allin_after_raise,
     "sb_limp": lambda: [preflop_frame(6, {5: 1.0}, folded={7, 2, 3, 4})],
+    # Герой `SB` первым в банк: у корня лимп, под ним — пара `SB`–`BB` без цепочки.
+    "sb_open": lambda: [preflop_frame(5, folded={7, 2, 3, 4})],
 }
 
 
@@ -184,24 +186,26 @@ def test_tree_reduces_to_pushfold(monkeypatch, make, payout, stretch):
 @SUBGAMES
 @pytest.mark.parametrize("payout", ["chip", "icm"])
 def test_responder_gap_counts_every_entry(monkeypatch, make, payout):
-    # У корня рейз и олл-ин — две цепочки отвечающих. Открывший всегда олл-ин, все всегда
-    # фолд: рейз крадёт столько же, сколько олл-ин, выигрыша у открывшего нет, а выигрыш
-    # отвечающих — тот же, что в подыгре push/fold. Масса входа — по обеим цепочкам: по одной
-    # цепочке рейза она нулевая, и выигрыш отвечающих пропал бы.
+    # У корня рейз и олл-ин — две цепочки отвечающих (у `SB` за столом на двоих ещё лимп —
+    # пара под корнем, спека модели колла §7). Открывший всегда олл-ин, все всегда фолд: рейз
+    # и лимп крадут не больше олл-ина, выигрыша у открывшего нет, а выигрыш отвечающих — тот
+    # же, что в подыгре push/fold. Масса входа — по всем входам: по одной цепочке рейза она
+    # нулевая, и выигрыш отвечающих пропал бы.
     nodes = _nodes([make()])
     node = nodes[0]
     game, _ = _subgame(node, payout)
     monkeypatch.setattr(pushfold_game, "PUSHFOLD_MAX_BB", 0.0)
     tree = build(read_line(nodes), node)
     payoffs = _payoffs(tree, node, payout)
-    assert [a.kind for a in tree.nodes[tree.root].actions] == ["fold", "raise", "allin"]
+    kinds = [a.kind for a in tree.nodes[tree.root].actions]
+    assert kinds in (["fold", "raise", "allin"], ["fold", "limp", "raise", "allin"])
     strategy = {}
     for at, decision in enumerate(tree.nodes):
         if isinstance(decision, Decision):
             strategy[at] = numpy.zeros((len(decision.actions), 169))
             strategy[at][0] = 1.0
-    strategy[tree.root] = numpy.zeros((3, 169))
-    strategy[tree.root][2] = 1.0
+    strategy[tree.root] = numpy.zeros((len(kinds), 169))
+    strategy[tree.root][kinds.index("allin")] = 1.0
     expected = nash.exploitability(game, numpy.ones(169), numpy.zeros((game.responders, 169)))
     assert expected > 0
     assert exploitability(tree, payoffs, strategy) == pytest.approx(expected, rel=1e-9)
@@ -320,6 +324,47 @@ def test_small_blind_is_the_button_heads_up():
     opened = next(a for a in tree.nodes[tree.root].actions if a.kind == "raise")
     called = next(a for a in tree.nodes[opened.child].actions if a.kind == "call")
     assert tree.nodes[called.child].opener_in_position is True
+
+
+def _subtree(tree, at):
+    """Узлы поддерева `at`, включая его самого."""
+    nodes = [at]
+    for node in nodes:
+        if isinstance(tree.nodes[node], Decision):
+            nodes.extend(action.child for action in tree.nodes[node].actions)
+    return set(nodes)
+
+
+def test_big_blind_gap_counts_the_limp():
+    # Масса входа и выигрыш `BB` — и по голове пары под корнем (лимп `SB`), не только по
+    # цепочкам. Выплаты заданы руками: у `SB` всюду 0 — выигрыша у него нет; у `BB` 1 на всех
+    # терминалах под лимпом, кроме чека, иначе 0. `SB` всегда лимпует и фолдит, `BB` всегда
+    # чекает: его лучший ответ — изоляция или олл-ин, `SB` фолдит, выигрыш ровно 1 на каждом
+    # классе при входе `SB`. Без лимпа в массе входа выигрыш `BB` — 0.
+    tree, _ = _tree(FIXTURES["sb_open"]())
+    root = tree.nodes[tree.root]
+    kinds = [action.kind for action in root.actions]
+    limped = root.actions[kinds.index("limp")].child
+    assert [action.kind for action in tree.nodes[limped].actions][0] == "check"
+    checked = tree.nodes[limped].actions[0].child
+    under = _subtree(tree, limped)
+    payoffs = []
+    for at, node in enumerate(tree.nodes):
+        if isinstance(node, Terminal):
+            rows = numpy.zeros((len(node.rows), len(tree.players)))
+            if at in under and at != checked:
+                rows[:, 1] = 1.0
+            payoffs.append(rows)
+        else:
+            payoffs.append(None)
+    strategy = {}
+    for at, decision in enumerate(tree.nodes):
+        if isinstance(decision, Decision):
+            strategy[at] = numpy.zeros((len(decision.actions), 169))
+            strategy[at][0] = 1.0
+    strategy[tree.root] = numpy.zeros((len(kinds), 169))
+    strategy[tree.root][kinds.index("limp")] = 1.0
+    assert exploitability(tree, payoffs, strategy) == pytest.approx(1.0, rel=1e-12)
 
 
 def test_iteration_cap_reports_not_converged():

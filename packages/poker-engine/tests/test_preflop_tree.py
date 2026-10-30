@@ -81,6 +81,7 @@ FIXTURES = {
     "vs_4bet": preflop_vs_4bet,
     "vs_allin_after_raise": preflop_vs_allin_after_raise,
     "sb_limp": _sb_limp,
+    "sb_open": _sb_open,
 }
 
 
@@ -319,6 +320,86 @@ def test_a_limp_reraise_not_allin_is_refused():
     assert read_line(nodes).kind == "vs_3bet"
     assert build(read_line(nodes), nodes[-1]) == LIMP_RERAISE
     assert LIMP_RERAISE == "лимпер ответил на изоляцию рейзом не олл-ином: вне дерева префлопа"
+
+
+def test_a_hero_limp_reraise_not_allin_is_refused():
+    # Герой `SB` залимпил, `BB` изолировал до 4.0, герой рейзнул до 12.0, `BB` пошёл олл-ин: у
+    # `SB` против изоляции рейза нет, линия — тот же отказ, что у лимпера против изоляции.
+    raws = [
+        preflop_frame(5, folded={7, 2, 3, 4}),
+        preflop_frame(5, {5: 1.0, 6: 4.0}, folded={7, 2, 3, 4}),
+        preflop_frame(5, {5: 12.0, 6: 40.0}, folded={7, 2, 3, 4}),
+    ]
+    nodes = _nodes(raws)
+    assert read_line(nodes).kind == "vs_allin_after_raise"
+    assert build(read_line(nodes), nodes[-1]) == LIMP_RERAISE
+
+
+# --- лимп героя с SB (спека модели колла §7, инвариант 14) ----------------------------------
+
+
+def test_sb_root_has_limp():
+    # 6-max, у всех 25 BB, все до `SB` сфолдили. Лимп — до 1.0; открытие `OPEN_SB_BB` 3.0 и
+    # изоляция `ISO_FROM_BB_BB` 4.0 не выше 0.4 × 25 = 10 — не слиты.
+    tree, _ = _tree([preflop_frame(5, folded={7, 2, 3, 4}, starting=_stacks(25.0))])
+    assert [seat.seat_index for seat in tree.players] == [5, 6]
+    assert tree.hero_node == tree.root
+    assert _hero(tree) == [("fold", None), ("limp", 1.0), ("raise", 3.0), ("allin", 25.0)]
+    limped = _child(tree, tree.root, "limp")
+    assert tree.nodes[limped].player == 1
+    assert _actions(tree, limped) == [("check", None), ("raise", 4.0), ("allin", 25.0)]
+    checked = tree.nodes[_child(tree, limped, "check")]
+    # `SB` на флопе ходит первым: открывший не в позиции.
+    assert (checked.kind, checked.pair) == ("realization", (0, 1))
+    assert checked.opener_in_position is False
+    # Чек: банк 2 × 1.0 + анте 0.75, за банком 24 у обоих.
+    assert checked.spr == pytest.approx(24.0 / 2.75)
+    isolated = _child(tree, limped, "raise")
+    assert tree.nodes[isolated].player == 0
+    assert _actions(tree, isolated) == [("fold", None), ("call", 4.0), ("allin", 25.0)]
+    assert tree.nodes[_child(tree, isolated, "call")].kind == "realization"
+    shoved = _child(tree, isolated, "allin")
+    assert tree.nodes[shoved].player == 1
+    assert _actions(tree, shoved) == [("fold", None), ("call", 25.0)]
+    against = _child(tree, limped, "allin")
+    assert tree.nodes[against].player == 0
+    assert _actions(tree, against) == [("fold", None), ("call", 25.0)]
+    # Фолд `SB` после лимпа теряет лимп: `BB` забирает 1.0, свой блайнд и анте.
+    folded = tree.nodes[_child(tree, isolated, "fold")]
+    assert folded.rows == [pytest.approx([24.0, 25.0 + 1.0 + 0.75])]
+
+
+def test_short_sb_limp_merges_with_allin(no_pushfold):
+    # Review Focus 3: у `SB` 1 BB с блайндом — лимп на весь стек. Он сливается с олл-ином,
+    # узла с отрицательным стеком нет.
+    tree, node = _tree([preflop_frame(5, folded={7, 2, 3, 4}, starting={5: 1.0})])
+    assert _hero(tree) == [("fold", None), ("allin", 1.0)]
+    before = sum(seat.stack_bb for seat in tree.players) + node.pot_bb
+    for terminal in (n for n in tree.nodes if isinstance(n, Terminal)):
+        for row in terminal.rows:
+            assert min(row) >= 0
+            assert sum(row) == pytest.approx(before, abs=1e-9)
+
+
+def test_limp_follows_the_commit_share(no_pushfold):
+    # Лимп правила — как рейз правила: выше `COMMIT_SHARE` эффективного стека сливается с
+    # олл-ином. У `SB` 2.4 BB: 1.0 > 0.4 × 2.4 = 0.96 — слит; у 2.5 BB 1.0 = 0.4 × 2.5 — нет.
+    merged, _ = _tree([preflop_frame(5, folded={7, 2, 3, 4}, starting={5: 2.4})])
+    assert [kind for kind, _ in _hero(merged)] == ["fold", "allin"]
+    kept, _ = _tree([preflop_frame(5, folded={7, 2, 3, 4}, starting={5: 2.5})])
+    assert [kind for kind, _ in _hero(kept)] == ["fold", "limp", "allin"]
+
+
+def test_played_limp_is_kept(no_pushfold):
+    # Сыгранный лимп — как есть, как сыгранный рейз: у `SB` 2.4 BB лимп правила слит, но
+    # сыгранный лимп линия ведёт по дереву до узла героя против изоляции.
+    raws = [
+        preflop_frame(5, folded={7, 2, 3, 4}, starting={5: 2.4}),
+        preflop_frame(5, {5: 1.0, 6: 2.0}, folded={7, 2, 3, 4}, starting={5: 2.4}),
+    ]
+    tree, _ = _tree(raws)
+    assert [kind for kind, _ in _actions(tree, tree.root)] == ["fold", "limp", "allin"]
+    assert _hero(tree) == [("fold", None), ("call", 2.0), ("allin", 2.4)]
 
 
 def test_a_blind_already_allin_is_refused():
@@ -589,9 +670,6 @@ def test_fold_tree_matches_pushfold_subgame(monkeypatch):
         ("fold_as_walk", _sb_limp, False),  # у BB против лимпа фолда нет
         ("limper_range_profile", preflop_vs_limp, True),
         ("limper_range_profile", preflop_open, False),
-        ("no_hero_limp", _sb_open, True),
-        ("no_hero_limp", preflop_open, False),
-        ("no_hero_limp", _sb_limp, False),
         # Инвариант 2: незакрывающий против открытия — без колла, `BB` закрывает.
         ("no_cold_call", preflop_vs_open, True),
         ("no_cold_call", lambda: [preflop_frame(6, {7: 2.0}, folded={2, 3, 4, 5})], False),

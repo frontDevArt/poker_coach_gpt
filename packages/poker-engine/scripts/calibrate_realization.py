@@ -1,8 +1,9 @@
 """Подбор `κ`, `λ` реализации по эталону T2 (спека модели колла, §6.2–§6.4; план 6, Задача 3).
 
 Сетка `κ ∈ {0.00, 0.05, …, 0.60}`, `λ ∈ {0, 0.02, 0.05, 0.08}`. На каждом узле сетки решаются по
-фишкам деревья всех точек T2 файла `tests/data/mtt_reference.json` (роли `calibration` и
-`holdout`) — стол, доли, метрика и допуски те же, что у теста T2 (`tests/test_mtt_reference.py`).
+фишкам деревья всех точек T2 файла `tests/data/mtt_reference.json` (роли `calibration`, `holdout`
+и с лимпом `SB` — `holdout_sb_limp`) — стол, доли, метрика и допуски те же, что у теста T2
+(`tests/test_mtt_reference.py`).
 Константы `realization` подменяются на время вызова, модуль не меняется.
 
 Цель — сумма квадратов отклонений точек `calibration` в п.п. Правило выбора — §6.2 среди узлов,
@@ -17,7 +18,7 @@
 Вывод — Markdown: сетка (корень средней цели, п.п., и число точек вне допуска), лучшие узлы по
 всей сетке и среди проходящих, выбор по правилу; отклонение каждой точки у выбора, у лучшего
 проходящего `λ ≠ 0` и у лучших по всей сетке; у выбора — ещё точки вне теста T2 (роли
-`holdout_sb_limp` и `holdout_cold_call`, кроме метрики `limp`), справочно. Узел, где хоть одно
+`holdout_cold_call`, `holdout_sb_rfi` и `holdout_sb_size`), справочно. Узел, где хоть одно
 равновесие не сошлось, помечен `*`.
 
 Узлы сетки решаются параллельно, по процессу на ядро; `numpy` — в один поток: матрицы 169 × 169
@@ -60,7 +61,7 @@ from poker_engine import allin_matrix, realization  # noqa: E402
 KAPPAS = [round(0.05 * i, 2) for i in range(13)]
 LAMBDAS = [0.0, 0.02, 0.05, 0.08]
 SIMPLER_BY_PP = 1.0
-OUTSIDE = ("holdout_sb_limp", "holdout_cold_call")
+OUTSIDE = ("holdout_cold_call", "holdout_sb_rfi", "holdout_sb_size")
 _MATRIX = realization.matrix
 
 
@@ -100,7 +101,7 @@ def main() -> None:
     points = load_points()
     tested = [point for point in points if point["role"] in TOLERANCE_PP]
     calibration = [i for i, point in enumerate(tested) if point["role"] == "calibration"]
-    outside = [point for point in points if point["role"] in OUTSIDE and point["metric"] != "limp"]
+    outside = [point for point in points if point["role"] in OUTSIDE]
 
     started = time.perf_counter()
     cells = [(kappa, lam) for kappa in KAPPAS for lam in LAMBDAS]

@@ -8,9 +8,11 @@
 
 Этот модуль — и мерка подбора: `scripts/calibrate_realization.py` берёт отсюда стол, доли, метрику
 и допуски §6.3, чтобы подбор и тест не разошлись. Тест допусков (инвариант 13) — при константах
-`realization`, подобранных скриптом (журнал плана 6, «Фаза 3c»); точки вне T2 — роли
-`holdout_sb_limp` (`SB` первым в банк, до лимпа `SB`) и `holdout_cold_call` (E6: в чарте есть
-колд-колл незакрывающего, в модели нет).
+`realization`, подобранных скриптом (журнал плана 6, «Фаза 3c»), и с лимпом `SB` (Задача 4):
+`SB` первым в банк — роль `holdout_sb_limp`, допуск отложенных. Точки вне T2 — роли
+`holdout_cold_call` (E6: в чарте есть колд-колл незакрывающего, в модели нет), `holdout_sb_rfi`
+(`E11.SB.open`: чарт RFI без лимпа, а у `SB` модели лимп есть — доли рейза несравнимы) и
+`holdout_sb_size` (доля рейза и олл-ина `SB`, которую решает единственный размер рейза, D33).
 """
 
 from __future__ import annotations
@@ -37,11 +39,13 @@ from poker_engine.types import Position, positions_for
 
 REFERENCE = pathlib.Path(__file__).parent / "data" / "mtt_reference.json"
 # Допуски §6.3, п.п.: E11 — кэш с другим рейком и размером открытия.
-TOLERANCE_PP = {"calibration": 6.0, "holdout": 10.0}
+TOLERANCE_PP = {"calibration": 6.0, "holdout": 10.0, "holdout_sb_limp": 10.0}
 CASH_TOLERANCE_PP = 12.0
 CASH_SOURCE = "E11"
-# Роли вне `holdout` — спека §6.1 и решения Задачи 3 плана 6 (Фазы 3b–3c): `E4.SB.open` — `SB`
-# первым в банк, как E7–E9; E6 целиком — ответ незакрывающего, у которого в чарте колд-колл.
+# Роли вне `holdout` — спека §6.1 и решения Задач 3–4 плана 6 (Фазы 3b–4): `E4.SB.open` — `SB`
+# первым в банк, как E7–E9; E6 целиком — ответ незакрывающего, у которого в чарте колд-колл;
+# `E11.SB.open` — `SB` первым в банк по кэш-чарту RFI, где лимпа нет; рейз и олл-ин `SB` на
+# 20–25 BB и `E4.SB.open` — частоты единственного размера рейза (решение пользователя, Фаза 4).
 ROLE_OF_SOURCE = {
     "E1": "calibration",
     "E2": "calibration",
@@ -50,7 +54,14 @@ ROLE_OF_SOURCE = {
     "E8": "holdout_sb_limp",
     "E9": "holdout_sb_limp",
 }
-ROLE_OF_POINT = {"E4.SB.open": "holdout_sb_limp"}
+ROLE_OF_POINT = {
+    "E4.SB.open": "holdout_sb_size",
+    "E7.SB.25bb.raise": "holdout_sb_size",
+    "E7.SB.25bb.allin": "holdout_sb_size",
+    "E9.SB.raise": "holdout_sb_size",
+    "E9.SB.allin": "holdout_sb_size",
+    "E11.SB.open": "holdout_sb_rfi",
+}
 
 _PRIOR = numpy.array([allin_matrix.combos_of(name) for name in allin_matrix.CLASSES]) / 1326
 
@@ -180,7 +191,14 @@ def test_reference_file_shape():
     points = load_points()
     assert len({point["id"] for point in points}) == len(points)
     roles = {point["role"] for point in points}
-    assert roles == {"calibration", "holdout", "holdout_sb_limp", "holdout_cold_call"}
+    assert roles == {
+        "calibration",
+        "holdout",
+        "holdout_sb_limp",
+        "holdout_cold_call",
+        "holdout_sb_rfi",
+        "holdout_sb_size",
+    }
     assert {source_of(point) for point in points} == {f"E{i}" for i in range(1, 12)}
     for point in points:
         assert point["payout"] == "chip"
@@ -223,9 +241,9 @@ def _solved(point: dict) -> Solved:
     ids=lambda point: point["id"],
 )
 def test_model_is_within_the_reference_tolerance(point):
-    # Инвариант 13, допуски §6.3 при константах модуля: калибровочные ±6 п.п., отложенные ±10,
-    # E11 ±12; у интервала источников — от краёв. Равновесие обязано сойтись: доли несошедшегося
-    # решения — не модель.
+    # Инвариант 13, допуски §6.3 при константах модуля: калибровочные ±6 п.п., отложенные ±10
+    # (и `SB` первым в банк, §7), E11 ±12; у интервала источников — от краёв. Равновесие обязано
+    # сойтись: доли несошедшегося решения — не модель.
     solved = _solved(point)
     assert solved.converged
     model = model_value(point, solved.shares)

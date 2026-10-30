@@ -54,7 +54,6 @@ _TREE_FLAGS = (
     "fixed_sizing",
     "postflop_realization",
     "deep_stack",
-    "no_hero_limp",
     "limper_range_profile",
 )
 # Разность размеров в шаг печатается с хвостом (2.1 − 2.0 > 0.1): шум, а не отклонение.

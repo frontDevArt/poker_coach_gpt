@@ -20,7 +20,7 @@ from conftest import (
     pushfold_first_in_node,
 )
 from poker_engine.handstate import context_from_dict, node_from_dict, validate_hand
-from poker_engine.preflop_line import MULTIWAY, Act, Line, read_line
+from poker_engine.preflop_line import AMBIGUOUS, HERO_FLAT, MULTIWAY, Act, Line, read_line
 
 
 def _line(raws):
@@ -217,13 +217,46 @@ def test_big_blind_walk_is_refused():
     )
 
 
-def test_a_hero_limp_is_refused():
-    # Герой `SB` доставил до 1 BB, `BB` рейзнул: у героя в дереве лимпа нет.
-    raws = [
+def _sb_limped(big_blind):
+    """Герой `SB` первым в банк залимпил, `BB` поставил до `big_blind`: два кадра."""
+    return [
         preflop_frame(5, folded={7, 2, 3, 4}),
-        preflop_frame(5, {5: 1.0, 6: 4.0}, folded={7, 2, 3, 4}),
+        preflop_frame(5, {5: 1.0, 6: big_blind}, folded={7, 2, 3, 4}),
     ]
-    assert _line(raws) == "герой вошёл в банк лимпом или коллом: линия вне дерева префлопа"
+
+
+def test_vs_iso():
+    # Спека модели колла §7: `SB` залимпил, `BB` изолировал не олл-ином.
+    line = _line(_sb_limped(4.0))
+    assert line.kind == "vs_iso"
+    assert line.acts[-2:] == [Act(5, "limp", 1.0), Act(6, "raise", 4.0)]
+    assert _seats(line) == [5, 6]
+    assert (line.hero_at, line.opponent_at) == (0, 1)
+
+
+def test_vs_allin_after_limp():
+    line = _line(_sb_limped(40.0))
+    assert line.kind == "vs_allin_after_limp"
+    assert line.acts[-1] == Act(6, "allin", 40.0)
+    assert (line.hero_at, line.opponent_at) == (0, 1)
+
+
+@pytest.mark.parametrize("big_blind", [4.0, 40.0])
+def test_one_frame_after_a_hero_limp_is_ambiguous(big_blind):
+    # Только второй кадр: «`SB` залимпил» по одному кадру не отличить от рейза героя до 1.0 —
+    # нужен кадр решения `SB` первым в банк.
+    assert _line(_sb_limped(big_blind)[1:]) == AMBIGUOUS
+
+
+def test_a_hero_limp_not_from_the_small_blind_is_refused():
+    # Лимп не с `SB` — вне модели (за ним колл лимпа и мультипот): `UTG` залимпил, `BB`
+    # изолировал. Текст отказа прежний.
+    raws = [
+        preflop_frame(7),
+        preflop_frame(7, {7: 1.0, 6: 4.0}, folded={2, 3, 4, 5}),
+    ]
+    assert _line(raws) == HERO_FLAT
+    assert HERO_FLAT == "герой вошёл в банк лимпом или коллом: линия вне дерева префлопа"
 
 
 def test_cold_call_before_the_hero_is_multiway():

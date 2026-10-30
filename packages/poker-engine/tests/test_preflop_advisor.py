@@ -44,7 +44,19 @@ SPOTS = {
     "vs_limp": preflop_vs_limp,
     # `BB` против лимпа `SB`: вместо фолда — чек.
     "vs_limp_bb": lambda: [preflop_frame(6, {5: 1.0}, folded={7, 2, 3, 4})],
+    # Герой `SB` первым в банк: у корня лимп (спека модели колла §7).
+    "open_sb": lambda: [preflop_frame(5, folded={7, 2, 3, 4})],
+    # Герой `SB` залимпил, `BB` изолировал до 4.0 (размер правила) или пошёл олл-ин.
+    "vs_iso": lambda: _sb_limped(4.0),
+    "vs_allin_after_limp": lambda: _sb_limped(40.0),
 }
+
+def _sb_limped(big_blind):
+    return [
+        preflop_frame(5, folded={7, 2, 3, 4}),
+        preflop_frame(5, {5: 1.0, 6: big_blind}, folded={7, 2, 3, 4}),
+    ]
+
 
 TREE_FLAGS = (
     "no_overcall",
@@ -53,7 +65,6 @@ TREE_FLAGS = (
     "fixed_sizing",
     "postflop_realization",
     "deep_stack",
-    "no_hero_limp",
     "limper_range_profile",
 )
 
@@ -149,7 +160,7 @@ def test_answer_shape(answers, name):
     kinds = [a.kind for a in hero.actions]
 
     assert answer["advisor"] == "preflop"
-    assert answer["spot"] == name.removesuffix("_bb")
+    assert answer["spot"] == name.removesuffix("_bb").removesuffix("_sb")
     keys = {
         "advisor", "spot", "action", "heroHand", "effectiveStackBb", "line", "actions",
         "ranges", "nash", "flags",
@@ -264,6 +275,10 @@ def test_fold_is_the_stack_and_the_line_is_read(answers):
         ("vs_allin_after_raise", {4: "shover"}),
         ("vs_limp", {7: "limper", 5: "responder", 6: "responder"}),
         ("vs_limp_bb", {5: "limper"}),
+        ("open_sb", {6: "responder"}),
+        # Изоляция лимпа — первый рейз линии: роль по номеру рейза, как у открытия.
+        ("vs_iso", {6: "opener"}),
+        ("vs_allin_after_limp", {6: "shover"}),
     ],
 )
 def test_opponents_are_the_seats_still_in_hand(answers, name, roles):
@@ -351,6 +366,58 @@ def test_steps_are_consistent(answers):
     advised = first["ranges"]["hero"]["byAction"]["raise"]
     for at, name in enumerate(allin_matrix.CLASSES):
         assert hero_reach[at] == pytest.approx(advised.get(name, 0.0), abs=0.005 + 1e-12)
+
+
+def test_steps_are_consistent_after_limp(answers):
+    # Инвариант 15 спеки модели колла: герой `SB` залимпил, `BB` изолировал размером правила
+    # 4.0. Его reach в дереве второго шага — частота лимпа ответа `open` по первому кадру:
+    # корень, стеки и размеры те же.
+    first = answers["open_sb"]
+    limp = next(e for e in first["actions"] if e["action"] == "limp")
+    assert limp["toBb"] == 1.0
+    solved = preflop_advisor._solve(context_from_dict(_context()), _nodes(_sb_limped(4.0)))
+    tree = solved.tree
+    opened = _tree(SPOTS["open_sb"]())
+    assert [p.seat_index for p in tree.players] == [p.seat_index for p in opened.players]
+    me = tree.nodes[tree.hero_node].player
+    hero_reach = preflop_solver.reach(tree, solved.by_icm, me)
+    advised = first["ranges"]["hero"]["byAction"]["limp"]
+    assert advised
+    for at, name in enumerate(allin_matrix.CLASSES):
+        assert hero_reach[at] == pytest.approx(advised.get(name, 0.0), abs=0.005 + 1e-12)
+
+
+def test_no_hero_limp_is_gone(answers):
+    # Спека модели колла §7, §11: пометка стала неправдой и больше не ставится нигде.
+    for raws in _flag_cases().values():
+        assert "no_hero_limp" not in _advise(raws)["flags"]
+    assert all("no_hero_limp" not in answer["flags"] for answer in answers.values())
+
+
+@pytest.mark.parametrize(
+    ("history", "deviates"),
+    [
+        ([{"advisor": "preflop", "action": "limp", "sizeBb": 1.0}], True),
+        ([{"advisor": "preflop", "action": "raise", "sizeBb": 3.0}], False),
+    ],
+    ids=["advised_limp", "advised_raise"],
+)
+def test_line_deviates_when_the_sb_raised(history, deviates):
+    # Совет `open` у `SB` — лимп, а в кадрах герой рейзнул до 3.0 и получил 3-бет до 9.0.
+    raws = [
+        preflop_frame(5, folded={7, 2, 3, 4}),
+        preflop_frame(5, {5: 3.0, 6: 9.0}, folded={7, 2, 3, 4}),
+    ]
+    answer = _advise(raws, history=history)
+    assert answer["spot"] == "vs_3bet"
+    assert ("line_deviates" in answer["flags"]) == deviates
+
+
+def test_no_deviation_after_the_advised_limp():
+    history = [{"advisor": "preflop", "action": "limp", "sizeBb": 1.0}]
+    answer = _advise(_sb_limped(4.0), history=history)
+    assert answer["spot"] == "vs_iso"
+    assert "line_deviates" not in answer["flags"]
 
 
 def _vs_3bet_after_open(size):
