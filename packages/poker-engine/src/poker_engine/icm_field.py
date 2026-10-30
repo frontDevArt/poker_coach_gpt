@@ -460,5 +460,8 @@ def _equity_after(
 
 
 def _check_seat(table: list[float], seat: int, name: str) -> None:
+    # Размер стола — раньше места: у пустого стола диапазона `[0, -1]` нет, и отказ называет
+    # пустой стол текстом `table_equities` (D13).
+    _check_seat_count(len(table))
     if not 0 <= seat < len(table):
         raise ValueError(f"{name}={seat} вне диапазона игроков [0, {len(table) - 1}]")

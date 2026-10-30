@@ -162,6 +162,19 @@ def test_hero_outside_the_table_is_rejected(hero):
         hero_equity([50.0, 50.0], 0, 0.0, winner_take_all(), hero)
 
 
+def test_an_empty_table_is_named_not_its_range():
+    # Пустой стол — текстом `table_equities`, а не «вне диапазона [0, -1]»: такого диапазона
+    # нет, и места героя в нём пользователь не найдёт (D13).
+    for call in (
+        lambda: hero_equity([], 0, 0.0, winner_take_all(), 0),
+        lambda: risk_premium([], 0, 0.0, winner_take_all(), 0, 1),
+        lambda: bubble_factor([], 0, 0.0, winner_take_all(), 0, 1),
+        lambda: pressure([], 0, 0.0, winner_take_all(), 0, 1),
+    ):
+        with pytest.raises(ValueError, match="^за столом нет игроков$"):
+            call()
+
+
 @pytest.mark.parametrize("villain", [2, -1])
 def test_villain_outside_the_table_is_rejected(villain):
     with pytest.raises(
