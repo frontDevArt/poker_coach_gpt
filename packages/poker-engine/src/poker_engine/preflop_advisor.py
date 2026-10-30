@@ -36,12 +36,30 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from . import allin_matrix, nash, preflop_solver
+from .explain import WORDS, action_text, fact, line_text
+from .explain import range_share as class_share
 from .hand import Hand
 from .handstate import DecisionNode, TournamentContext, assign_positions
-from .preflop_line import Act, Line, read_line
+from .preflop_line import (
+    HERO_ALL_IN,
+    PUSHFOLD_SPOT,
+    Act,
+    Line,
+    flop_players,
+    read_closed_line,
+    read_line,
+)
 from .preflop_solver import Solution, action_values, reach
-from .preflop_tree import SIZE_STEP_BB, Tree, build, chip_payoffs, icm_payoffs, with_bounties
-from .pushfold import _classes, _context_flags
+from .preflop_tree import (
+    SIZE_STEP_BB,
+    Terminal,
+    Tree,
+    build,
+    chip_payoffs,
+    icm_payoffs,
+    with_bounties,
+)
+from .pushfold import CLASS_FREQ_STEP, _classes, _context_flags
 
 name = "preflop"
 
@@ -59,6 +77,12 @@ _TREE_FLAGS = (
 )
 # Разность размеров в шаг печатается с хвостом (2.1 − 2.0 > 0.1): шум, а не отклонение.
 _SIZE_NOISE = 1e-9
+
+# Причины, по которым итога префлопа нет (спека тренера §7.3).
+NO_PREFLOP = "итога префлопа нет: в раздаче нет кадров префлопа"
+MULTIWAY_FLOP = "итога префлопа нет: на флоп пришли трое и больше — мультипот вне модели"
+OFF_TREE_LINE = "итога префлопа нет: линия вне дерева префлопа"
+PUSHFOLD_LINE = "итога префлопа нет: линия push/fold — после олл-ина решений нет"
 
 
 def applies(hand: Hand) -> str | None:
@@ -90,11 +114,7 @@ def _solve(context: TournamentContext, nodes: list[DecisionNode]) -> _Solved:
     node = nodes[-1]
     line = read_line(nodes)
     tree = build(line, node)
-    pko = any(seat.bounty_usd is not None for seat in node.seats)
-    chips = chip_payoffs(tree)
-    plain = icm_payoffs(tree, node, context, bounties=False)
-    icm = with_bounties(tree, plain) if pko else plain
-    eps = _icm_eps(tree, chips, plain)
+    chips, plain, icm, eps, pko = _payoffs(context, node, tree)
     limit = preflop_solver.MAX_ITERATIONS
     return _Solved(
         line=line,
@@ -107,6 +127,15 @@ def _solve(context: TournamentContext, nodes: list[DecisionNode]) -> _Solved:
         by_icm=preflop_solver.solve(tree, icm, eps, limit),
         by_chip=preflop_solver.solve(tree, chips, nash.EPS_CHIP_BB, limit),
     )
+
+
+def _payoffs(context: TournamentContext, node: DecisionNode, tree: Tree) -> tuple:
+    """Выплаты дерева: фишки, ICM без голов, ICM с головами в PKO, допуск ICM и признак PKO."""
+    pko = any(seat.bounty_usd is not None for seat in node.seats)
+    chips = chip_payoffs(tree)
+    plain = icm_payoffs(tree, node, context, bounties=False)
+    icm = with_bounties(tree, plain) if pko else plain
+    return chips, plain, icm, _icm_eps(tree, chips, plain), pko
 
 
 def _icm_eps(tree: Tree, chips: list, plain: list) -> float:
@@ -153,10 +182,14 @@ def advise(hand: Hand, history: list[dict]) -> dict:
 
     strategy = solved.by_icm.strategy[tree.hero_node]
     index = allin_matrix.class_index(hero_class)
+    # Диапазон, который герой представляет линией до узла (спека тренера §7.2).
+    mine = reach(tree, solved.by_icm, me)
     result["ranges"] = {
         "hero": {
             "byAction": {a.kind: _classes(row) for a, row in zip(hero.actions, strategy)},
             "handFreq": {a.kind: float(row[index]) for a, row in zip(hero.actions, strategy)},
+            "reach": _classes(mine),
+            "reachPct": nash.range_share(mine),
         },
         "opponents": _opponents(solved, me, positions),
     }
@@ -259,3 +292,120 @@ def _flags(
     if deviates:
         flags.append("line_deviates")
     return flags
+
+
+def close_street(hand: Hand) -> dict:
+    """Итог префлопа (спека тренера §7.3): линия целиком и диапазоны дошедших до флопа.
+
+    Дерево — то же, что на последнем шаге префлопа (корень и стеки последнего кадра префлопа),
+    путь продолжен до терминала по первому кадру следующей улицы; диапазоны — `reach` по
+    ICM-равновесию, как у совета. Итога нет — `{"street", "reason"}`. Предусловие: в раздаче есть
+    кадр улицы после префлопа.
+    """
+    preflop = [node for node in hand.nodes if node.street == "preflop"]
+    after = next(node for node in hand.nodes if node.street != "preflop")
+    if not preflop:
+        return _no_summary(NO_PREFLOP)
+    if len(flop_players(preflop, after)) > 2:
+        return _no_summary(MULTIWAY_FLOP)
+    line = read_closed_line(preflop, after)
+    if isinstance(line, str):
+        # Олл-ин героя или спот push/fold на последнем кадре: после олл-ина решений нет.
+        return _no_summary(PUSHFOLD_LINE if line in (PUSHFOLD_SPOT, HERO_ALL_IN) else OFF_TREE_LINE)
+    node = preflop[-1]
+    tree = build(line, node)
+    if isinstance(tree, str) or tree.hero_node != -1:
+        # Ход вне действий узла или линия, оборвавшаяся на решении: до терминала не дошла.
+        return _no_summary(OFF_TREE_LINE)
+    at, index = tree.path[-1]
+    end = tree.nodes[tree.nodes[at].actions[index].child]
+    if not isinstance(end, Terminal) or end.kind == "fold":
+        return _no_summary(OFF_TREE_LINE)
+    if end.kind == "allin":
+        return _no_summary(PUSHFOLD_LINE)
+
+    _, _, icm, eps, _ = _payoffs(hand.context, node, tree)
+    solution = preflop_solver.solve(tree, icm, eps, preflop_solver.MAX_ITERATIONS)
+    positions = assign_positions(node)
+    roles = _roles(line)
+    starts = {seat.seat_index: seat.stack_bb + seat.invested_bb for seat in after.seats}
+    ranges = []
+    for player in end.pair:
+        seat = tree.players[player]
+        freq = reach(tree, solution, player)
+        ranges.append(
+            {
+                "seatIndex": seat.seat_index,
+                "position": positions[seat.seat_index].value,
+                "role": roles.get(seat.seat_index, "responder"),
+                "isHero": seat.is_hero,
+                "stackBb": starts[seat.seat_index],
+                "reach": _classes(freq),
+                "reachPct": nash.range_share(freq),
+            }
+        )
+    return {
+        "street": "preflop",
+        "line": [_act(act, positions) for act in line.acts],
+        "ranges": ranges,
+    }
+
+
+def _no_summary(reason: str) -> dict:
+    return {"street": "preflop", "reason": reason}
+
+
+def explain(answer: dict) -> list[dict]:
+    """Факты ответа (спека тренера §8): действие, разницы EV, ICM-поправка, головы, диапазоны,
+    стеки, линия, пометки. Банк, колл и требуемую эквити даёт узел (`explain.node_facts`)."""
+    actions = answer["actions"]
+    best = next(at for at, option in enumerate(actions) if option["action"] == answer["action"])
+    facts = [fact("action", action_text(answer["action"], answer.get("sizeBb")), "text")]
+    if "sizeBb" in answer:
+        facts.append(fact("sizeBb", answer["sizeBb"], "bb"))
+    if best != 0:
+        base = actions[0]
+        facts += [
+            fact("baseAction", WORDS[base["action"]], "text"),
+            fact("vsBaseUsd", actions[best]["evUsd"] - base["evUsd"], "usd"),
+            fact("vsBaseBb", actions[best]["evBb"] - base["evBb"], "ev_bb"),
+        ]
+    second = max(
+        (at for at in range(len(actions)) if at != best), key=lambda at: actions[at]["evUsd"]
+    )
+    runner = actions[second]
+    facts += [
+        fact("secondAction", action_text(runner["action"], runner.get("toBb")), "text"),
+        fact("vsSecondUsd", actions[best]["evUsd"] - runner["evUsd"], "usd"),
+        fact("vsSecondBb", actions[best]["evBb"] - runner["evBb"], "ev_bb"),
+    ]
+    by_chip = 0
+    for at, option in enumerate(actions):
+        if option["evBb"] > actions[by_chip]["evBb"]:  # равенство — к раннему, как у совета
+            by_chip = at
+    if by_chip != best:
+        chip = actions[by_chip]
+        facts.append(fact("chipBestAction", action_text(chip["action"], chip.get("toBb")), "text"))
+    if "bountyUsd" in answer:
+        facts.append(fact("bountyUsd", answer["bountyUsd"], "usd"))
+
+    hero = answer["ranges"]["hero"]
+    for kind, classes in hero["byAction"].items():
+        facts.append(fact(f"heroRange.{kind}", class_share(classes), "pct"))
+    mixed = [kind for kind, freq in hero["handFreq"].items() if freq >= CLASS_FREQ_STEP / 2]
+    if len(mixed) > 1:
+        facts += [fact(f"heroHandFreq.{kind}", hero["handFreq"][kind], "pct") for kind in mixed]
+    facts.append(fact("heroReachPct", hero["reachPct"], "pct"))
+    for opponent in answer["ranges"]["opponents"]:
+        at = f"opponent.{opponent['position']}"
+        facts += [
+            fact(f"{at}.role", opponent["role"], "text"),
+            fact(f"{at}.stackBb", opponent["stackBb"], "bb"),
+            fact(f"{at}.reachPct", opponent["reachPct"], "pct"),
+        ]
+    facts.append(fact("effectiveStackBb", answer["effectiveStackBb"], "bb"))
+    line = line_text(answer["line"])
+    if line:
+        facts.append(fact("line", line, "text"))
+    facts += [fact(f"flag.{flag}", flag, "text") for flag in answer["flags"]]
+    return facts

@@ -16,9 +16,9 @@ import json
 import os
 import tempfile
 
-from . import frames
-from .advice import advise
-from .handstate import _validate_context, context_from_dict
+from . import explain, frames
+from .advice import advise, read_hand, why
+from .handstate import STREETS, _validate_context, context_from_dict
 
 FORMAT = "poker-coach-hand"
 VERSION = 1
@@ -52,16 +52,27 @@ def start(path: str, context: dict) -> dict:
 def step(path: str, frame: dict) -> dict:
     """Кадр в конец раздачи, совет на нём с ответами прошлых шагов в `history`, запись.
 
-    Отказ советников (`advisor: null`) — нормальный шаг, он хранится. Битый кадр или раздача,
-    которую не пропускает валидатор, — `ValueError`, файл прежний.
+    Отказ советников (`advisor: null`) — нормальный шаг, он хранится. `why` — факты ответа
+    (спека тренера §8). Кадр, открывший улицу, закрывает прошлые: их итоги (§7.3) ложатся в
+    `streets`, а факты итога — в `why` этого шага. Битый кадр или раздача, которую не
+    пропускает валидатор, — `ValueError`, файл прежний.
     """
     data = _load(path)
     seen = [*data["frames"], frame]
     nodes = [frames.node_payload(raw) for raw in seen]
     context = frames.context_payload(data["context"], seen[-1])
     answer = advise(context, nodes, [done["answer"] for done in data["steps"]])
+    hand = read_hand(context, nodes)
+    facts = why(answer, hand.nodes[-1])
+    for street in STREETS:
+        if street in data["streets"]:
+            continue
+        summary = hand.street_summary(street)
+        if summary is not None:
+            data["streets"][street] = summary
+            facts += explain.street(summary)
     number = len(seen)
-    record = {"frame": number, "advisor": answer["advisor"], "answer": answer, "why": []}
+    record = {"frame": number, "advisor": answer["advisor"], "answer": answer, "why": facts}
     data["frames"].append(frame)
     data["steps"].append(record)
     _write(path, data)
@@ -75,13 +86,28 @@ def step(path: str, frame: dict) -> dict:
 
 
 def undo(path: str) -> dict:
-    """Снимает последний кадр и его шаг — когда кадр прочитан неверно."""
+    """Снимает последний кадр и его шаг — когда кадр прочитан неверно.
+
+    Итог улицы — производное кадров: улица, которую закрывал только снятый кадр, снова
+    открыта, и её итог уходит вместе с ним (Review Focus 6). Порядок остальных ключей прежний —
+    `step` + `undo` дают файл байт в байт.
+    """
     data = _load(path)
     if not data["frames"]:
         raise ValueError("в раздаче нет кадров: отменять нечего")
     number = len(data["frames"])
     data["frames"].pop()
     data["steps"].pop()
+    # Кадры файла прошли валидатор; улица не из `STREETS` бывает только у правленного руками.
+    reached = max(
+        (STREETS.index(raw["street"]) for raw in data["frames"] if raw.get("street") in STREETS),
+        default=-1,
+    )
+    data["streets"] = {
+        street: summary
+        for street, summary in data["streets"].items()
+        if STREETS.index(street) < reached
+    }
     _write(path, data)
     return {"undone": number, "steps": number - 1}
 
@@ -107,6 +133,8 @@ def _load(path: str) -> dict:
     for key, kind in _FIELDS:
         if not isinstance(data.get(key), kind):
             raise _damaged(key)
+    if not all(street in STREETS for street in data["streets"]):
+        raise _damaged("streets")
     if not all(isinstance(raw, dict) for raw in data["frames"]):
         raise _damaged("frames")
     # Шаг на каждый кадр: удачный `step` пишет оба, `undo` снимает оба.

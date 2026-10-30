@@ -11,7 +11,8 @@ import pytest
 
 from conftest import _context, preflop_frame, preflop_vs_3bet, pushfold_first_in_node
 from poker_engine import coach
-from poker_engine.advice import advise
+from poker_engine.advice import advise, why
+from poker_engine.handstate import node_from_dict
 
 
 @pytest.fixture
@@ -71,29 +72,32 @@ def test_a_step_is_advise_on_the_frames_with_the_past_answers(hand):
     first, second = preflop_vs_3bet()
     one = _step(hand, first)
     expected_one = advise(_context(), [first], [])
+    why_one = why(expected_one, node_from_dict(first))
     assert one == {
-        "step": 1, "advisor": "preflop", "answer": expected_one, "why": [], "streets": {}
+        "step": 1, "advisor": "preflop", "answer": expected_one, "why": why_one, "streets": {}
     }
     two = _step(hand, second)
     assert two["step"] == 2
     assert two["answer"] == advise(_context(), [first, second], [expected_one])
+    assert two["why"] == why(two["answer"], node_from_dict(second))
     stored = json.loads(hand.read_text(encoding="utf-8"))
     assert stored["frames"] == [first, second]
     assert stored["steps"] == [
-        {"frame": 1, "advisor": "preflop", "answer": expected_one, "why": []},
-        {"frame": 2, "advisor": two["advisor"], "answer": two["answer"], "why": []},
+        {"frame": 1, "advisor": "preflop", "answer": expected_one, "why": why_one},
+        {"frame": 2, "advisor": two["advisor"], "answer": two["answer"], "why": two["why"]},
     ]
 
 
 def test_the_history_of_step_n_is_the_answers_of_steps_before_it(hand, monkeypatch):
-    # Инвариант 4: ответы шагов 1..N−1 по порядку, отказ советников — тоже ответ шага.
+    # Инвариант 4: ответы шагов 1..N−1 по порядку, отказ советников — тоже ответ шага. Подмена
+    # отвечает отказами: факты шага (`why`) ищут советника ответа в реестре.
     seen = []
 
     def fake(context, nodes, history):
         seen.append(list(history))
         if len(nodes) == 2:
             return {"advisor": None, "notApplicable": []}
-        return {"advisor": "fake", "frames": len(nodes)}
+        return {"advisor": None, "notApplicable": [{"advisor": "fake", "reason": str(len(nodes))}]}
 
     monkeypatch.setattr(coach, "advise", fake)
     frames = [

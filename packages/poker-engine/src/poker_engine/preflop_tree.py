@@ -72,6 +72,13 @@ REALIZATION_TRUST_BB = 40.0
 SIZE_STEP_BB = 0.1
 
 LIMP_RERAISE = "лимпер ответил на изоляцию рейзом не олл-ином: вне дерева префлопа"
+OFF_TREE = "действие линии вне дерева префлопа"
+
+
+class _OffTree(Exception):
+    """Сыгранного хода нет среди действий узла. Линия до решения героя сюда не доходит
+    (`read_line` отвергает её раньше); закрытая линия (`read_closed_line`) — доходит: колд-колл
+    незакрывающего, 5-бет не олл-ином."""
 
 
 @dataclass(frozen=True)
@@ -122,7 +129,9 @@ class Tree:
 def build(line: Line, node: DecisionNode) -> Tree | str:
     """Дерево по линии и последнему кадру или причина отказа.
 
-    Предусловие: `line` — ответ `preflop_line.read_line` на кадры, последний из которых `node`.
+    Предусловие: `line` — ответ `preflop_line.read_line` на кадры, последний из которых `node`,
+    или `read_closed_line` на те же кадры и кадр следующей улицы. На закрытой линии путь идёт до
+    терминала, узла героя на нём нет: `hero_node` остаётся −1 (спека тренера §7.3).
     """
     positions = assign_positions(node)
     order = positions_for(len(node.seats))
@@ -162,7 +171,10 @@ def build(line: Line, node: DecisionNode) -> Tree | str:
     builder = _Builder(
         players, roles, base, _dead_money(node, players), acts, limper is not None, len(order) == 2
     )
-    root_node = builder.root()
+    try:
+        root_node = builder.root()
+    except _OffTree:
+        return OFF_TREE
 
     me = next(at for at, seat in enumerate(players) if seat.is_hero)
     totals = builder.totals
@@ -364,7 +376,13 @@ class _Builder:
         kinds = [kind for kind, _, _ in options]
         chosen = None
         if played is not None:
-            chosen = kinds.index(played.action if played.action in kinds else "call")
+            action = played.action
+            if action not in kinds:
+                # Олл-ин, который не поднял ставку, — колл на все.
+                if action != "allin" or "call" not in kinds:
+                    raise _OffTree
+                action = "call"
+            chosen = kinds.index(action)
             self.path.append((at, chosen))
         actions = tuple(
             Action(kind, to, child(index == chosen))

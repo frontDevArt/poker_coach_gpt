@@ -50,6 +50,7 @@ from __future__ import annotations
 import numpy
 
 from . import allin_matrix, nash
+from .explain import action_text, fact
 from .hand import Hand
 from .handstate import DecisionNode, TournamentContext, assign_positions
 from .pushfold_game import (
@@ -230,3 +231,37 @@ def _context_flags(context: TournamentContext, node: DecisionNode, pko: bool) ->
     if context.late_reg_open:
         flags.append("late_reg_open")
     return flags
+
+
+def explain(answer: dict) -> list[dict]:
+    """Факты ответа (спека тренера §8): действие и размер, разница с фолдом в долларах и в BB,
+    головы, доли и частоты героя, соперники, пометки. Банк, колл и требуемую эквити колла в
+    `facing_allin` даёт узел (`explain.node_facts`)."""
+    facts = [fact("action", action_text(answer["action"], answer.get("sizeBb")), "text")]
+    if "sizeBb" in answer:
+        facts.append(fact("sizeBb", answer["sizeBb"], "bb"))
+    ev = answer["ev"]
+    facts += [
+        fact("marginUsd", ev["icm"]["marginUsd"], "usd"),
+        fact("marginBb", ev["chip"]["marginBb"], "ev_bb"),
+    ]
+    if "bountyUsd" in ev:
+        facts.append(fact("bountyUsd", ev["bountyUsd"], "usd"))
+    hero = answer["ranges"]["hero"]
+    facts += [
+        fact("heroIcmPct", hero["icmPct"], "pct"),
+        fact("heroChipPct", hero["chipPct"], "pct"),
+        fact("heroHandFreqIcm", hero["handFreqIcm"], "pct"),
+        fact("heroHandFreqChip", hero["handFreqChip"], "pct"),
+    ]
+    for opponent in answer["ranges"]["opponents"]:
+        at = f"opponent.{opponent['position']}"
+        facts += [
+            fact(f"{at}.role", opponent["role"], "text"),
+            fact(f"{at}.stackBb", opponent["stackBb"], "bb"),
+            fact(f"{at}.icmPct", opponent["icmPct"], "pct"),
+            fact(f"{at}.chipPct", opponent["chipPct"], "pct"),
+        ]
+    facts.append(fact("effectiveStackBb", answer["effectiveStackBb"], "bb"))
+    facts += [fact(f"flag.{flag}", flag, "text") for flag in answer["flags"]]
+    return facts

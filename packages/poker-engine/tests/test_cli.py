@@ -7,9 +7,10 @@ from pathlib import Path
 import pytest
 
 from conftest import _context, pushfold_first_in_node
-from poker_engine.advice import advise
+from poker_engine.advice import advise, why
 from poker_engine.analyze import analyze
 from poker_engine.cli import main
+from poker_engine.handstate import node_from_dict
 
 
 def run(argv, capsys):
@@ -487,7 +488,10 @@ def test_coach_start_step_undo(tmp_path, capsys):
     code, data = run(["coach", "step", "--hand", hand, "--frame", frame], capsys)
     answer = advise(_context(), [pushfold_first_in_node()], [])
     assert code == 0
-    assert data == {"step": 1, "advisor": "pushfold", "answer": answer, "why": [], "streets": {}}
+    facts = why(answer, node_from_dict(pushfold_first_in_node()))
+    assert data == {
+        "step": 1, "advisor": "pushfold", "answer": answer, "why": facts, "streets": {}
+    }
 
     code, data = run(["coach", "undo", "--hand", hand], capsys)
     assert (code, data) == (0, {"undone": 1, "steps": 0})

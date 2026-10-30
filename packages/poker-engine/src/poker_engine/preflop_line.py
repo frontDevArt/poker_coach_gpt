@@ -19,7 +19,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .handstate import ROUNDING_STEP_BB, DecisionNode, Seat, assign_positions
 from .pushfold_game import Spot, read_spot
@@ -71,6 +71,75 @@ def read_line(nodes: list[DecisionNode]) -> Line | str:
     Предусловие: узлы прошли `validate_hand`, разбирается последний. Улицы не убывают, поэтому
     при последнем узле на префлопе на префлопе и все.
     """
+    found = _read(nodes)
+    return found if isinstance(found, str) else found[0]
+
+
+def read_closed_line(preflop_nodes: list[DecisionNode], next_node: DecisionNode) -> Line | str:
+    """Линия префлопа целиком — до последнего действия улицы — или причина отказа `read_line`.
+
+    Кадры префлопа дают линию до последнего решения героя; что сделали после него герой и
+    остальные, видно по первому кадру следующей улицы (спека тренера §7.3): вложенное места на
+    префлопе — его стек на старте раздачи минус стек на старте следующей улицы, а до флопа дошли
+    те, кто в раздаче там. Каждое место между кадрами ходит не больше раза, как и между двумя
+    кадрами префлопа. Чек виден только тем, что вложенное не выросло: его делает `BB` в банке без
+    рейза. Предусловие: `preflop_nodes` и `next_node` — подряд идущие кадры одной раздачи,
+    прошедшей `validate_hand`.
+    """
+    found = _read(preflop_nodes)
+    if isinstance(found, str):
+        return found
+    line, walk, cycle, positions = found
+    last = {seat.seat_index: seat for seat in preflop_nodes[-1].seats}
+    closing = _closing(preflop_nodes, next_node)
+    for seat in cycle:
+        index = seat.seat_index
+        if index in closing and last[index].in_hand:
+            before = len(walk.acts)
+            walk.step(last[index].invested_bb, closing[index])
+            if (
+                len(walk.acts) == before
+                and closing[index].in_hand
+                and walk._level == 0
+                and positions[index] is Position.BB
+            ):
+                walk._add(Act(index, "check", None))
+    return replace(line, acts=list(walk.acts))
+
+
+def flop_players(preflop_nodes: list[DecisionNode], next_node: DecisionNode) -> list[int]:
+    """Места, дошедшие до следующей улицы, по местам кадра. Предусловие — как у
+    `read_closed_line`."""
+    return [index for index, seat in _closing(preflop_nodes, next_node).items() if seat.in_hand]
+
+
+def _closing(preflop_nodes: list[DecisionNode], next_node: DecisionNode) -> dict[int, Seat]:
+    """Место → оно же на исходе префлопа: вложенное за улицу, стек на старте следующей и в
+    раздаче ли оно там.
+
+    До следующей улицы дошёл тот, кто в раздаче на её кадре, и тот, кто уравнял наибольшее
+    вложенное префлопа: место, сфолдившее на флопе до героя, на его кадре уже вне раздачи, а на
+    префлопе фолда у него не было.
+    """
+    began = {seat.seat_index: seat.stack_bb + seat.invested_bb for seat in preflop_nodes[0].seats}
+    starts = {seat.seat_index: seat.stack_bb + seat.invested_bb for seat in next_node.seats}
+    put = {index: began[index] - start for index, start in starts.items() if index in began}
+    top = max(put.values())
+    return {
+        seat.seat_index: replace(
+            seat,
+            stack_bb=starts[seat.seat_index],
+            invested_bb=put[seat.seat_index],
+            in_hand=seat.in_hand or put[seat.seat_index] > top - _SAME_BB,
+        )
+        for seat in next_node.seats
+        if seat.seat_index in put
+    }
+
+
+def _read(nodes: list[DecisionNode]):
+    """`read_line` и то, что нужно дочитать линию до конца улицы: обход, круг хода от героя
+    и позиции мест."""
     node = nodes[-1]
     if node.street != "preflop":
         return NOT_PREFLOP
@@ -124,13 +193,14 @@ def read_line(nodes: list[DecisionNode]) -> Line | str:
         if seat.in_hand or seat.invested_bb > 0
     ]
     at = [seat.seat_index for seat in players]
-    return Line(
+    line = Line(
         kind=kind,
-        acts=walk.acts,
+        acts=list(walk.acts),
         players=players,
         hero_at=at.index(hero.seat_index),
         opponent_at=at.index(entrants.pop()) if entrants else None,
     )
+    return line, walk, cycle, positions
 
 
 _KINDS = frozenset(
