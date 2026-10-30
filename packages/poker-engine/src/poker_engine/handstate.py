@@ -549,6 +549,15 @@ def _validate_transition(earlier: DecisionNode, later: DecisionNode) -> None:
     if list(later.board[: len(earlier.board)]) != list(earlier.board):
         raise ValueError("доска не продолжает предыдущую улицу")
 
+    # Клиент подсаживает игрока посреди раздачи (балансировка столов): в раздаче его нет, а его
+    # фишки сломали бы сумму, место — позиции. Отказ называет место раньше суммы фишек.
+    joined = {seat.seat_index for seat in later.seats} - {seat.seat_index for seat in earlier.seats}
+    if joined:
+        raise ValueError(
+            f"место {min(joined)} появилось внутри раздачи: подсаженный посреди раздачи "
+            "в ней не участвует"
+        )
+
     was_in = {seat.seat_index for seat in earlier.seats if seat.in_hand}
     now_in = {seat.seat_index for seat in later.seats if seat.in_hand}
     returned = now_in - was_in

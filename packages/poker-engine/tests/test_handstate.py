@@ -280,6 +280,23 @@ def test_a_folded_player_cannot_return():
         _validate([first, second])
 
 
+def test_a_seat_that_joined_mid_hand_is_named():
+    # Приёмка, Фаза 14 (Mini Superstack): GG подсадил игрока за стол посреди раздачи, он вне
+    # раздачи и ничего не вложил. Его фишки ломали бы сумму, а место — позиции, поэтому отказ
+    # называет место раньше суммы фишек.
+    first, second = preflop_vs_3bet()
+    second["seats"].append(
+        {"seatIndex": 1, "name": "new", "stackBb": 50.0, "investedBb": 0.0, "inHand": False}
+    )
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "место 1 появилось внутри раздачи: подсаженный посреди раздачи в ней не участвует"
+        ),
+    ):
+        _validate([first, second])
+
+
 def test_chips_must_be_conserved_between_nodes():
     first = _node()
     second = _node(street="flop", board=["8c", "2s", "9d"], potBb=900.0)
