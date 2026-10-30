@@ -253,6 +253,11 @@ def test_a_missing_file_is_named(tmp_path, command):
         (lambda d: d.update(frames=[1]), "frames"),
         (lambda d: d.update(steps=None), "steps"),
         (lambda d: d.update(steps=[{"frame": 1}]), "steps"),
+        # Длины сходятся, у шага нет ответа: без проверки — `KeyError` мимо `cli.main`.
+        (
+            lambda d: d.update(frames=[pushfold_first_in_node()], steps=[{"frame": 1}]),
+            "steps",
+        ),
         (lambda d: d.update(streets=[]), "streets"),
     ],
 )
@@ -263,6 +268,13 @@ def test_a_damaged_file_is_named_by_its_field(hand, damage, what):
     for call in (lambda: coach.step(str(hand), pushfold_first_in_node()), lambda: coach.undo(str(hand))):
         with pytest.raises(ValueError, match=f"^файл раздачи повреждён: {what}$"):
             call()
+
+
+def test_a_file_that_cannot_be_read_is_named(tmp_path):
+    # Путь раздачи — папка: `open` бросает `OSError` на обеих ОС, наружу — текст с путём.
+    path = str(tmp_path)
+    with pytest.raises(ValueError, match=f"^не удалось прочитать {re.escape(repr(path))}: "):
+        coach.undo(path)
 
 
 def test_a_file_that_is_not_json_is_damaged(hand):
