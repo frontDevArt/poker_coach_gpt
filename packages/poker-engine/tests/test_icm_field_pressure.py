@@ -102,6 +102,32 @@ def test_scaling_the_ladder_leaves_pressure_untouched():
     )
 
 
+@pytest.mark.parametrize("scale", [1.0, 1e-12])
+def test_pressure_is_scale_invariant(scale):
+    # Давление не зависит от валюты лесенки (D19): допуск — доля суммы призов, а не `1e-9`
+    # в долларах. С абсолютным допуском лесенка ×1e-12 объявляла давление неопределённым.
+    table, count, stack = [60.0, 40.0, 30.0], 5, 20.0
+    base = PayoutLadder([(1, 1, 100.0), (2, 3, 40.0)], places_paid=3)
+    scaled = PayoutLadder([(1, 1, 100.0 * scale), (2, 3, 40.0 * scale)], places_paid=3)
+    now, premium, factor = pressure(table, count, stack, base, 0, 1)
+    assert pressure(table, count, stack, scaled, 0, 1) == pytest.approx(
+        (now * scale, premium, factor), rel=1e-9
+    )
+    # Изменение эквити меньше доли `1e-9` суммы призов — шум, на любом масштабе: герой с
+    # одной фишкой против 1e11 при победителе-всё двигает эквити на ~1e-11 от призов.
+    tiny = PayoutLadder([(1, 1, 100.0 * scale)], places_paid=1)
+    with pytest.raises(
+        PressureUndefined,
+        match="^исход олл-ина не меняет ICM-эквити героя, risk premium не определён$",
+    ):
+        risk_premium([1.0, 1e11], 0, 0.0, tiny, 0, 1)
+    with pytest.raises(
+        PressureUndefined,
+        match="^выигрыш не увеличивает ICM-эквити, bubble factor не определён$",
+    ):
+        bubble_factor([1.0, 1e11], 0, 0.0, tiny, 0, 1)
+
+
 def test_a_busted_hero_takes_the_last_place_among_everyone_left():
     # Герой 20 против 40, в поле ещё двое: проиграв, он вылетает четвёртым
     # из четверых живых и берёт ровно приз за место 4 — 25. Не 40 (место 3,

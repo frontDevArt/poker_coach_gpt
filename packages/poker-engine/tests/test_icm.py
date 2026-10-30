@@ -136,6 +136,24 @@ def test_bubble_and_risk_premium_hold_at_realistic_field_size():
     assert rp > 0.0
 
 
+@pytest.mark.parametrize("scale", [1.0, 1e-12])
+def test_pressure_is_scale_invariant(scale):
+    # Давление не зависит от валюты выплат (D19): допуск — доля суммы призов, а не `1e-9`
+    # в долларах. С абсолютным допуском выплаты ×1e-12 объявляли давление неопределённым.
+    stacks, payouts = [300, 250, 200, 150, 120, 100, 80, 50], [400.0, 250.0, 150.0, 100.0, 50.0]
+    scaled = [amount * scale for amount in payouts]
+    for measure in (risk_premium, bubble_factor):
+        assert measure(stacks, scaled, 0, 1) == pytest.approx(
+            measure(stacks, payouts, 0, 1), rel=1e-9
+        )
+    # Изменение эквити меньше доли `1e-9` суммы призов — шум, на любом масштабе: герой с
+    # одной фишкой против 1e11 при победителе-всё двигает эквити на ~1e-11 от призов.
+    with pytest.raises(ValueError, match="^исход олл-ина не меняет ICM-эквити героя"):
+        risk_premium([1, 10**11], [100.0 * scale], 0, 1)
+    with pytest.raises(ValueError, match="^выигрыш не увеличивает ICM-эквити"):
+        bubble_factor([1, 10**11], [100.0 * scale], 0, 1)
+
+
 def test_icm_is_invariant_to_stack_scale():
     # Свёртка поля переводит BB в десятые доли BB. Это допустимо только
     # потому, что ICM зависит от долей стеков, а не от их абсолюта.

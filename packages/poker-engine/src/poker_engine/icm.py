@@ -19,6 +19,11 @@ from __future__ import annotations
 import math
 from functools import lru_cache
 
+# Допуск давления — доля суммы призов: ветви ICM приходят к равным значениям разными путями и
+# расходятся на ~1e-15 от призов, а давление не должно зависеть от валюты лесенки (D19).
+# Абсолютный `1e-9` объявлял неопределённым давление лесенки с призами меньше 1e-9.
+PRESSURE_TOL = 1e-9
+
 
 def icm_equities(stacks: list[int], payouts: list[float]) -> list[float]:
     """Денежное эквити каждого игрока по модели Malmuth-Harville.
@@ -72,7 +77,8 @@ def bubble_factor(
     Больше 1.0 — герой рискует деньгами сильнее, чем фишками.
     """
     now, win, lose = _icm_branches(stacks, payouts, hero, villain)
-    if math.isclose(win, now, abs_tol=1e-9) and not math.isclose(now, 0.0, abs_tol=1e-9):
+    tol = PRESSURE_TOL * sum(payouts)
+    if math.isclose(win, now, abs_tol=tol) and not math.isclose(now, 0.0, abs_tol=tol):
         # Плоская лесенка выплат (сателлиты): win и now математически
         # совпадают, но приходят к значению разными ветвями рекурсии и
         # расходятся на ~1e-15 — без допуска это ловится как money_up <= 0.
@@ -81,7 +87,7 @@ def bubble_factor(
         return 1.0
     money_down = now - lose
     money_up = win - now
-    if money_up <= 0 or math.isclose(money_up, 0.0, abs_tol=1e-9):
+    if money_up <= 0 or math.isclose(money_up, 0.0, abs_tol=tol):
         raise ValueError("выигрыш не увеличивает ICM-эквити, bubble factor не определён")
 
     chips_now = float(stacks[hero])
@@ -102,14 +108,15 @@ def risk_premium(
     Ноль при winner-take-all, положительно при лесенке выплат.
     """
     now, win, lose = _icm_branches(stacks, payouts, hero, villain)
-    if math.isclose(win, lose, abs_tol=1e-9):
+    tol = PRESSURE_TOL * sum(payouts)
+    if math.isclose(win, lose, abs_tol=tol):
         # Плоская лесенка выплат (сателлиты): win и lose равны математически,
         # но приходят к значению разными ветвями рекурсии и расходятся на
         # ~1e-15 — точное сравнение (win == lose) это пропускает.
         # Если деньги реально на кону (now != 0), лесенка не давит и risk
         # premium определён — ровно 0. Если выплаты нулевые, деньги не на
         # кону вовсе, и это остаётся неопределённым случаем.
-        if not math.isclose(now, 0.0, abs_tol=1e-9):
+        if not math.isclose(now, 0.0, abs_tol=tol):
             return 0.0
         raise ValueError(
             "исход олл-ина не меняет ICM-эквити героя, risk premium не определён"

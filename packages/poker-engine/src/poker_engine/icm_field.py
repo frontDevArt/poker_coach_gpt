@@ -41,6 +41,7 @@ from collections.abc import Sequence
 import numpy
 
 from ._checks import check_integer, check_non_negative, check_positive
+from .icm import PRESSURE_TOL
 from .ladder import PayoutLadder
 
 __all__ = [
@@ -317,7 +318,7 @@ def risk_premium(
     Ноль при winner-take-all, положительно при лесенке выплат.
     """
     return _risk_premium_from(
-        *_branches(table, field_count, field_stack, ladder, hero, villain)
+        *_branches(table, field_count, field_stack, ladder, hero, villain), _tol(ladder)
     )
 
 
@@ -335,7 +336,7 @@ def bubble_factor(
     Больше 1.0 — герой рискует деньгами сильнее, чем фишками.
     """
     return _bubble_factor_from(
-        *_branches(table, field_count, field_stack, ladder, hero, villain)
+        *_branches(table, field_count, field_stack, ladder, hero, villain), _tol(ladder)
     )
 
 
@@ -356,18 +357,24 @@ def pressure(
     неопределённое давление — `PressureUndefined`, прочее — `ValueError`.
     """
     now, win, lose = _branches(table, field_count, field_stack, ladder, hero, villain)
-    return now, _risk_premium_from(now, win, lose), _bubble_factor_from(now, win, lose)
+    tol = _tol(ladder)
+    return now, _risk_premium_from(now, win, lose, tol), _bubble_factor_from(now, win, lose, tol)
 
 
-def _risk_premium_from(now: float, win: float, lose: float) -> float:
-    if math.isclose(win, lose, abs_tol=1e-9):
+def _tol(ladder: PayoutLadder) -> float:
+    """Допуск давления — доля суммы призов лесенки (`icm.PRESSURE_TOL`, D19)."""
+    return PRESSURE_TOL * ladder.total()
+
+
+def _risk_premium_from(now: float, win: float, lose: float, tol: float) -> float:
+    if math.isclose(win, lose, abs_tol=tol):
         # Плоская лесенка выплат (сателлиты): win и lose равны математически,
         # но приходят к значению разными ветвями перебора и расходятся на
         # ~1e-15 — точное сравнение (win == lose) это пропускает.
         # Если деньги реально на кону (now != 0), лесенка не давит и risk
         # premium определён — ровно 0. Если все достижимые места стоят
         # ноль, деньги не на кону вовсе, и это остаётся неопределённым.
-        if not math.isclose(now, 0.0, abs_tol=1e-9):
+        if not math.isclose(now, 0.0, abs_tol=tol):
             return 0.0
         raise PressureUndefined(
             "исход олл-ина не меняет ICM-эквити героя, risk premium не определён"
@@ -376,15 +383,15 @@ def _risk_premium_from(now: float, win: float, lose: float) -> float:
     return money_threshold - _CHIP_THRESHOLD
 
 
-def _bubble_factor_from(now: float, win: float, lose: float) -> float:
-    if math.isclose(win, now, abs_tol=1e-9) and not math.isclose(now, 0.0, abs_tol=1e-9):
+def _bubble_factor_from(now: float, win: float, lose: float, tol: float) -> float:
+    if math.isclose(win, now, abs_tol=tol) and not math.isclose(now, 0.0, abs_tol=tol):
         # Плоская лесенка (сателлиты): win и now совпадают математически,
         # но расходятся на ~1e-15 — без допуска это ловится как
         # money_up <= 0. Деньги при этом на кону (now != 0), давления нет,
         # bubble factor определён — ровно 1.0.
         return 1.0
     money_up = win - now
-    if money_up <= 0 or math.isclose(money_up, 0.0, abs_tol=1e-9):
+    if money_up <= 0 or math.isclose(money_up, 0.0, abs_tol=tol):
         raise PressureUndefined(
             "выигрыш не увеличивает ICM-эквити, bubble factor не определён"
         )
