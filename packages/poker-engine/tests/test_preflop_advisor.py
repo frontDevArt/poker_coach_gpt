@@ -433,9 +433,12 @@ def _vs_3bet_after_open(size):
     ("history", "size", "deviates"),
     [
         ([{"advisor": "preflop", "action": "raise", "sizeBb": 2.0}], 2.0, False),
-        # Размер в пределах шага округления — та же линия.
+        # D39 (решение пользователя): размер того же действия — не отклонение, ни в шаге
+        # округления, ни дальше.
         ([{"advisor": "preflop", "action": "raise", "sizeBb": 2.0}], 2.1, False),
-        ([{"advisor": "preflop", "action": "raise", "sizeBb": 2.0}], 2.5, True),
+        ([{"advisor": "preflop", "action": "raise", "sizeBb": 2.0}], 2.2, False),
+        ([{"advisor": "preflop", "action": "raise", "sizeBb": 2.0}], 2.5, False),
+        # Другое действие — отклонение: совет «фолд», а герой открылся рейзом.
         ([{"advisor": "preflop", "action": "fold"}], 2.0, True),
         ([{"advisor": "preflop", "action": "allin", "sizeBb": 40.0}], 2.0, True),
         # Последний ответ `preflop` — тот, что сверяется.
@@ -464,7 +467,7 @@ def _vs_3bet_after_open(size):
         ([{"advisor": "preflop", "action": "raise"}], 2.0, False),
     ],
     ids=[
-        "same", "within_step", "other_size", "fold", "allin", "last", "pushfold",
+        "same", "within_step", "two_steps", "other_size", "fold", "allin", "last", "pushfold",
         "refusal_skipped", "only_refusal", "none", "no_size",
     ],
 )
@@ -491,10 +494,20 @@ def test_pushfold_advice_the_hero_did_not_follow():
     assert "line_deviates" in answer["flags"]
 
 
-@pytest.mark.parametrize(("four_bet", "deviates"), [(13.2, False), (16.0, True)])
-def test_line_deviates_on_the_last_hero_act(four_bet, deviates):
-    # Два действия героя: открытие 2.0 и 4-бет против 3-бета 6.0. Совет последнего шага — 4-бет
-    # до 13.2 (2.2 × 6.0) — сверяется с 4-бетом, а не с открытием.
+@pytest.mark.parametrize(
+    ("four_bet", "advised", "deviates"),
+    [
+        (13.2, {"action": "raise", "sizeBb": 13.2}, False),
+        # D39: 4-бет до 16.0 при совете «рейз до 13.2» — то же действие.
+        (16.0, {"action": "raise", "sizeBb": 13.2}, False),
+        (13.2, {"action": "allin", "sizeBb": 40.0}, True),
+    ],
+    ids=["advised_4bet", "other_4bet_size", "advised_allin"],
+)
+def test_line_deviates_on_the_last_hero_act(four_bet, advised, deviates):
+    # Два действия героя: открытие 2.0 и 4-бет против 3-бета 6.0. Совет последнего шага
+    # сверяется с 4-бетом. Что не с открытием, по одному действию здесь не видно — оба рейзы, а
+    # лимп-рейз `SB` вне дерева; что сверяется последний совет — случай `last` теста выше.
     raws = [
         preflop_frame(3, folded={7, 2}),
         preflop_frame(3, {3: 2.0, 4: 6.0}, folded={7, 2, 5, 6}),
@@ -502,7 +515,7 @@ def test_line_deviates_on_the_last_hero_act(four_bet, deviates):
     ]
     history = [
         {"advisor": "preflop", "action": "raise", "sizeBb": 2.0},
-        {"advisor": "preflop", "action": "raise", "sizeBb": 13.2},
+        {"advisor": "preflop", **advised},
     ]
     answer = _advise(raws, history=history)
     assert answer["spot"] == "vs_allin_after_raise"

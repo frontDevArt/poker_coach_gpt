@@ -1,5 +1,5 @@
 {
-  "description": "UTG и HJ сфолдили, герой CO открыл до 2.5, BTN — 3-бет до 7.5, блайнды сфолдили. Размер открытия в ответе — правило OPEN_BB, а не 2.5: шаг 2 помечен line_deviates.",
+  "description": "У всех 8 BB (порог PUSHFOLD_MAX_BB): UTG и HJ сфолдили, герой CO первым в банк — спот pushfold, а он советует только олл-ин или фолд. Герой открыл до 2.0, BTN пошёл олл-ин, блайнды сфолдили: шаг 2 помечен line_deviates — рейз не совет pushfold. Размер того же действия отклонением не считается (D39).",
   "context": {
     "payouts": [
       {
@@ -45,7 +45,7 @@
         {
           "seatIndex": 2,
           "name": "p2",
-          "stackBb": 40.0,
+          "stackBb": 8.0,
           "investedBb": 0.0,
           "inHand": false,
           "isHero": false,
@@ -55,7 +55,7 @@
         {
           "seatIndex": 3,
           "name": "p3",
-          "stackBb": 40.0,
+          "stackBb": 8.0,
           "investedBb": 0.0,
           "inHand": true,
           "isHero": true,
@@ -65,7 +65,7 @@
         {
           "seatIndex": 4,
           "name": "p4",
-          "stackBb": 40.0,
+          "stackBb": 8.0,
           "investedBb": 0.0,
           "inHand": true,
           "isHero": false,
@@ -75,7 +75,7 @@
         {
           "seatIndex": 5,
           "name": "p5",
-          "stackBb": 39.5,
+          "stackBb": 7.5,
           "investedBb": 0.5,
           "inHand": true,
           "isHero": false,
@@ -85,7 +85,7 @@
         {
           "seatIndex": 6,
           "name": "p6",
-          "stackBb": 39.0,
+          "stackBb": 7.0,
           "investedBb": 1.0,
           "inHand": true,
           "isHero": false,
@@ -95,7 +95,7 @@
         {
           "seatIndex": 7,
           "name": "p7",
-          "stackBb": 40.0,
+          "stackBb": 8.0,
           "investedBb": 0.0,
           "inHand": false,
           "isHero": false,
@@ -127,7 +127,7 @@
         {
           "seatIndex": 2,
           "name": "p2",
-          "stackBb": 40.0,
+          "stackBb": 8.0,
           "investedBb": 0.0,
           "inHand": false,
           "isHero": false,
@@ -137,8 +137,8 @@
         {
           "seatIndex": 3,
           "name": "p3",
-          "stackBb": 37.5,
-          "investedBb": 2.5,
+          "stackBb": 6.0,
+          "investedBb": 2.0,
           "inHand": true,
           "isHero": true,
           "vpip": 25.0,
@@ -147,8 +147,8 @@
         {
           "seatIndex": 4,
           "name": "p4",
-          "stackBb": 32.5,
-          "investedBb": 7.5,
+          "stackBb": 0.0,
+          "investedBb": 8.0,
           "inHand": true,
           "isHero": false,
           "vpip": 25.0,
@@ -157,7 +157,7 @@
         {
           "seatIndex": 5,
           "name": "p5",
-          "stackBb": 39.5,
+          "stackBb": 7.5,
           "investedBb": 0.5,
           "inHand": false,
           "isHero": false,
@@ -167,7 +167,7 @@
         {
           "seatIndex": 6,
           "name": "p6",
-          "stackBb": 39.0,
+          "stackBb": 7.0,
           "investedBb": 1.0,
           "inHand": false,
           "isHero": false,
@@ -177,7 +177,7 @@
         {
           "seatIndex": 7,
           "name": "p7",
-          "stackBb": 40.0,
+          "stackBb": 8.0,
           "investedBb": 0.0,
           "inHand": false,
           "isHero": false,
@@ -192,21 +192,21 @@
       ],
       "board": [],
       "potBb": 12.25,
-      "toCallBb": 5.0,
+      "toCallBb": 6.0,
       "raiseToBb": null
     }
   ],
   "expect": [
     {
-      "advisor": "preflop",
-      "spot": "open",
+      "advisor": "pushfold",
+      "spot": "first_in",
       "flagsHas": [
         "mh_bias",
         "field_homogeneous",
         "ladder_incomplete",
         "late_reg_open",
         "no_overcall",
-        "fixed_sizing"
+        "fold_as_walk"
       ],
       "flagsNot": [
         "pko",
@@ -218,13 +218,14 @@
     },
     {
       "advisor": "preflop",
-      "spot": "vs_3bet",
+      "spot": "vs_allin_after_raise",
       "flagsHas": [
         "mh_bias",
         "field_homogeneous",
         "ladder_incomplete",
         "late_reg_open",
-        "no_overcall"
+        "no_overcall",
+        "fold_as_walk"
       ],
       "flagsNot": [
         "pko",
@@ -233,8 +234,7 @@
       ],
       "lineDeviates": {
         "unlessStep": 1,
-        "action": "raise",
-        "sizeBb": 2.5
+        "action": "raise"
       },
       "streets": {}
     }

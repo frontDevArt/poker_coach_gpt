@@ -15,7 +15,6 @@ from pathlib import Path
 import pytest
 
 from poker_engine import coach
-from poker_engine.preflop_tree import OPEN_BB, SIZE_STEP_BB
 
 SERIES = Path(__file__).parent / "data" / "coach"
 NAMES = sorted(path.stem for path in SERIES.glob("*.json"))
@@ -106,12 +105,9 @@ def test_each_step_meets_its_analytic_expectations(played, name):
 
 
 def _deviates(rule, results):
-    """Отклонение героя — ход в кадре не тот, что советовал шаг `unlessStep`: другое действие
-    или размер дальше шага `SIZE_STEP_BB`."""
-    advised = results[rule["unlessStep"] - 1]["answer"]
-    if advised["action"] != rule["action"]:
-        return True
-    return "sizeBb" in rule and abs(advised["sizeBb"] - rule["sizeBb"]) > SIZE_STEP_BB + 1e-9
+    """Отклонение героя — ход в кадре не тот, что советовал шаг `unlessStep`: другое действие.
+    Размер того же действия — не отклонение (D39)."""
+    return results[rule["unlessStep"] - 1]["answer"]["action"] != rule["action"]
 
 
 def _check_streets(streets, expected, where):
@@ -129,10 +125,9 @@ def _check_streets(streets, expected, where):
 
 
 def test_the_deviation_series_deviates(played):
-    # Размер открытия в ответе — правило `OPEN_BB` (пометка `fixed_sizing` шага 1), а герой
-    # открыл до 2.5: ни рейз по правилу, ни фолд, ни олл-ин не «рейз до 2.5».
-    assert abs(OPEN_BB - 2.5) > SIZE_STEP_BB
-    second, _ = played("deviation")[1]
+    # Шаг 1 — спот `pushfold`: его совет — олл-ин или фолд, а герой открылся рейзом.
+    (first, _), (second, _) = played("deviation")
+    assert first["answer"]["action"] in ("allin", "fold")
     assert "line_deviates" in second["answer"]["flags"]
 
 

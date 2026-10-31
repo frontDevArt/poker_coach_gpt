@@ -319,8 +319,7 @@
       ],
       "lineDeviates": {
         "unlessStep": 1,
-        "action": "raise",
-        "sizeBb": 2.0
+        "action": "raise"
       },
       "streets": {}
     },

@@ -26,9 +26,11 @@
   действия корня (фолд или чек — без нокаутов, голов в нём нет); `close_spot` — разница двух
   лучших `evUsd` не больше этого допуска;
 - `line_deviates` — последний ответ советника в `history` (`advisor` не `null`: `preflop` или
-  `pushfold`) против последнего действия героя в линии: другое действие или размер дальше
-  `SIZE_STEP_BB`. После ответа `pushfold` узел героя на префлопе бывает, только если герой ему
-  не последовал. Отказ в истории — не ответ; действия героя в линии нет — сверять нечего.
+  `pushfold`) против последнего действия героя в линии: другое действие. Размер того же
+  действия — не отклонение (решение пользователя, приёмка плана 6, D39): совет даёт один размер
+  правила, а сыгранный размер линия и так берёт из кадров. После ответа `pushfold` узел героя на
+  префлопе бывает, только если герой ему не последовал. Отказ в истории — не ответ; действия
+  героя в линии нет — сверять нечего.
 """
 
 from __future__ import annotations
@@ -51,7 +53,6 @@ from .preflop_line import (
 )
 from .preflop_solver import Solution, action_values, reach
 from .preflop_tree import (
-    SIZE_STEP_BB,
     Terminal,
     Tree,
     build,
@@ -75,8 +76,6 @@ _TREE_FLAGS = (
     "deep_stack",
     "limper_range_profile",
 )
-# Разность размеров в шаг печатается с хвостом (2.1 − 2.0 > 0.1): шум, а не отклонение.
-_SIZE_NOISE = 1e-9
 
 # Причины, по которым итога префлопа нет (спека тренера §7.3).
 NO_PREFLOP = "итога префлопа нет: в раздаче нет кадров префлопа"
@@ -266,13 +265,7 @@ def _deviates(line: Line, node: DecisionNode, history: list[dict]) -> bool:
     mine = [act for act in line.acts if act.seat_index == node.hero.seat_index]
     if not advised or not mine:
         return False
-    last, act = advised[-1], mine[-1]
-    if last.get("action") != act.action:
-        return True
-    size = last.get("sizeBb")
-    if size is None or act.to_bb is None:
-        return False
-    return abs(act.to_bb - size) > SIZE_STEP_BB + _SIZE_NOISE
+    return advised[-1].get("action") != mine[-1].action
 
 
 def _flags(
