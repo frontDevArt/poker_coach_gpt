@@ -8,7 +8,7 @@ import pytest
 from conftest import _context, console_stdin, pushfold_first_in_node
 from poker_engine.advice import advise, why
 from poker_engine.analyze import analyze
-from poker_engine.cli import main
+from poker_engine.cli import _build_parser, main
 from poker_engine.handstate import node_from_dict
 
 
@@ -572,3 +572,90 @@ def test_coach_needs_a_subcommand(capsys):
     code, data = run(["coach"], capsys)
     assert code == 1
     assert "coach_command" in data["error"] or "required" in data["error"]
+
+
+# --- lobby (план D40, Задача 5) --------------------------------------------------------------
+
+
+def test_lobby_read_without_the_lobby_dependencies_is_a_json_error(tmp_path, monkeypatch, capsys):
+    import poker_engine.lobby_ocr as lobby_ocr
+
+    monkeypatch.setitem(sys.modules, "rapidocr_onnxruntime", None)
+    monkeypatch.setitem(sys.modules, "PIL", None)
+    monkeypatch.setattr(lobby_ocr, "_engine", None)
+    frame = tmp_path / "pass2-prizes-level17.png"
+    frame.write_bytes(b"")
+    code, data = run(["lobby", "read", str(frame), "--dir", str(tmp_path / "t")], capsys)
+    assert code == 1
+    prefix = 'для разбора лобби нужны зависимости: pip install -e ".[lobby]"'
+    assert data["error"].startswith(prefix)
+    assert not (tmp_path / "t").exists()
+
+
+def test_lobby_read_passes_the_frames_and_the_folder(tmp_path, monkeypatch, capsys):
+    seen = {}
+
+    def fake_read(paths, directory):
+        seen.update(paths=paths, directory=directory)
+        return {"tournament": "t.json", "payoutsFinal": True, "warnings": []}
+
+    monkeypatch.setattr("poker_engine.cli.lobby.read", fake_read)
+    code, data = run(["lobby", "read", "a.png", "b.png", "--dir", str(tmp_path)], capsys)
+    assert (code, data) == (0, {"tournament": "t.json", "payoutsFinal": True, "warnings": []})
+    assert seen == {"paths": ["a.png", "b.png"], "directory": str(tmp_path)}
+
+
+def test_lobby_read_needs_a_frame(capsys):
+    code, data = run(["lobby", "read"], capsys)
+    assert code == 1 and "frames" in data["error"]
+
+
+def test_lobby_read_error_is_json_with_code_1(tmp_path, capsys):
+    missing = str(tmp_path / "нет-кадра.png")
+    code, data = run(["lobby", "read", missing, "--dir", str(tmp_path / "t")], capsys)
+    assert code == 1 and data["error"].startswith(f"не удалось прочитать {missing!r}: ")
+
+
+def _tournament(path, title, start):
+    path.write_text(
+        json.dumps(
+            {"format": "poker-coach-tournament", "title": title, "start": start,
+             "payoutsFinal": False}
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_lobby_find_lists_files_of_one_title_by_start(tmp_path, capsys):
+    # имена файлов против порядка дат: сортировка — по `start`, а не по имени
+    _tournament(tmp_path / "a.json", "Fifty Stack $5.50", "2026-10-31T23:05")
+    _tournament(tmp_path / "b.json", "Fifty Stack $5.50", "2026-10-30T23:05")
+    _tournament(tmp_path / "c.json", "Bounty Hunters $5.50", "2026-10-29T20:00")
+    code, data = run(
+        ["lobby", "find", "--title", "Fifty Stack $5.50", "--dir", str(tmp_path)], capsys
+    )
+    assert code == 0
+    assert data == {
+        "tournaments": [
+            {"path": str(tmp_path / "b.json"), "start": "2026-10-30T23:05", "payoutsFinal": False},
+            {"path": str(tmp_path / "a.json"), "start": "2026-10-31T23:05", "payoutsFinal": False},
+        ]
+    }
+
+
+def test_lobby_find_needs_a_title(capsys):
+    code, data = run(["lobby", "find"], capsys)
+    assert code == 1 and "--title" in data["error"]
+
+
+@pytest.mark.parametrize("argv", [["read", "a.png"], ["find", "--title", "T"]])
+def test_lobby_default_folder(argv):
+    # значение парсера, без записи в настоящую папку пользователя
+    args = _build_parser().parse_args(["lobby", *argv])
+    assert args.dir == str(Path.home() / "Documents" / "poker-coach" / "tournaments")
+
+
+def test_lobby_needs_a_subcommand(capsys):
+    code, data = run(["lobby"], capsys)
+    assert code == 1
+    assert "lobby_command" in data["error"] or "required" in data["error"]

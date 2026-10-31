@@ -10,7 +10,10 @@
 <YYYY-MM-DD>.json» по дате начала из «Инфо»: заход 1 его создаёт, заход 2 заменяет в нём выплаты
 и входы. Кадра «Инфо» во втором заходе может не быть — тогда файл ищется по названию.
 
-Модуль не тянет распознавание, поэтому импортируется без группы `[lobby]`.
+`read` (Задача 5) — заход из файлов кадров: распознавание `lobby_ocr`, разбор, `save`.
+
+Модуль импортируется без группы `[lobby]`: `lobby_ocr` подключает RapidOCR и Pillow только при
+вызове, и без них отказывает `read`, а не импорт.
 """
 
 from __future__ import annotations
@@ -20,11 +23,12 @@ import os
 import re
 from datetime import date
 
+from . import lobby_ocr
 from ._checks import check_positive
 from ._files import write_json
 from .frames import context_payload
 from .handstate import _validate_context, context_from_dict
-from .lobby_read import Info, Shot
+from .lobby_read import Info, Shot, read_shot
 
 FORMAT = "poker-coach-tournament"
 VERSION = 1
@@ -184,6 +188,38 @@ def save(shots: list[tuple[str, Shot]], directory: str, captured: date) -> dict:
         raise ValueError(f"не удалось записать {path!r}: {exc}") from exc
     write_json(path, record, prefix=".tournament-")
     return {"tournament": path, "payoutsFinal": record["payoutsFinal"], "warnings": warnings}
+
+
+def read(paths: list[str], directory: str) -> dict:
+    """Заход из файлов кадров (`poker-engine lobby read`): дата съёмки, распознавание каждого
+    кадра, разбор и `save`. Ответ — как у `save`.
+
+    Файлы проверяются до распознавания (`captured_date`): оно идёт 11–16 с на кадр, и пропавший
+    последний кадр не должен ждать первых. Имя кадра в текстах отказов — имя файла без папки.
+    """
+    if not paths:
+        raise ValueError("нет кадров лобби")
+    captured = captured_date(paths)
+    shots = []
+    for path in paths:
+        try:
+            lines, width, height = lobby_ocr.ocr_image(path)
+        except OSError as exc:  # не картинка или файл пропал после проверки
+            raise ValueError(f"не удалось прочитать {path!r}: {exc}") from exc
+        shots.append((os.path.basename(path), read_shot(lines, width, height)))
+    return save(shots, directory, captured)
+
+
+def captured_date(paths: list[str]) -> date:
+    """Дата съёмки — дата изменения самого нового кадра: год начала турнира на кадре не виден
+    (`_start`), а кадры захода снимаются подряд."""
+    stamps = []
+    for path in paths:
+        try:
+            stamps.append(os.path.getmtime(path))
+        except OSError as exc:
+            raise ValueError(f"не удалось прочитать {path!r}: {exc}") from exc
+    return date.fromtimestamp(max(stamps))
 
 
 # --- проверки ---------------------------------------------------------------------------------

@@ -10,8 +10,9 @@ import argparse
 import io
 import json
 import sys
+from pathlib import Path
 
-from . import coach
+from . import coach, lobby
 from .advice import advise
 from .analyze import analyze
 from .bounty import required_equity_with_bounty
@@ -157,6 +158,12 @@ def _dispatch(args: argparse.Namespace) -> dict:
             return coach.lint(args.hand, _read_text(args.text))
         return coach.undo(args.hand)
 
+    if args.command == "lobby":
+        # Распознавание, разбор, проверки и дата съёмки — в движке (`lobby.read`), здесь — вызов.
+        if args.lobby_command == "read":
+            return lobby.read(args.frames, args.dir)
+        return {"tournaments": lobby.find(args.dir, args.title)}
+
     raise ValueError(f"неизвестная команда: {args.command}")
 
 
@@ -292,6 +299,16 @@ def _build_parser() -> argparse.ArgumentParser:
     p_lint = co_sub.add_parser("lint", help="числа текста ответа без следа в фактах шагов")
     p_lint.add_argument("--hand", required=True, help="файл раздачи")
     p_lint.add_argument("--text", required=True, help="файл с текстом ответа или '-' для stdin")
+
+    p_lo = sub.add_parser("lobby", help="файл турнира из скриншотов лобби")
+    lo_sub = p_lo.add_subparsers(dest="lobby_command", required=True)
+    tournaments = str(Path.home() / "Documents" / "poker-coach" / "tournaments")
+    p_read = lo_sub.add_parser("read", help="заход: кадры лобби → файл турнира")
+    p_read.add_argument("frames", nargs="+", help="скриншоты лобби (PNG), порядок не важен")
+    p_read.add_argument("--dir", default=tournaments, help="папка турниров")
+    p_find = lo_sub.add_parser("find", help="файлы турниров с этим названием")
+    p_find.add_argument("--title", required=True, help="название турнира из заголовка стола")
+    p_find.add_argument("--dir", default=tournaments, help="папка турниров")
 
     return parser
 

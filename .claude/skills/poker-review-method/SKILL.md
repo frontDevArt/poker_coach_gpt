@@ -26,14 +26,27 @@ description: Use when the user reviews a played MTT hand screenshot by screensho
 Из корня репозитория (`poker-engine` — `packages/poker-engine/.venv/Scripts/poker-engine.exe`):
 
 ```bash
-poker-engine coach start --hand hand.json --context context.json   # раз на раздачу, по лобби
+poker-engine lobby find --title "Fifty Stack $5.50"                # файл турнира по названию
+poker-engine coach start --hand hand.json --context "<файл турнира>" --late-reg open|closed
 poker-engine coach step  --hand hand.json --frame frame.json       # на каждый кадр; '-' — stdin
 poker-engine coach lint  --hand hand.json --text answer.md         # перед каждым ответом
 poker-engine coach undo  --hand hand.json                          # «кадр прочитан неверно»
 ```
 
-1. **Старт.** Контекст из лобби по L6 → `coach start`. Файл раздачи новый на каждую раздачу:
-   `start` не перезаписывает существующий.
+1. **Старт.** Файл турнира — по названию турнира из заголовка окна стола:
+   `poker-engine lobby find --title "<название из заголовка стола>"` → `{"tournaments": [{"path",
+   "start", "payoutsFinal"}, …]}`, по дате начала.
+   - **Один файл** — `coach start --context <path> --late-reg open|closed`. Флаг — по панели
+     стола **первого кадра** раздачи: «Поздняя регистрация» — `open`, «Ср. стек» — `closed`.
+     Средний стек движок считает сам: после регистрации — из стартового стека и входов файла, во
+     время неё — по столу кадра (пометка `field_from_table`). Файл турнира руками не править.
+   - **Несколько** — спросить пользователя дату турнира и взять файл с этим `start`.
+   - **Ни одного** — попросить кадры лобби (два захода, L6 «Контекст из лобби») и запустить
+     `poker-engine lobby read`.
+
+   `payoutsFinal: false` — второго захода не было: раздача разбирается на предварительных
+   выплатах (пометка `payouts_provisional`). Файл раздачи новый на каждую раздачу: `start` не
+   перезаписывает существующий.
 2. **Каждый кадр:** L6 → кадр → `coach step`. Вывод — `{"step", "advisor", "answer", "why",
    "streets"}`. Ошибка `{"error": …}` — кадр прочитан неверно: по L6 перечитать поле, названное
    в тексте; файл не тронут.
@@ -114,7 +127,8 @@ poker-engine coach undo  --hand hand.json                          # «кадр 
 
 ## Связанные скиллы
 
-- `poker-hand-vision` — кадр и контекст со скриншота; что делать с ошибкой `coach step`.
+- `poker-hand-vision` — кадр со скриншота, съёмка лобби для `lobby read`; что делать с ошибкой
+  `coach step` и `lobby read`.
 - `poker-preflop-mtt` — как читать ответ советника и таблица пометок.
 - `poker-ontology` — позиции, улицы, словарь линий.
 - `poker-math` — числа вне разбора по кадрам.

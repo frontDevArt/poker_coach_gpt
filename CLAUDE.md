@@ -74,6 +74,17 @@ fast-forward (2026-10-30, согласие пользователя).
 контекста (лобби к ним нет), три починки в ветке `feat/plan6-acceptance` (не влита), новые долги
 D37–D40. **Следующая — Фаза 14b** (ревью починок и D39), промпт — `plan6-next-prompt.md`.
 
+**D40 закрыт** (2026-10-31) — разбор лобби GG скриптом: `poker-engine lobby read <кадры…>`
+(два захода: до и после закрытия поздней регистрации) пишет файл турнира в
+`Documents\poker-coach\tournaments`, `lobby find --title` находит его для `coach start --context
+<файл> --late-reg open|closed`; средний стек движок выводит на каждом шаге из стартового стека
+(спека `docs/superpowers/specs/2026-10-31-lobby-reader-design.md`, план
+`docs/superpowers/plans/2026-10-31-lobby-reader.md`). Пять задач, каждая прошла ревью до
+`НАХОДОК НЕТ`; ручной прогон на пяти кадрах 10-30 — заход 1 45.9 с, заход 2 28.8 с. 1694 passed за 668 с (i5-4460). Ветка
+`claude/lobby-reader-c0891a` (от `feat/plan6-acceptance`) **не влита**. Новый долг D41 (защита на
+баббле не по правилам ПОКЕРОК), D11 отложен. **Точка входа — раздел «D40 — разбор лобби» журнала
+`docs/superpowers/state/2026-10-21-plan6-execution-notes.md`.**
+
 Планы 1 (`feat/poker-engine-core`) и 2 (`feat/screenshot-coach-engine`) закрыты и влиты
 в `main`: оба ревью на задачу, мутационная приёмка, финальное ревью ветки. Обе ветки на
 GitHub пользователь удалил (D15 закрыт, 2026-09-25).
@@ -146,6 +157,8 @@ GitHub пользователь удалил (D15 закрыт, 2026-09-25).
 | `docs/superpowers/state/2026-10-21-plan6-phases.md` | фазы плана 6, реестр долгов, шаблоны промптов |
 | `docs/superpowers/state/2026-10-31-phase14-answers.md` | ответы тренера на пяти раздачах приёмки (Фаза 14) |
 | `docs/superpowers/state/plan6-next-prompt.md` | **промпт Фазы 14b и промпт плана 7** |
+| `docs/superpowers/specs/2026-10-31-lobby-reader-design.md` | спека D40: разбор лобби скриптом, два захода, проверки §7 |
+| `docs/superpowers/plans/2026-10-31-lobby-reader.md` | план D40, 5 задач; «Отступления от спеки» — в начале |
 
 Плагины перечислены в `.claude/settings.json`.
 
@@ -154,12 +167,18 @@ GitHub пользователь удалил (D15 закрыт, 2026-09-25).
 ```bash
 # ядро
 cd packages/poker-engine
-.venv/Scripts/python -m pytest              # 1459 passed; ~150–190 с (24 ядра), ~510–700 с (i5-4460, один прогон), облако ~270 с (Linux: .venv/bin/python)
+.venv/Scripts/python -m pytest              # 1694 passed (с группой [lobby]); ~150–190 с (24 ядра), ~640–700 с (i5-4460, один прогон), облако ~270 с (Linux: .venv/bin/python)
 
 # первый запуск на новой машине
 python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements-dev.lock
 .venv/Scripts/python -m pip install -e ".[dev]" --no-deps
+
+# разбор лобби (`lobby read`, D40) — необязательная группа [lobby]: RapidOCR, onnxruntime, Pillow;
+# onnxruntime зафиксирован на 1.20.1 (1.31.1 на i5-4460 падает при импорте); без группы тесты OCR
+# на скриншотах пропускаются
+.venv/Scripts/python -m pip install -r requirements-lobby.lock
+.venv/Scripts/python -m pip install -e ".[dev,lobby]" --no-deps
 
 # референсные репо (322 МБ, вне git, пины в vendor-ref.lock)
 bash scripts/fetch-vendor-ref.sh

@@ -1,4 +1,4 @@
-"""Заход лобби → проверки → файл турнира (план D40, Задача 4; спека лобби §4–§7).
+"""Заход лобби → проверки → файл турнира → раздача (план D40, Задачи 4–5; спека лобби §4–§7, §10).
 
 Кадры — записанные выходы OCR (фикстуры Задачи 2) через `read_shot`, без RapidOCR; отказные
 случаи — те же кадры, где одно поле заменено руками (`dataclasses.replace`). Числа ожиданий сняты
@@ -7,6 +7,7 @@
 """
 
 import dataclasses
+import datetime
 import json
 import os
 import pathlib
@@ -15,7 +16,8 @@ from datetime import date
 
 import pytest
 
-from poker_engine import lobby
+from conftest import preflop_frame
+from poker_engine import coach, lobby
 from poker_engine.lobby_read import Line, read_shot
 
 FIXTURES = pathlib.Path(__file__).parent / "data" / "lobby"
@@ -689,3 +691,114 @@ def test_tournament_file_without_a_field_is_damaged(tmp_path):
     del record["entrants"]
     with pytest.raises(ValueError, match="^файл турнира повреждён: нет поля entrants$"):
         lobby.merge([_prizes2()], record, PASS2)
+
+
+# --- заход из файлов кадров (Задача 5) --------------------------------------------------------
+
+
+def _frames(tmp_path, names, day):
+    """Пустые файлы кадров с датой изменения `day`; распознавание подменяет `_fake_ocr`."""
+    paths = []
+    for name in names:
+        path = tmp_path / f"{name}.png"
+        path.write_bytes(b"")
+        stamp = datetime.datetime.combine(day, datetime.time(12)).timestamp()
+        os.utime(path, (stamp, stamp))
+        paths.append(str(path))
+    return paths
+
+
+def _fake_ocr(path):
+    """`ocr_image` на записанной фикстуре кадра с тем же именем."""
+    data = json.loads((FIXTURES / f"{pathlib.Path(path).stem}.json").read_text(encoding="utf-8"))
+    return [Line(**line) for line in data["lines"]], data["width"], data["height"]
+
+
+def test_read_two_passes_from_frame_files(tmp_path, monkeypatch):
+    monkeypatch.setattr("poker_engine.lobby_ocr.ocr_image", _fake_ocr)
+    tournaments = str(tmp_path / "tournaments")
+    first = _frames(
+        tmp_path, ["pass1-info-level13", "pass1-prizes-level14", "pass1-structure-level16"], PASS1
+    )
+    path = os.path.join(tournaments, FILE_NAME)
+    assert lobby.read(first, tournaments) == {
+        "tournament": path, "payoutsFinal": False, "warnings": [PROVISIONAL, SKIPPED]
+    }
+    second = _frames(tmp_path, ["pass2-info-level17", "pass2-prizes-level17"], PASS2)
+    assert lobby.read(second, tournaments) == {
+        "tournament": path, "payoutsFinal": True, "warnings": []
+    }
+    assert os.listdir(tournaments) == [FILE_NAME]
+
+
+def test_captured_is_the_newest_frame_date(tmp_path):
+    older, newer = _frames(tmp_path, ["a"], PASS1) + _frames(tmp_path, ["b"], PASS2)
+    assert lobby.captured_date([newer, older]) == PASS2
+    assert lobby.captured_date([older]) == PASS1
+
+
+def test_read_missing_frame_refuses_before_recognition(tmp_path, monkeypatch):
+    def no_ocr(path):
+        raise AssertionError("распознавание до проверки файлов")
+
+    monkeypatch.setattr("poker_engine.lobby_ocr.ocr_image", no_ocr)
+    missing = str(tmp_path / "нет-кадра.png")
+    present = _frames(tmp_path, ["pass2-prizes-level17"], PASS2)
+    with pytest.raises(ValueError, match=f"^не удалось прочитать {re.escape(repr(missing))}: "):
+        lobby.read([*present, missing], str(tmp_path / "tournaments"))
+    assert not (tmp_path / "tournaments").exists()
+
+
+def test_read_frame_that_is_not_an_image_refuses(tmp_path, monkeypatch):
+    def broken(path):
+        raise OSError("cannot identify image file")
+
+    monkeypatch.setattr("poker_engine.lobby_ocr.ocr_image", broken)
+    (frame,) = _frames(tmp_path, ["pass2-prizes-level17"], PASS2)
+    with pytest.raises(
+        ValueError,
+        match=f"^не удалось прочитать {re.escape(repr(frame))}: cannot identify image file$",
+    ):
+        lobby.read([frame], str(tmp_path / "tournaments"))
+
+
+def test_read_without_frames():
+    with pytest.raises(ValueError, match="^нет кадров лобби$"):
+        lobby.read([], "tournaments")
+
+
+# --- файл турнира ведёт раздачу (Задача 5, спека лобби §10) -----------------------------------
+
+
+def _hand_on_the_file(tmp_path, late_reg_open):
+    """Файл турнира после двух заходов → `coach start` → шаг кадра префлопа уровня захода 2:
+    блайнды 2,500 / 5,000, осталось 802."""
+    tournaments = str(tmp_path / "tournaments")
+    lobby.save([_info1(), _prizes1()], tournaments, PASS1)
+    record = _read(lobby.save([_prizes2()], tournaments, PASS2))
+    hand = tmp_path / f"hand-{late_reg_open}.json"
+    coach.start(str(hand), record, late_reg_open=late_reg_open)
+    frame = {
+        **preflop_frame(3, folded={7, 2}),
+        "blinds": {"sb": 2500, "bb": 5000, "ante": 600},
+        "playersLeft": 802,
+    }
+    answer = coach.step(str(hand), frame)["answer"]
+    return answer, json.loads(hand.read_text(encoding="utf-8"))
+
+
+def test_lobby_file_drives_a_hand(tmp_path):
+    answer, stored = _hand_on_the_file(tmp_path, late_reg_open=False)
+    assert answer["advisor"] == "preflop"
+    assert not {"ladder_incomplete", "payouts_provisional", "field_from_table"} & set(
+        answer["flags"]
+    )
+    assert stored["context"]["startingStackChips"] == 50000
+    assert stored["context"]["payoutsFinal"] is True and stored["context"]["lateRegOpen"] is False
+
+
+def test_lobby_file_during_late_registration_takes_the_field_from_the_table(tmp_path):
+    answer, stored = _hand_on_the_file(tmp_path, late_reg_open=True)
+    assert "field_from_table" in answer["flags"]
+    assert "payouts_provisional" not in answer["flags"]  # выплаты захода 2 — окончательные
+    assert stored["context"]["lateRegOpen"] is True

@@ -1,13 +1,14 @@
 ---
 name: poker-hand-vision
-description: Use when a poker screenshot (GG table or lobby) has to become input for `poker-engine` — a frame for `coach step` or a context for `coach start`. Lists every field with where it is on the screen, what to do when a field is not visible, and how to react to a `coach` error. Never guess a hidden value, never do arithmetic on the screen numbers, never adjust a number to make the validator pass.
+description: Use when a poker screenshot (GG table or lobby) has to become input for `poker-engine` — a frame for `coach step`, or lobby shots in two passes for `poker-engine lobby read`, which writes the tournament file for `coach start`. Lists every frame field with where it is on the screen, what to do when a field is not visible, and how to react to a `coach` error. Never guess a hidden value, never do arithmetic on the screen numbers, never adjust a number to make the validator pass.
 ---
 
 # Кадр и контекст со скриншота (L6)
 
-Скилл переписывает экран в JSON, который читает движок: **кадр** стола — для `coach step`,
-**контекст** турнира из лобби — для `coach start`. Сессию разбора ведёт `poker-review-method`
-(L7); словарь — `poker-ontology`.
+Скилл переписывает экран в JSON, который читает движок: **кадр** стола — для `coach step`.
+**Контекст** турнира модель не переписывает: скриншоты лобби читает `poker-engine lobby read` и
+пишет файл турнира для `coach start`. Сессию разбора ведёт `poker-review-method` (L7); словарь —
+`poker-ontology`.
 
 ## Контракт
 
@@ -61,16 +62,38 @@ description: Use when a poker screenshot (GG table or lobby) has to become input
 
 ## Контекст из лобби
 
-| Поле | Где на экране |
-|---|---|
-| `payouts` | вкладка выплат: `[{"from", "to", "amount"}]` — места и приз за место |
-| `placesPaid` | сколько мест платят |
-| `entrants` | входов всего (с ре-энтри) |
-| `playersLeft` | осталось игроков |
-| `lateRegOpen` | открыта ли поздняя регистрация |
-| `seatsPerTable` | размер стола: 6-max — `6`, 8-max — `8` |
-| `averageStackChips` / `averageStackBb` | средний стек из лобби; фишками — как показан, движок поделит на `bb` кадра |
-| `bubbleRefundUsd` | возврат бай-ина на баббле, если турнир его даёт; необязательно |
+Контекст турнира читает скрипт, а не модель: поля лобби руками не переписывать. Пользователь
+снимает лобби **в два захода**, окно лобби развёрнуто, шапка видна на каждом кадре, порядок
+файлов не важен:
+
+1. **До закрытия поздней регистрации** — вкладка «Инфо» (название, стартовый стек, размер стола)
+   и вкладка «Призовой фонд» (выплаты на этот момент, предварительные).
+2. **После закрытия** (в шапке «Идёт», а не таймер «Поздняя регистрация») — «Призовой фонд»
+   ещё раз: окончательный список. Не влез — прокрутить так, чтобы последняя строка прошлого кадра
+   осталась видна, и снять ещё.
+
+Каждый заход — одна команда:
+
+```bash
+poker-engine lobby read <кадры…>
+```
+
+Ответ — `{"tournament": путь, "payoutsFinal", "warnings"}`: заход 1 создаёт файл турнира в папке
+`Documents\poker-coach\tournaments` («Fifty Stack $5.50 2026-10-30.json»), заход 2 заменяет в нём
+выплаты и входы окончательными (`payoutsFinal: true`). Предупреждения пересказать пользователю:
+«выплаты предварительные: сумма … против фонда …» — норма захода 1; «кадр … пропущен» — кадр не
+«Инфо» и не «Призовой фонд».
+
+Ответ `{"error": "…"}` с кодом 1 — файл не записан. Текст называет, что снять: «нет мест 46–69:
+снимите кадр «Призового фонда», где они видны», «поле «…» прочитано неуверенно на кадре …:
+снимите его заново». Попросить у пользователя **этот** кадр и запустить команду заново со всеми
+кадрами захода. Пропущенную строку выплат не дописывать, число под сумму не двигать, файл турнира руками
+не править — ни при отказе, ни после. Ответ «для разбора лобби нужны зависимости» — сказать
+пользователю поставить группу `[lobby]` (README ядра).
+
+Защиту на баббле (`bubbleRefundUsd`, Early Bird) команда не пишет: лобби не знает, был ли герой
+зарегистрирован до начала турнира. Средний стек на каждую раздачу движок считает сам из
+стартового стека файла.
 
 ## Ошибка `coach step`
 
@@ -104,8 +127,9 @@ seatsPerTable (6)», «в кадре два банка», «поле stackBb н�
 - **Размер стола** виден по числу мест, только когда стол полон: пустое место не рисуется.
 - **Лобби.** Средний стек — в шапке («Средний стек 72,385 (51.7 BB)»), там же «Осталось игроков
   783 / 1,134». Выплаты — вкладка «Призовой фонд», список со скроллом по ~13 строк, места
-  диапазонами («11 ~ 12»). Вкладка «Игроки» — стеки игроков по местам (видна после входа в
-  аккаунт).
+  диапазонами («11 ~ 12»); в развёрнутом окне весь список (19–20 строк) — одним кадром. Вкладка
+  «Игроки» — стеки игроков по местам (видна после входа в аккаунт); разброс стеков поля движок
+  не берёт (D11), её не снимать. Лобби читает `poker-engine lobby read` (раздел выше).
 
 ## Связанные скиллы
 
