@@ -50,7 +50,7 @@ from __future__ import annotations
 import numpy
 
 from . import allin_matrix, nash
-from .explain import action_text, fact
+from .explain import WORDS, action_text, display, fact
 from .hand import Hand
 from .handstate import DecisionNode, TournamentContext, assign_positions
 from .pushfold_game import (
@@ -241,7 +241,7 @@ def explain(answer: dict) -> list[dict]:
     """Факты ответа (спека тренера §8): действие и размер, разница с фолдом в долларах и в BB,
     головы, доли и частоты героя, соперники, пометки. Банк, колл и требуемую эквити колла в
     `facing_allin` даёт узел (`explain.node_facts`)."""
-    facts = [fact("action", action_text(answer["action"], answer.get("sizeBb")), "text")]
+    facts = [fact("action", _action_text(answer), "text")]
     if "sizeBb" in answer:
         facts.append(fact("sizeBb", answer["sizeBb"], "bb"))
     ev = answer["ev"]
@@ -269,3 +269,11 @@ def explain(answer: dict) -> list[dict]:
     facts.append(fact("effectiveStackBb", answer["effectiveStackBb"], "bb"))
     facts += [fact(f"flag.{flag}", flag, "text") for flag in answer["flags"]]
     return facts
+
+
+def _action_text(answer: dict) -> str:
+    """Действие с размером. `sizeBb` колла — доплата героя, а не уровень олл-ина (у героя на
+    блайнде они расходятся): «колл 8.0 BB», а не «колл до»."""
+    if answer["action"] == "call":
+        return f"{WORDS['call']} {display(answer['sizeBb'], 'bb')}"
+    return action_text(answer["action"], answer.get("sizeBb"))

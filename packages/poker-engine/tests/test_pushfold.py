@@ -191,6 +191,14 @@ def test_call_size_is_the_shove_minus_what_the_hero_has_in():
     assert answer["effectiveStackBb"] == 9.0
 
 
+def test_call_is_printed_as_what_the_hero_puts_in():
+    # D42: у `BB` против олл-ина на 9 `sizeBb` колла — доплата 8. Печать «колл до 8.0 BB»
+    # называла бы уровень, которого нет: олл-ин — до 9.0.
+    answer = _advise(_cards(_shove_from_sb(pushfold_first_in_node()), ["Ah", "As"]))
+    action = next(item for item in pushfold.explain(answer) if item["key"] == "action")
+    assert action["display"] == "колл 8.0 BB"
+
+
 def test_call_size_is_capped_by_the_hero_stack():
     # Герой `BTN` с 5 BB против олл-ина на 9: колл — весь стек.
     raw = _cards(pushfold_facing_allin_node(), ["Ah", "As"])
