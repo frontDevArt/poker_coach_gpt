@@ -4109,3 +4109,8 @@ pushfold_advice"`, `test_coach_series.py`): сверка размера с ша�
 Ревью починок Фазы 14d — `НАХОДОК НЕТ`, починки N1–N6 закрыты. Ветка `claude/lobby-reader-c0891a`
 (в ней `feat/plan6-acceptance`) ждёт **согласия пользователя** на вливание в `main` fast-forward;
 дальше — план 7.
+
+### Вливание (2026-11-01)
+
+По согласию пользователя ветка `claude/lobby-reader-c0891a` (в ней `feat/plan6-acceptance` и D40)
+влита в `main` fast-forward вместе с этой записью; `main` и ветка запушены.
