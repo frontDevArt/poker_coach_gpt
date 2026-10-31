@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
 import re
 from datetime import date
 
@@ -188,6 +189,20 @@ def save(shots: list[tuple[str, Shot]], directory: str, captured: date) -> dict:
         raise ValueError(f"не удалось записать {path!r}: {exc}") from exc
     write_json(path, record, prefix=".tournament-")
     return {"tournament": path, "payoutsFinal": record["payoutsFinal"], "warnings": warnings}
+
+
+def default_directory() -> str:
+    """Папка турниров по умолчанию: `<домашняя папка>/Documents/poker-coach/tournaments`.
+
+    Домашней папки нет (не заданы `USERPROFILE`/`HOMEPATH` или `HOME`) — `ValueError` с
+    подсказкой задать папку явно, а не `RuntimeError` мимо JSON-ответа CLI."""
+    try:
+        home = pathlib.Path.home()
+    except RuntimeError as exc:
+        raise ValueError(
+            f"не найдена домашняя папка ({exc}): укажите папку турниров в --dir"
+        ) from exc
+    return str(home / "Documents" / "poker-coach" / "tournaments")
 
 
 def read(paths: list[str], directory: str) -> dict:

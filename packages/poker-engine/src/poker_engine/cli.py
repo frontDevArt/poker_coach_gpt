@@ -10,7 +10,6 @@ import argparse
 import io
 import json
 import sys
-from pathlib import Path
 
 from . import coach, lobby
 from .advice import advise
@@ -159,10 +158,12 @@ def _dispatch(args: argparse.Namespace) -> dict:
         return coach.undo(args.hand)
 
     if args.command == "lobby":
-        # Распознавание, разбор, проверки и дата съёмки — в движке (`lobby.read`), здесь — вызов.
+        # Распознавание, разбор, проверки, дата съёмки и папка по умолчанию — в движке, здесь —
+        # вызов.
+        directory = args.dir if args.dir is not None else lobby.default_directory()
         if args.lobby_command == "read":
-            return lobby.read(args.frames, args.dir)
-        return {"tournaments": lobby.find(args.dir, args.title)}
+            return lobby.read(args.frames, directory)
+        return {"tournaments": lobby.find(directory, args.title)}
 
     raise ValueError(f"неизвестная команда: {args.command}")
 
@@ -302,13 +303,16 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_lo = sub.add_parser("lobby", help="файл турнира из скриншотов лобби")
     lo_sub = p_lo.add_subparsers(dest="lobby_command", required=True)
-    tournaments = str(Path.home() / "Documents" / "poker-coach" / "tournaments")
+    # Папку по умолчанию решает движок при вызове (`lobby.default_directory`), а не парсер: без
+    # домашней папки `Path.home()` бросает RuntimeError, и при сборке парсера падала бы любая
+    # команда, а не только `lobby`.
+    folder = r"папка турниров; по умолчанию — Documents\poker-coach\tournaments"
     p_read = lo_sub.add_parser("read", help="заход: кадры лобби → файл турнира")
     p_read.add_argument("frames", nargs="+", help="скриншоты лобби (PNG), порядок не важен")
-    p_read.add_argument("--dir", default=tournaments, help="папка турниров")
+    p_read.add_argument("--dir", default=None, help=folder)
     p_find = lo_sub.add_parser("find", help="файлы турниров с этим названием")
     p_find.add_argument("--title", required=True, help="название турнира из заголовка стола")
-    p_find.add_argument("--dir", default=tournaments, help="папка турниров")
+    p_find.add_argument("--dir", default=None, help=folder)
 
     return parser
 

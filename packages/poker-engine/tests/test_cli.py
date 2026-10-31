@@ -649,10 +649,52 @@ def test_lobby_find_needs_a_title(capsys):
 
 
 @pytest.mark.parametrize("argv", [["read", "a.png"], ["find", "--title", "T"]])
-def test_lobby_default_folder(argv):
-    # значение парсера, без записи в настоящую папку пользователя
-    args = _build_parser().parse_args(["lobby", *argv])
-    assert args.dir == str(Path.home() / "Documents" / "poker-coach" / "tournaments")
+def test_lobby_default_folder(argv, monkeypatch, capsys):
+    # папка, которую получает движок без --dir; движок подменён — в настоящую папку пользователя
+    # ничего не пишется и ничего не читается
+    seen = {}
+
+    def fake_read(paths, directory):
+        seen["directory"] = directory
+        return {"tournament": "t.json", "payoutsFinal": True, "warnings": []}
+
+    def fake_find(directory, title):
+        seen["directory"] = directory
+        return []
+
+    monkeypatch.setattr("poker_engine.cli.lobby.read", fake_read)
+    monkeypatch.setattr("poker_engine.cli.lobby.find", fake_find)
+    assert _build_parser().parse_args(["lobby", *argv]).dir is None
+    code, _ = run(["lobby", *argv], capsys)
+    assert code == 0
+    assert seen["directory"] == str(Path.home() / "Documents" / "poker-coach" / "tournaments")
+
+
+def test_lobby_without_a_home_folder_is_a_json_error(monkeypatch, capsys):
+    def no_home(cls):
+        raise RuntimeError("Could not determine home directory.")
+
+    monkeypatch.setattr(Path, "home", classmethod(no_home))
+    code, data = run(["lobby", "find", "--title", "T"], capsys)
+    assert (code, data) == (
+        1,
+        {
+            "error": "не найдена домашняя папка (Could not determine home directory.): укажите "
+            "папку турниров в --dir"
+        },
+    )
+    # прочие команды без домашней папки работают: парсер её не спрашивает
+    code, data = run(["potodds", "--pot", "100", "--call", "50"], capsys)
+    assert code == 0 and data["required_equity"] == pytest.approx(1 / 3)
+
+
+def test_lobby_dir_overrides_the_default_without_a_home_folder(tmp_path, monkeypatch, capsys):
+    def no_home(cls):
+        raise RuntimeError("Could not determine home directory.")
+
+    monkeypatch.setattr(Path, "home", classmethod(no_home))
+    code, data = run(["lobby", "find", "--title", "T", "--dir", str(tmp_path)], capsys)
+    assert (code, data) == (0, {"tournaments": []})
 
 
 def test_lobby_needs_a_subcommand(capsys):
