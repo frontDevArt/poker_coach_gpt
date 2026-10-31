@@ -165,8 +165,12 @@ def test_ocr_without_dependencies_refuses(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "rapidocr_onnxruntime", None)
     monkeypatch.setattr(lobby_ocr, "_engine", None)
-    with pytest.raises(ValueError, match=r"для разбора лобби нужны зависимости: pip install"):
+    with pytest.raises(ValueError, match=r"для разбора лобби нужны зависимости: pip install") as info:
         lobby_ocr.ocr_image("нет-такого-кадра.png")
+    # настоящая причина не теряется, а имя недостающего модуля стоит в конце текста
+    assert isinstance(info.value.__cause__, ImportError)
+    assert info.value.__cause__.name == "rapidocr_onnxruntime"
+    assert str(info.value).endswith("(не импортируется: rapidocr_onnxruntime)")
 
 
 @pytest.mark.parametrize(

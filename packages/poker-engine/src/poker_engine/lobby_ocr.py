@@ -29,11 +29,6 @@ from poker_engine.lobby_read import Line
 
 _NO_DEPS = 'для разбора лобби нужны зависимости: pip install -e ".[lobby]"'
 
-
-def _no_deps(exc: ImportError) -> ValueError:
-    """Отказ без группы `[lobby]`; имя недостающего модуля — после текста, цепочка сохранена."""
-    return ValueError(f"{_NO_DEPS} (не импортируется: {exc.name or exc})")
-
 _HEADER_BOTTOM = 0.155  # доля ширины кадра; граница шапки и тела
 _BODY_LEFT = 0.345  # средняя колонка — доли ширины кадра
 _BODY_RIGHT = 0.655
@@ -48,6 +43,11 @@ _REREAD_PAD = 0.6  # поля перечитываемой вырезки — д
 _REREAD_SCALES = (4, 6, 3)
 
 _engine = None
+
+
+def _no_deps(exc: ImportError) -> ValueError:
+    """Отказ без группы `[lobby]`; имя недостающего модуля — после текста, цепочка сохранена."""
+    return ValueError(f"{_NO_DEPS} (не импортируется: {exc.name or exc})")
 
 
 def _get_engine():

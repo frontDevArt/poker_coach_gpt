@@ -65,10 +65,10 @@ def fixture_dict(lines, width: int, height: int, captured: str) -> dict:
 
 
 def main(argv=None) -> int:
-    from poker_engine.cli import _ensure_utf8_stdout
     from poker_engine.lobby_ocr import ocr_image
 
-    _ensure_utf8_stdout()  # кириллица в print не должна ронять пакетную запись на консоли cp1251/cp1252
+    # кириллица в print не должна ронять пакетную запись на консоли cp1251/cp1252
+    sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Записать фикстуры распознавания лобби")
     parser.add_argument("images", nargs="+", type=pathlib.Path)
     parser.add_argument("--out", required=True, type=pathlib.Path)
