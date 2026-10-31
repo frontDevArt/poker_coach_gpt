@@ -191,6 +191,24 @@ def test_rounding_of_a_raise_after_the_last_frame_is_not_an_action(case, who, no
     assert acts[raiser]["toBb"] == round(acts[raiser]["toBb"], 1)
 
 
+@pytest.mark.parametrize("case", [_OPEN_AND_CALL, _THREE_BET_AND_CALL])
+@pytest.mark.parametrize("raiser_noise, caller_noise", [(0.1, -0.1), (-0.1, 0.1), (0.2, -0.2), (-0.2, 0.2)])
+def test_rounding_of_both_after_the_last_frame_is_not_an_action(case, raiser_noise, caller_noise):
+    # Фаза 14c, N4: шумят оба — вложенное каждого до двух шагов от уравненного, и разойтись они
+    # могут на четыре. Это колл наибольшего, а не колл на другую сумму и не рейз уравнявшего.
+    frames, put, folded, raiser, caller = case
+    flop = flop_frame(3, put, folded)
+    for seat in flop["seats"]:
+        seat["stackBb"] -= {raiser: raiser_noise, caller: caller_noise}.get(seat["seatIndex"], 0.0)
+    summary = _summary([*frames(), flop])
+
+    assert "line" in summary, summary.get("reason")
+    acts = {a["seatIndex"]: a for a in summary["line"] if a["action"] != "fold"}
+    assert (acts[raiser]["action"], acts[caller]["action"]) == ("raise", "call")
+    size = put[raiser] + max(raiser_noise, caller_noise)
+    assert acts[raiser]["toBb"] == acts[caller]["toBb"] == pytest.approx(size, abs=1e-9)
+
+
 def test_a_limp_and_the_check():
     # Чек виден только тем, что вложенное `BB` не выросло: линия дочитывает его чеком. Герой
     # `SB` первым в банк залимпил — `reach` героя — его частоты лимпа шага 1.

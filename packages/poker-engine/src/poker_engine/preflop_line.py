@@ -30,6 +30,9 @@ _SAME_BB = ROUNDING_STEP_BB / 2
 # Вложенное на исходе префлопа — разность двух сумм «стек плюс вложенное», четыре числа экрана по
 # полшага ошибки каждое: от уравненного или прежнего вложенного оно отходит до двух шагов.
 _DERIVED_BB = 2 * ROUNDING_STEP_BB
+# Уравненные вложенные двух мест на исходе префлопа — оба такие разности: они расходятся до двух
+# `_DERIVED_BB`. Оба на шаге печати, поэтому сравнение — с запасом полшага.
+_CALLED_BB = 2 * _DERIVED_BB + _SAME_BB
 
 _VOLUNTARY = frozenset({"limp", "call", "raise", "allin"})
 
@@ -128,8 +131,9 @@ def _closing(preflop_nodes: list[DecisionNode], next_node: DecisionNode) -> dict
     от своего вложенного там — оно и есть: это шум округления стеков, а не ставка (рейз меньше
     большого блайнда не бывает, олл-ин виден по стеку 0). Наибольшее вложенное улицы ставится и
     после последнего кадра — рейз героя на своём шаге и колл на него: прижать его не к чему, и
-    вложенное в пределах `_DERIVED_BB` ниже наибольшего на исходе улицы — колл этого наибольшего.
-    Его размер поэтому точен до шума печати, а не до шага.
+    вложенное ниже наибольшего на исходе улицы не дальше `_CALLED_BB` — колл этого наибольшего
+    (шумят оба). Его размер поэтому точен до шума печати, а не до шага; колл олл-ином на меньшее
+    так же близко к наибольшему от шума не отличить.
     """
     began = {seat.seat_index: seat.stack_bb + seat.invested_bb for seat in preflop_nodes[0].seats}
     starts = {seat.seat_index: seat.stack_bb + seat.invested_bb for seat in next_node.seats}
@@ -142,7 +146,7 @@ def _closing(preflop_nodes: list[DecisionNode], next_node: DecisionNode) -> dict
             near = [at for at in (known, last.get(index, 0.0)) if abs(amount - at) <= _DERIVED_BB]
             put[index] = min(near, key=lambda at: abs(amount - at)) if near else _on_step(amount)
     top = max(put.values())
-    put = {index: top if top - amount <= _DERIVED_BB else amount for index, amount in put.items()}
+    put = {index: top if top - amount < _CALLED_BB else amount for index, amount in put.items()}
     return {
         seat.seat_index: replace(
             seat,
