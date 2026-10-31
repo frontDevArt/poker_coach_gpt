@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
-# Точные версии группы `[lobby]` (план D40, Задача 2; Python 3.12.3, Windows): только то, что
-# она тянет сверх `requirements-dev.lock` (numpy там уже есть). Ставить после dev-замка:
-#   pip install -r requirements-dev.lock -r requirements-lobby.lock
+# Точные версии группы `[lobby]` (план D40, Задача 2; Python 3.12.3, Windows): всё, что она
+# тянет, включая numpy, поэтому замок самостоятельный (numpy совпадает с
+# `requirements-dev.lock`; pytest и ядро в него не входят):
+#   pip install -r requirements-lobby.lock
+#   pip install -r requirements-dev.lock   # для тестов
 #   pip install -e ".[dev,lobby]" --no-deps
 # onnxruntime зафиксирован на 1.20.1: 1.31.1 на этой машине падает в segfault.
 # pyreadline3 нужен coloredlogs только на Windows.
@@ -9,6 +11,7 @@ coloredlogs==15.0.1
 flatbuffers==25.12.19
 humanfriendly==10.0
 mpmath==1.3.0
+numpy==2.5.4
 onnxruntime==1.20.1
 opencv-python==5.0.0.93
 pillow==13.0.0

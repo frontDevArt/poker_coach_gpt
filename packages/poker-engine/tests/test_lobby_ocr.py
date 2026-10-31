@@ -1,8 +1,8 @@
 """Распознавание лобби GG (план D40, Задача 2; спека лобби §8).
 
 Тест на настоящем кадре читает скриншот пользователя (в репозитории его нет) и гоняет RapidOCR:
-около 30 с на i5-4460; без группы `[lobby]` или без файла он пропускается. Правило маски ников
-рекордера и отказ без зависимостей проверяются без распознавания.
+около 11–16 с на кадр на i5-4460; без группы `[lobby]` или без файла он пропускается. Правило маски
+ников рекордера, отказ без зависимостей и починка счётчика проверяются без распознавания.
 """
 
 import importlib.util
@@ -51,15 +51,81 @@ def test_place_column_is_read_in_order():
     from poker_engine.lobby_ocr import ocr_image
 
     lines, width, _ = ocr_image(str(shot))
-    places = [
-        line
-        for line in lines
-        if line.text.isdigit() and line.x < 0.40 * width and line.y > 450
-    ]
+    # одни цифры левее 0.40·ширина — только колонка мест: счётчики шапки правее, подписи — не числа
+    places = [line for line in lines if line.text.isdigit() and line.x < 0.40 * width]
     assert [line.text for line in sorted(places, key=lambda line: line.y)] == [
         str(place) for place in range(1, 11)
     ]
     assert any(line.text == "1474|349" for line in lines)
+
+
+def test_header_counter_keeps_its_bar():
+    # «1455|335» читался «1455335» с уверенностью 1.0; перечитывание вырезкой возвращает черту
+    pytest.importorskip("rapidocr_onnxruntime")
+    shot = LOBBY_SHOTS / "pass1-info-level13.png"
+    if not shot.is_file():
+        pytest.skip(f"нет скриншота {shot}")
+    from poker_engine.lobby_ocr import ocr_image
+
+    lines, _, _ = ocr_image(str(shot))
+    assert [line.text for line in lines].count("1455|335") == 1
+
+
+def _counter(text, score=1.0):
+    return Line(text=text, x=900.0, y=130.0, w=60.0, h=12.0, score=score)
+
+
+def _reread_stub(*answers):
+    """`reread` для `_repair_counters`: по чтению на каждое увеличение, вызовы пишутся."""
+    calls = []
+    queue = list(answers)
+
+    def reread(box, scale):
+        calls.append((box, scale))
+        return queue.pop(0) if queue else []
+
+    return reread, calls
+
+
+def test_repair_counter_accepts_matching_reread():
+    from poker_engine.lobby_ocr import _REREAD_SCALES, _repair_counters
+
+    fused = _counter("1455335")
+    good = _counter("1455|335", 0.9)
+    reread, calls = _reread_stub([_counter("1455")], [good])
+    assert _repair_counters([fused], reread) == [good]
+    assert [scale for _, scale in calls] == list(_REREAD_SCALES[:2])
+    left, top, right, bottom = calls[0][0]
+    assert (left, top) < (900, 130) and (right, bottom) > (960, 142)  # поля вокруг строки
+    assert 900 - left == 130 - top  # поля — доля высоты строки, одинаковые по осям
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        [_counter("1455|35")],  # потеряна цифра
+        [_counter("1456|335")],  # цифра изменена
+        [_counter("1455|3345")],  # цифра добавлена
+        [_counter("1455335")],  # черты нет
+        [_counter("1455"), _counter("335")],  # две строки
+    ],
+)
+def test_repair_counter_rejects_bad_reread(answer):
+    from poker_engine.lobby_ocr import _REREAD_SCALES, _repair_counters
+
+    fused = _counter("1455335")
+    reread, calls = _reread_stub(*[answer] * len(_REREAD_SCALES))
+    assert _repair_counters([fused], reread) == [fused]
+    assert len(calls) == len(_REREAD_SCALES)  # перебраны все увеличения
+
+
+def test_repair_counter_ignores_other_lines():
+    from poker_engine.lobby_ocr import _repair_counters
+
+    lines = [_counter("1,250 /2,500 (300)"), _counter("1455|335"), _counter("$9,057.40")]
+    reread, calls = _reread_stub()
+    assert _repair_counters(lines, reread) == lines
+    assert calls == []
 
 
 def test_ocr_without_dependencies_refuses(monkeypatch):

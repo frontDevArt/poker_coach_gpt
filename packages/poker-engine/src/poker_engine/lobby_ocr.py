@@ -34,7 +34,7 @@ _BODY_SCALE = 2
 
 _FUSED = re.compile(r"\d{5,}")  # «1455335»: RapidOCR потерял черту счётчика «1455|335»
 _SPLIT = re.compile(r"\d+\s*\|\s*\d+")
-_REREAD_PAD = 8
+_REREAD_PAD = 0.6  # поля перечитываемой вырезки — доля высоты строки, не пиксели
 _REREAD_SCALES = (4, 6, 3)
 
 _engine = None
@@ -79,23 +79,31 @@ def _read_crop(engine, image, box, scale):
     return lines
 
 
-def _repair_counters(engine, image, lines):
+def _repair_counters(lines, reread):
     """Счётчик «уникальные | ре-энтри» иногда читается без черты («1455|335» → «1455335») с
     уверенностью 1.0, а разобрать склейку нельзя. Такая строка читается заново узкой вырезкой
-    (поля `_REREAD_PAD` px) на нескольких увеличениях; принимается первое чтение вида `A|B`.
-    Не вышло — строка остаётся как была, разбор откажет по ней сам."""
+    (`reread(box, scale)` → строки; поля — `_REREAD_PAD` высоты строки) на нескольких увеличениях.
+    Принимается первое чтение вида `A|B` из одной строки, цифры которого в точности равны цифрам
+    склейки: число не двигается, черту код сам не дописывает. Не вышло — строка остаётся как была,
+    разбор откажет по ней сам."""
     repaired = []
     for line in lines:
-        if _FUSED.fullmatch(line.text.strip()):
+        fused = line.text.strip()
+        if _FUSED.fullmatch(fused):
+            pad = _REREAD_PAD * line.h
             box = (
-                int(line.x - _REREAD_PAD),
-                int(line.y - _REREAD_PAD),
-                int(line.x + line.w + _REREAD_PAD),
-                int(line.y + line.h + _REREAD_PAD),
+                int(line.x - pad),
+                int(line.y - pad),
+                int(line.x + line.w + pad),
+                int(line.y + line.h + pad),
             )
             for scale in _REREAD_SCALES:
-                again = _read_crop(engine, image, box, scale)
-                if len(again) == 1 and _SPLIT.fullmatch(again[0].text.strip()):
+                again = reread(box, scale)
+                if (
+                    len(again) == 1
+                    and _SPLIT.fullmatch(again[0].text.strip())
+                    and re.sub(r"\D", "", again[0].text) == fused
+                ):
                     line = again[0]
                     break
         repaired.append(line)
@@ -120,7 +128,9 @@ def ocr_image(path: str) -> tuple[list[Line], int, int]:
     left = round(_BODY_LEFT * width)
     right = round(_BODY_RIGHT * width)
     header = _read_crop(engine, image, (0, 0, width, split), _HEADER_SCALE)
-    lines = _repair_counters(engine, image, header)
+    lines = _repair_counters(
+        header, lambda box, scale: _read_crop(engine, image, box, scale)
+    )
     lines += _read_crop(engine, image, (left, split, right, height), _BODY_SCALE)
     lines.sort(key=lambda line: (line.y, line.x))
     return lines, width, height
