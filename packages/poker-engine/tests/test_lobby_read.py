@@ -211,6 +211,29 @@ def test_places_count_without_table_refuses():
         read_shot(lines, width, height)
 
 
+_RUSSIAN_MONTHS = [
+    ("янв", 1), ("фев", 2), ("мар", 3), ("апр", 4), ("мая", 5), ("май", 5), ("июн", 6),
+    ("июл", 7), ("авг", 8), ("сен", 9), ("окт", 10), ("ноя", 11), ("дек", 12),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("month", "number"),
+    _RUSSIAN_MONTHS + [("OKT", 10), ("ceH", 9)],  # двойники — как на кадрах 10-30 и 09-10
+)
+def test_start_month_is_read(month, number):
+    lines, width, height = _fixture("pass1-info-level13")
+    lines = _replace(lines, "OKT 30, 23:05", text=f"{month} 30, 23:05")
+    assert read_shot(lines, width, height).info.start == (number, 30, 23, 5)
+
+
+def test_month_keys_are_three_folded_letters():
+    from poker_engine.lobby_read import _MONTHS
+
+    assert all(len(key) == 3 for key in _MONTHS)  # `_DATE` ловит ровно три знака
+    assert sorted(set(_MONTHS.values())) == list(range(1, 13))
+
+
 def test_unknown_month_refuses():
     lines, width, height = _fixture("pass1-info-level13")
     lines = _replace(lines, "OKT 30, 23:05", text="XYZ 30, 23:05")
