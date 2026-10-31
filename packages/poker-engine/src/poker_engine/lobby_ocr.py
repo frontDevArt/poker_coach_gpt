@@ -25,11 +25,11 @@ import re
 
 import numpy as np
 
-from poker_engine.lobby_read import Line
+from poker_engine.lobby_read import HEADER_BOTTOM, Line
 
 _NO_DEPS = 'для разбора лобби нужны зависимости: pip install -e ".[lobby]"'
 
-_HEADER_BOTTOM = 0.155  # доля ширины кадра; граница шапки и тела
+_HEADER_BOTTOM = HEADER_BOTTOM  # доля ширины кадра; граница шапки и тела, общая с разбором
 _BODY_LEFT = 0.345  # средняя колонка — доли ширины кадра
 _BODY_RIGHT = 0.655
 _HEADER_SCALE = 3
