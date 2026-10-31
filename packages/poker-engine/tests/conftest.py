@@ -1,8 +1,12 @@
 """Общие данные тестов: корректная раздача, снятая со скриншота."""
 
 import io
+import pathlib
 
 import pytest
+
+# скриншоты лобби пользователя (в репозитории их нет): локальные тесты OCR без них пропускаются
+LOBBY_SHOTS = pathlib.Path(r"C:\Users\Admin\Documents\Screenshots\lobby\fifty-stack-2026-10-30")
 
 
 def console_stdin(text):

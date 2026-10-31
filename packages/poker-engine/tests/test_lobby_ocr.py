@@ -12,10 +12,10 @@ import re
 import sys
 
 import pytest
+from conftest import LOBBY_SHOTS
 
 from poker_engine.lobby_read import Line
 
-LOBBY_SHOTS = pathlib.Path(r"C:\Users\Admin\Documents\Screenshots\lobby\fifty-stack-2026-10-30")
 FIXTURES = pathlib.Path(__file__).parent / "data" / "lobby"
 RECORDER = pathlib.Path(__file__).parent.parent / "scripts" / "record_lobby_fixtures.py"
 

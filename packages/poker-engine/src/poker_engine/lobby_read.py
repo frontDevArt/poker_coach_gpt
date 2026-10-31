@@ -5,13 +5,14 @@
 а не по подписям и не по пикселям: подписи RapidOCR читает латинскими двойниками («ypOBeHb 17»
 вместо «Уровень 17»), а размер окна разный (1195×1035 и 1200×740). Подписи-двойники читаются
 только там, где форма числа поле не различает («N призовых мест», «N игроков на стол», «N мин»,
-месяц даты, строка Early Bird). Число как прочитано: разбор ничего не достраивает и не двигает
-(спека §4); чего на кадре нет — отказ с именем поля, а не догадка.
+месяц даты, строка Early Bird). Число как прочитано: разбор ничего не достраивает, не двигает и
+не склеивает из кусков (спека §4); чего на кадре нет — отказ с именем поля, а не догадка.
 
 Модуль не тянет распознавание, поэтому импортируется без группы `[lobby]`.
 """
 
 import re
+import statistics
 import unicodedata
 from dataclasses import dataclass
 
@@ -19,6 +20,9 @@ from dataclasses import dataclass
 HEADER_BOTTOM = 0.155
 _MIN_SCORE = 0.8  # уверенность OCR ниже — поле в `low_confidence`
 _ROW = 0.5  # строки в одном ряду: центры ближе половины высоты большей
+_GLUE = 0.5  # рамки вплотную: зазор меньше половины высоты большей
+_COLUMN = 1.0  # ячейка в столбце таблицы: центр ближе своей высоты к медиане столбца
+_TITLE_LEFT = 0.25  # доля ширины кадра: название начинается в левой четверти шапки
 
 _NUM = r"(?:\d{1,3}(?:,\d{3})+|\d+)"  # «2,351» или «2351»; запятые — только по три цифры
 _MONEY = rf"\$({_NUM}(?:\.\d{{2}})?)"
@@ -32,9 +36,13 @@ _TITLE = re.compile(rf".*[^\W\d_].*?\s*{_MONEY}")  # «Fifty Stack $5.50»: сл
 _LEVEL = re.compile(r"\D*[^\W\d_]\s*(\d{1,3})")  # «ypOBeHb17»: подпись и номер в конце
 _PLACE = re.compile(r"(\d+)(?:~(\d+))?")  # «11~12» или «7»
 _SHARE = re.compile(r"\$(\d+\.\d{2})\s*\+\s*\$(\d+\.\d{2})")  # «$5.06+$0.44»
+# кусок числа в соседней рамке: хвост («.06», «,351», «43») или голова («$11,», «18»)
+_TORN_TAIL = re.compile(r"[.,|/\d]")
+_TORN_HEAD = re.compile(r"[.,|/\d$]$")
 
 # по свёрнутому тексту (`_fold`): двойники приведены к латинице в нижнем регистре
 _PLACES_PAID = re.compile(rf"({_NUM})\s*np.*")  # «330 npM30BbIX MeCT»
+# месяц — ровно три знака: ключи `_MONTHS` — трёхбуквенные сокращения
 _DATE = re.compile(r"(\S{3})\s*(\d{1,2}),\s*(\d{1,2}):(\d{2})(?:\s*\(.*?(\d+)\))?")
 _INTERVAL = re.compile(r"(?<!\d)(\d+)\s*m[nwmu]h$")  # «… 8MNH» — «8 мин» в конце строки
 _SEATS = re.compile(r"(\d+)\s*\D*rpok\D*ha\s*cto\D*")  # «8MrpoKOBHa CTOn», не «за финальным»
@@ -139,6 +147,10 @@ def _usd(number: str) -> float:
     return float(number.replace(",", ""))
 
 
+def _cx(line: Line) -> float:
+    return line.x + line.w / 2
+
+
 def _cy(line: Line) -> float:
     return line.y + line.h / 2
 
@@ -151,22 +163,60 @@ def _missing(field: str) -> ValueError:
     return ValueError(f"на кадре не найдено: {field}")
 
 
+def _one_column(rows):
+    """Пары таблицы выплат, ячейки которых стоят в столбцах таблицы: центр ячейки места и
+    центр ячейки приза ближе своей высоты к медиане центров своего столбца. Строка «следующий
+    приз» над таблицей («208 ~ 330th - $11.75»), прочитанная тремя рамками, стоит правее столбцов
+    и в таблицу не попадает."""
+    for cell in (1, 0):  # место, приз
+        if rows:
+            middle = statistics.median(_cx(row[cell]) for row in rows)
+            rows = [row for row in rows if abs(_cx(row[cell]) - middle) < _COLUMN * row[cell].h]
+    return rows
+
+
 class _Reader:
     """Разбор одного кадра; `self.unsure` копит поля с низкой уверенностью по порядку чтения."""
 
     def __init__(self, lines: list[Line], width: int):
         split = HEADER_BOTTOM * width
         self.width = width
+        self.lines = lines
         self.header = [line for line in lines if _cy(line) < split]
         self.body = sorted((line for line in lines if _cy(line) >= split), key=_cy)
         self.unsure: list[str] = []
 
-    def _mark(self, field: str, *lines: Line) -> None:
+    def _right(self, line: Line) -> bool:
+        return _cx(line) > self.width / 2
+
+    def _whole(self, field: str, *lines: Line) -> None:
+        """Число поля целиком в своей рамке (R10). Сосед в том же ряду вплотную справа,
+        начинающийся с `.`, `,`, `|`, `/` или цифры, или вплотную слева, кончающийся ими или `$`, —
+        кусок того же числа, разорванного OCR на две рамки («$11,896» + «.06»). Цифры не
+        склеиваются: отказ с именем поля и обоими кусками."""
+        for line in lines:
+            for other in self.lines:
+                if other is line or not _same_row(line, other):
+                    continue
+                limit = _GLUE * max(line.h, other.h)
+                text = _norm(other.text)
+                if other.x > line.x:
+                    torn = other.x - (line.x + line.w) < limit and _TORN_TAIL.match(text)
+                    pieces = (line, other)
+                else:
+                    torn = line.x - (other.x + other.w) < limit and _TORN_HEAD.search(text)
+                    pieces = (other, line)
+                if torn:
+                    raise ValueError(
+                        f"на кадре поле «{field}» разорвано на части: "
+                        f"«{pieces[0].text}» + «{pieces[1].text}»"
+                    )
+
+    def _take(self, field: str, *lines: Line) -> None:
+        """Строки поля прочитаны: число целиком (`_whole`), низкая уверенность — в `unsure`."""
+        self._whole(field, *lines)
         if min(line.score for line in lines) < _MIN_SCORE and field not in self.unsure:
             self.unsure.append(field)
-
-    def _right(self, line: Line, match=None) -> bool:
-        return line.x + line.w / 2 > self.width / 2
 
     def _find(self, lines, pattern, field, *, fold=False, where=lambda line, match: True):
         """Верхняя строка, целиком совпавшая с `pattern` (и с условием `where`), и её
@@ -177,12 +227,22 @@ class _Reader:
                 return line, match
         raise _missing(field)
 
+    def _field(self, lines, pattern, field, **kwargs):
+        """`_find`, затем `_take`: строка поля и её совпадение."""
+        line, match = self._find(lines, pattern, field, **kwargs)
+        self._take(field, line)
+        return line, match
+
     # --- шапка ---
 
     def title(self) -> str:
-        """Строка со словами и ценой в конце и её соседи слева в том же ряду той же высоты —
-        «Fifty» + «Stack $5.50» склеиваются через пробел."""
-        anchor, _ = self._find(self.header, _TITLE, "название")
+        """Строка со словами и ценой в конце, начатая в левой четверти шапки, и её соседи слева в
+        том же ряду той же высоты: «Fifty» + «Stack $5.50» склеиваются через пробел (это текст, не
+        число). Подпись с суммой правее («Оверлей $2,398.58») названием не становится."""
+        anchor, _ = self._find(
+            self.header, _TITLE, "название",
+            where=lambda line, match: line.x < _TITLE_LEFT * self.width,
+        )  # fmt: skip
         parts = [anchor]
         while True:
             left = parts[0]
@@ -197,12 +257,35 @@ class _Reader:
             if not near:
                 break
             parts.insert(0, max(near, key=lambda line: line.x))
-        self._mark("название", *parts)
+        if min(line.score for line in parts) < _MIN_SCORE:
+            self.unsure.append("название")
         return " ".join(_norm(line.text) for line in parts)
 
     def read_header(self) -> Header:
-        # номер в конце подписи слева от блайндов «A/B (C)» в том же ряду правой половины шапки:
-        # «#Typ60» («#Турбо») слева под названием тоже кончается цифрами
+        level = self._level()
+        counter_line, counter = self._field(
+            self.header, _COUNTER, "счётчик игроков",
+            where=lambda line, match: self._right(line),
+        )  # fmt: skip
+        split_line, split = self._field(
+            self.header, _SPLIT, "уникальные и ре-энтри",
+            where=lambda line, match: self._right(line),
+        )  # fmt: skip
+        pool, buy_in = self._pool_and_buy_in(counter_line)
+        return Header(
+            level=level,
+            players_left=_int(counter[1]),
+            entrants=_int(counter[2]),
+            unique=int(split[1]),
+            reentries=int(split[2]),
+            prize_pool_usd=pool,
+            buy_in_usd=buy_in,
+            average_stack_chips=self._average(split_line),
+        )
+
+    def _level(self) -> int:
+        """Номер в конце подписи слева от блайндов «A/B (C)» в том же ряду правой половины шапки:
+        «#Typ60» («#Турбо») слева под названием тоже кончается цифрами."""
         blinds, _ = self._find(self.header, _BLINDS, "уровень")
         levels = [
             (line, match)
@@ -214,20 +297,14 @@ class _Reader:
         ]
         if not levels:
             raise _missing("уровень")
-        level_line, level = max(levels, key=lambda pair: pair[0].x)
-        self._mark("уровень", level_line)
+        line, match = max(levels, key=lambda pair: pair[0].x)
+        self._take("уровень", line)
+        return int(match[1])
 
-        counter_line, counter = self._find(
-            self.header, _COUNTER, "счётчик игроков", where=self._right
-        )
-        self._mark("счётчик игроков", counter_line)
-        split_line, split = self._find(
-            self.header, _SPLIT, "уникальные и ре-энтри", where=self._right
-        )
-        self._mark("уникальные и ре-энтри", split_line)
-
-        # призовой фонд — самая левая сумма шапки, одна в своём столбце; правее — столбец
-        # «бай-ин / гарантия / оверлей», бай-ин в нём верхний и выше ряда «A|B»
+    def _pool_and_buy_in(self, counter_line: Line) -> tuple[float, float]:
+        """Призовой фонд — самая левая сумма шапки, одна в своём столбце. Правее — столбец
+        «бай-ин / гарантия / оверлей»; бай-ин в нём — сумма в ряду счётчика «A/B» (гарантия — в
+        ряду «A|B», оверлей ниже), поэтому без бай-ина гарантия бай-ином не станет."""
         money = [
             (line, match)
             for line in self.header
@@ -239,21 +316,21 @@ class _Reader:
         pool_right = pool_line.x + pool_line.w
         if any(line is not pool_line and line.x < pool_right for line, _ in money):
             raise _missing("призовой фонд")
-        self._mark("призовой фонд", pool_line)
+        self._take("призовой фонд", pool_line)
         buy_ins = [
             (line, match)
             for line, match in money
-            if line.x >= pool_right
-            and _cy(line) < _cy(split_line)
-            and not _same_row(line, split_line)
+            if line.x >= pool_right and _same_row(line, counter_line)
         ]
         if not buy_ins:
             raise _missing("бай-ин")
-        buy_in_line, buy_in = min(buy_ins, key=lambda pair: _cy(pair[0]))
-        self._mark("бай-ин", buy_in_line)
+        buy_in_line, buy_in = min(buy_ins, key=lambda pair: abs(_cy(pair[0]) - _cy(counter_line)))
+        self._take("бай-ин", buy_in_line)
+        return _usd(pool[1]), _usd(buy_in[1])
 
-        # средний стек — нижняя «N (x BB)» правой колонки, ниже ряда «A|B» (выше — старт/мин.
-        # и макс. стек); без неё макс. стек средним не становится
+    def _average(self, split_line: Line) -> int:
+        """Нижняя «N (x BB)» правой колонки, ниже ряда «A|B» (выше — старт или «Мин. стек» и
+        макс. стек): без неё макс. стек средним не становится."""
         stacks = [
             (line, match)
             for line in self.header
@@ -264,28 +341,18 @@ class _Reader:
         ]
         if not stacks:
             raise _missing("средний стек")
-        average_line, average = max(stacks, key=lambda pair: _cy(pair[0]))
-        self._mark("средний стек", average_line)
-
-        return Header(
-            level=int(level[1]),
-            players_left=_int(counter[1]),
-            entrants=_int(counter[2]),
-            unique=int(split[1]),
-            reentries=int(split[2]),
-            prize_pool_usd=_usd(pool[1]),
-            buy_in_usd=_usd(buy_in[1]),
-            average_stack_chips=_int(average[1]),
-        )
+        line, match = max(stacks, key=lambda pair: _cy(pair[0]))
+        self._take("средний стек", line)
+        return _int(match[1])
 
     # --- «Призовой фонд» ---
 
     def payouts(self) -> tuple[list[tuple[int, int, float]], int | None]:
         """Таблица «место — $приз» и «N призовых мест» над ней.
 
-        Ячейки места и приза — пара, если они в одном ряду, место левее и каждая — ближайшая
-        к другой. Ячейка без пары выпадает: место по порядку строк не достраивается, дыру назовёт
-        проверка стыка (Задача 4)."""
+        Ячейки места и приза — пара, если они в одном ряду, место левее, каждая — ближайшая к
+        другой и обе стоят в столбцах таблицы (`_one_column`). Ячейка без пары выпадает: место по
+        порядку строк не достраивается, дыру назовёт проверка стыка (Задача 4)."""
         places = [(line, m) for line in self.body if (m := _PLACE.fullmatch(_norm(line.text)))]
         prizes = [
             (line, m) for line in self.body if (m := _MONEY_ONLY.fullmatch(_norm(line.text)))
@@ -305,6 +372,7 @@ class _Reader:
             place_line, place = nearest(prize_line, places, left=True)
             if place_line is not None and nearest(place_line, prizes, left=False)[0] is prize_line:
                 rows.append((prize_line, place_line, place, prize))
+        rows = _one_column(rows)
 
         top = min((_cy(row[0]) for row in rows), default=None)
         counts = [
@@ -318,7 +386,7 @@ class _Reader:
             if not rows:
                 raise _missing("таблица выплат")
             count_line, count = max(counts, key=lambda pair: _cy(pair[0]))
-            self._mark("число призовых мест", count_line)
+            self._take("число призовых мест", count_line)
             places_paid = _int(count[1])
 
         payouts = []
@@ -326,7 +394,7 @@ class _Reader:
             lo = int(place[1])
             hi = int(place[2]) if place[2] else lo
             name = f"выплата мест {lo}–{hi}" if hi != lo else f"выплата места {lo}"
-            self._mark(name, place_line, prize_line)
+            self._take(name, place_line, prize_line)
             payouts.append((lo, hi, _usd(prize[1])))
         return payouts, places_paid
 
@@ -338,30 +406,25 @@ class _Reader:
         if not shares:
             return None
         share_line, share = shares[0]
-        self._mark("бай-ин и комиссия", share_line)
+        self._take("бай-ин и комиссия", share_line)
         below = [line for line in self.body if _cy(line) > _cy(share_line)]
 
-        stack_line, stack = self._find(below, _STACK, "стартовый стек")
-        self._mark("стартовый стек", stack_line)
-
+        _, stack = self._field(below, _STACK, "стартовый стек")
         # «окт 30, 23:05» — начало; «окт 31, 01:30 (Уровень 17)» — конец поздней регистрации
-        start_line, start = self._find(
+        _, start = self._field(
             below, _DATE, "время начала", fold=True,
             where=lambda line, m: m[5] is None and m[1] in _MONTHS,
         )  # fmt: skip
-        self._mark("время начала", start_line)
-        close_line, close = self._find(
+        _, close = self._field(
             below, _DATE, "конец поздней регистрации", fold=True,
             where=lambda line, m: m[5] is not None,
         )  # fmt: skip
-        self._mark("конец поздней регистрации", close_line)
-
-        intervals = [m for line in below if (m := _INTERVAL.search(_fold(line.text)))]
+        intervals = [(line, m) for line in below if (m := _INTERVAL.search(_fold(line.text)))]
         if not intervals:
             raise _missing("интервал блайндов")
-
-        seats_line, seats = self._find(below, _SEATS, "размер стола", fold=True)
-        self._mark("размер стола", seats_line)
+        interval_line, interval = intervals[0]
+        self._whole("интервал блайндов", interval_line)  # справочное: уверенность не помечается
+        _, seats = self._field(below, _SEATS, "размер стола", fold=True)
 
         return Info(
             prize_share_usd=float(share[1]),
@@ -369,7 +432,7 @@ class _Reader:
             starting_stack_chips=_int(stack[1]),
             start=(_MONTHS[start[1]], int(start[2]), int(start[3]), int(start[4])),
             late_reg_close_level=int(close[5]),
-            blind_interval_min=int(intervals[0][1]),
+            blind_interval_min=int(interval[1]),
             seats_per_table=int(seats[1]),
             early_bird=any(_EARLY_BIRD.search(_fold(line.text)) for line in below),
         )
@@ -380,8 +443,9 @@ def read_shot(lines: list[Line], width: int, height: int) -> Shot:
 
     `kind`: "prizes" — есть таблица выплат, "info" — есть строки «Инфо», иначе "other"
     («Структура» с её таблицами блайндов и «входов → мест» — тоже "other"). Шапка обязательна на
-    любом кадре: нет её поля — `ValueError` «на кадре не найдено: {поле}». `height` не нужен
-    разбору (границы — доли ширины), он в подписи ради симметрии с `ocr_image`.
+    любом кадре: нет её поля — `ValueError` «на кадре не найдено: {поле}»; число, разорванное OCR
+    на две рамки, — `ValueError` «на кадре поле «{поле}» разорвано на части: …». `height` не
+    нужен разбору (границы — доли ширины), он в подписи ради симметрии с `ocr_image`.
     """
     reader = _Reader(lines, width)
     title = reader.title()

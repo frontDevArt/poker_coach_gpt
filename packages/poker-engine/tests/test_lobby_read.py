@@ -8,13 +8,14 @@
 import dataclasses
 import json
 import pathlib
+import re
 
 import pytest
+from conftest import LOBBY_SHOTS
 
 from poker_engine.lobby_read import Header, Info, Line, read_shot
 
 FIXTURES = pathlib.Path(__file__).parent / "data" / "lobby"
-LOBBY_SHOTS = pathlib.Path(r"C:\Users\Admin\Documents\Screenshots\lobby\fifty-stack-2026-10-30")
 
 FINAL_PAYOUTS = [
     (1, 1, 1450.17), (2, 2, 1116.80), (3, 3, 861.17), (4, 4, 664.05), (5, 5, 512.05),
@@ -40,6 +41,16 @@ def _replace(lines, old, **changes):
 def _without(lines, text):
     assert [line.text for line in lines].count(text) == 1, text
     return [line for line in lines if line.text != text]
+
+
+def _torn(lines, text, head, tail):
+    """Строка `text` разорвана на две рамки вплотную: `head` слева, `tail` справа (зазор 1 px)."""
+    line = next(line for line in lines if line.text == text)
+    cut = line.w * len(head) / len(text)
+    return _without(lines, text) + [
+        dataclasses.replace(line, text=head, w=cut - 1.0),
+        dataclasses.replace(line, text=tail, x=line.x + cut, w=line.w - cut),
+    ]
 
 
 def test_final_prizes_shot():  # pass2-prizes-level17
@@ -184,9 +195,69 @@ def test_header_without_money_refuses():
 
 
 @pytest.mark.parametrize(
+    "edit",
+    [
+        lambda lines: _without(lines, "$5.50"),
+        lambda lines: _replace(lines, "$5.50", text="Dav-UH $5.50"),  # склеен с подписью
+    ],
+    ids=["removed", "glued-to-label"],
+)
+def test_old_frame_without_buy_in_refuses(edit):
+    # гарантия $8,000 стоит в столбце бай-ина, но в ряду «A|B», а не счётчика: бай-ином не станет
+    lines, width, height = _fixture("win_2026-09-10_00-29-09")
+    with pytest.raises(ValueError, match="^на кадре не найдено: бай-ин$"):
+        read_shot(edit(lines), width, height)
+
+
+def test_overlay_label_is_not_the_title():
+    # «Оверлей $2,398.58» правее левой четверти шапки: без настоящего названия — отказ
+    lines, width, height = _fixture("win_2026-09-10_00-29-09")
+    lines = _replace(_without(lines, "Fifty Stack $5.50"), "$2,398.58", text="OBepnen $2,398.58")
+    with pytest.raises(ValueError, match="^на кадре не найдено: название$"):
+        read_shot(lines, width, height)
+
+
+@pytest.mark.parametrize(
+    ("text", "head", "tail", "field"),
+    [
+        ("$11,896.06", "$11,896", ".06", "призовой фонд"),
+        ("$1,450.17", "$1,450", ".17", "выплата места 1"),
+        ("1808|543", "1808|5", "43", "уникальные и ре-энтри"),
+        ("1808|543", "18", "08|543", "уникальные и ре-энтри"),  # хвост читается сам по себе
+        ("802/2,351", "802/2", ",351", "счётчик игроков"),
+    ],
+)
+def test_number_torn_across_boxes_refuses(text, head, tail, field):
+    # R10: число в двух рамках вплотную не склеивается и не обрезается — отказ с именем поля
+    lines, width, height = _fixture("pass2-prizes-level17")
+    pieces = f"«{re.escape(head)}» \\+ «{re.escape(tail)}»"
+    with pytest.raises(ValueError, match=f"^на кадре поле «{field}» разорвано на части: {pieces}$"):
+        read_shot(_torn(lines, text, head, tail), width, height)
+
+
+def test_next_prize_in_three_boxes_is_not_a_payout():
+    # «208 ~ 330th - $11.75» над таблицей тремя рамками: пара «208~330» — «$11.75» правее
+    # столбцов таблицы и в выплаты не попадает
+    lines, width, height = _fixture("pass2-prizes-level17")
+    line = next(line for line in lines if line.text == "208 ~ 330th - $11.75")
+    lines = _without(lines, line.text) + [
+        dataclasses.replace(line, text="208 ~ 330", w=60.0),
+        dataclasses.replace(line, text="th -", x=line.x + 64.0, w=24.0),
+        dataclasses.replace(line, text="$11.75", x=line.x + 96.0, w=line.w - 96.0),
+    ]
+    shot = read_shot(lines, width, height)
+    assert shot.payouts == FINAL_PAYOUTS and shot.places_paid == 330
+
+
+def test_info_frame_without_share_line_is_other():
+    lines, width, height = _fixture("pass1-info-level13")
+    shot = read_shot(_without(lines, "$5.06+$0.44"), width, height)
+    assert shot.kind == "other" and shot.info is None
+
+
+@pytest.mark.parametrize(
     ("missing", "field"),
     [
-        ("$5.06+$0.44", None),  # без этой строки кадр — не «Инфо»
         ("50,000 (20 BB)", "стартовый стек"),
         ("OKT 30, 23:05", "время начала"),
         ("OKT 31, 01:30 (YpoBeHb 17)", "конец поздней регистрации"),
@@ -196,12 +267,8 @@ def test_header_without_money_refuses():
 )
 def test_missing_info_field_refuses(missing, field):
     lines, width, height = _fixture("pass1-info-level13")
-    lines = _without(lines, missing)
-    if field is None:
-        assert read_shot(lines, width, height).kind == "other"
-        return
     with pytest.raises(ValueError, match=f"^на кадре не найдено: {field}$"):
-        read_shot(lines, width, height)
+        read_shot(_without(lines, missing), width, height)
 
 
 def test_places_count_without_table_refuses():
@@ -225,13 +292,6 @@ def test_start_month_is_read(month, number):
     lines, width, height = _fixture("pass1-info-level13")
     lines = _replace(lines, "OKT 30, 23:05", text=f"{month} 30, 23:05")
     assert read_shot(lines, width, height).info.start == (number, 30, 23, 5)
-
-
-def test_month_keys_are_three_folded_letters():
-    from poker_engine.lobby_read import _MONTHS
-
-    assert all(len(key) == 3 for key in _MONTHS)  # `_DATE` ловит ровно три знака
-    assert sorted(set(_MONTHS.values())) == list(range(1, 13))
 
 
 def test_unknown_month_refuses():
