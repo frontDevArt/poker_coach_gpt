@@ -16,15 +16,23 @@ RapidOCR и Pillow подключаются внутри функции: без 
 
 Границы — доли ширины кадра, не пиксели: интерфейс GG масштабируется по ширине окна, а высота
 окна меняется (1035 px и 740 px при той же ширине). Шапка кончается на `0.155·ширина` — между
-подписью «Распределение выплат» (до ~0.150) и подписями вкладок (с ~0.164). Около 16 с на кадр на
-i5-4460 (спайк по целому кадру — ~31 с).
+подписью «Распределение выплат» (до ~0.150) и подписями вкладок (с ~0.164). Около 11–16 с на кадр
+на i5-4460 (спайк по целому кадру — ~31 с).
 """
 
+import math
 import re
+
+import numpy as np
 
 from poker_engine.lobby_read import Line
 
 _NO_DEPS = 'для разбора лобби нужны зависимости: pip install -e ".[lobby]"'
+
+
+def _no_deps(exc: ImportError) -> ValueError:
+    """Отказ без группы `[lobby]`; имя недостающего модуля — после текста, цепочка сохранена."""
+    return ValueError(f"{_NO_DEPS} (не импортируется: {exc.name or exc})")
 
 _HEADER_BOTTOM = 0.155  # доля ширины кадра; граница шапки и тела
 _BODY_LEFT = 0.345  # средняя колонка — доли ширины кадра
@@ -35,6 +43,8 @@ _BODY_SCALE = 2
 _FUSED = re.compile(r"\d{5,}")  # «1455335»: RapidOCR потерял черту счётчика «1455|335»
 _SPLIT = re.compile(r"\d+\s*\|\s*\d+")
 _REREAD_PAD = 0.6  # поля перечитываемой вырезки — доля высоты строки, не пиксели
+# x4 в замерах даёт `A|B` чаще всего, x6 и x3 — запасные: на разных кадрах ломаются разные
+# увеличения, поэтому перебор, а не одно число
 _REREAD_SCALES = (4, 6, 3)
 
 _engine = None
@@ -45,8 +55,8 @@ def _get_engine():
     if _engine is None:
         try:
             from rapidocr_onnxruntime import RapidOCR
-        except ImportError:
-            raise ValueError(_NO_DEPS) from None
+        except ImportError as exc:
+            raise _no_deps(exc) from exc
         _engine = RapidOCR()
     return _engine
 
@@ -54,7 +64,6 @@ def _get_engine():
 def _read_crop(engine, image, box, scale):
     """Строки области `box` (левый, верхний, правый, нижний, пиксели кадра), увеличенной в
     `scale` раз (LANCZOS); рамки — в пикселях кадра."""
-    import numpy as np
     from PIL import Image
 
     left, top, right, bottom = box
@@ -91,11 +100,11 @@ def _repair_counters(lines, reread):
         fused = line.text.strip()
         if _FUSED.fullmatch(fused):
             pad = _REREAD_PAD * line.h
-            box = (
-                int(line.x - pad),
-                int(line.y - pad),
-                int(line.x + line.w + pad),
-                int(line.y + line.h + pad),
+            box = (  # внешняя рамка: левый/верхний край — вниз, правый/нижний — вверх
+                math.floor(line.x - pad),
+                math.floor(line.y - pad),
+                math.ceil(line.x + line.w + pad),
+                math.ceil(line.y + line.h + pad),
             )
             for scale in _REREAD_SCALES:
                 again = reread(box, scale)
@@ -118,8 +127,8 @@ def ocr_image(path: str) -> tuple[list[Line], int, int]:
     """
     try:
         from PIL import Image
-    except ImportError:
-        raise ValueError(_NO_DEPS) from None
+    except ImportError as exc:
+        raise _no_deps(exc) from exc
     engine = _get_engine()
     with Image.open(path) as source:
         image = source.convert("RGB")

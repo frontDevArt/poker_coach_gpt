@@ -20,10 +20,11 @@ FIXTURES = pathlib.Path(__file__).parent / "data" / "lobby"
 RECORDER = pathlib.Path(__file__).parent.parent / "scripts" / "record_lobby_fixtures.py"
 
 
-def _recorder():
+@pytest.fixture(scope="module")
+def recorder():
+    """Скрипт рекордера, загруженный один раз; в `sys.modules` он не попадает."""
     spec = importlib.util.spec_from_file_location("record_lobby_fixtures", RECORDER)
     module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -71,8 +72,8 @@ def test_header_counter_keeps_its_bar():
     assert [line.text for line in lines].count("1455|335") == 1
 
 
-def _counter(text, score=1.0):
-    return Line(text=text, x=900.0, y=130.0, w=60.0, h=12.0, score=score)
+def _counter(text, score=1.0, h=12.0):
+    return Line(text=text, x=900.3, y=130.4, w=60.0, h=h, score=score)
 
 
 def _reread_stub(*answers):
@@ -95,9 +96,40 @@ def test_repair_counter_accepts_matching_reread():
     reread, calls = _reread_stub([_counter("1455")], [good])
     assert _repair_counters([fused], reread) == [good]
     assert [scale for _, scale in calls] == list(_REREAD_SCALES[:2])
+
+
+@pytest.mark.parametrize("h", [12.0, 24.0])
+def test_reread_box_pads_by_line_height(h):
+    import math
+
+    from poker_engine.lobby_ocr import _REREAD_PAD, _repair_counters
+
+    fused = _counter("1455335", h=h)
+    reread, calls = _reread_stub()
+    _repair_counters([fused], reread)
     left, top, right, bottom = calls[0][0]
-    assert (left, top) < (900, 130) and (right, bottom) > (960, 142)  # поля вокруг строки
-    assert 900 - left == 130 - top  # поля — доля высоты строки, одинаковые по осям
+    pad = _REREAD_PAD * h
+    # внешняя рамка: левый и верхний края округляются вниз, правый и нижний — вверх
+    assert left == math.floor(fused.x - pad)
+    assert top == math.floor(fused.y - pad)
+    assert right == math.ceil(fused.x + fused.w + pad)
+    assert bottom == math.ceil(fused.y + fused.h + pad)
+    # поля не меньше pad (округление наружу) и растут вместе с высотой строки
+    assert fused.x - left >= pad and fused.y - top >= pad
+    assert right - (fused.x + fused.w) >= pad and bottom - (fused.y + fused.h) >= pad
+    assert fused.y - top < pad + 1 and bottom - (fused.y + fused.h) < pad + 1
+
+
+def test_reread_pad_grows_with_line_height():
+    from poker_engine.lobby_ocr import _repair_counters
+
+    margins = []
+    for h in (12.0, 24.0):
+        fused = _counter("1455335", h=h)
+        reread, calls = _reread_stub()
+        _repair_counters([fused], reread)
+        margins.append(fused.y - calls[0][0][1])
+    assert margins[1] > margins[0] + 5
 
 
 @pytest.mark.parametrize(
@@ -149,16 +181,19 @@ def test_ocr_without_dependencies_refuses(monkeypatch):
         (500, 400, False),  # средняя колонка
     ],
 )
-def test_nick_mask_zones(x, y, masked):
-    recorder = _recorder()
+def test_nick_mask_zones(recorder, x, y, masked):
     line = Line(text="ник", x=x, y=y, w=40, h=20, score=0.9)
     data = recorder.fixture_dict([line], 1200, 740, "2026-10-30")
     assert data["lines"][0]["text"] == (recorder.MASK if masked else "ник")
     assert data["lines"][0]["score"] == 0.9
 
 
+def test_eight_fixtures_are_recorded():
+    assert len(list(FIXTURES.glob("*.json"))) == 8
+
+
 @pytest.mark.parametrize("fixture", sorted(FIXTURES.glob("*.json")), ids=lambda path: path.stem)
-def test_fixture_format(fixture):
+def test_fixture_format(recorder, fixture):
     data = json.loads(fixture.read_text(encoding="utf-8"))
     assert set(data) == {"width", "height", "captured", "lines"}
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", data["captured"])
@@ -166,23 +201,32 @@ def test_fixture_format(fixture):
     for line in data["lines"]:
         assert set(line) == {"text", "x", "y", "w", "h", "score"}
         assert 0 <= line["score"] <= 1
+        # R4: в зонах ников (строка лидеров, панели) в фикстуре только маска
+        zone = Line(line["text"], line["x"], line["y"], line["w"], line["h"], line["score"])
+        if recorder.is_nick_zone(zone, data["width"]):
+            assert line["text"] == recorder.MASK
 
 
 def _fixture(name):
     data = json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
     return [
-        (re.sub(r"\s*([~|/])\s*", lambda m: m.group(1), line["text"]), line["y"] + line["h"] / 2)
+        (
+            re.sub(r"\s*([~|/])\s*", r"\1", line["text"]),
+            line["y"] + line["h"] / 2,
+            line["h"],
+        )
         for line in data["lines"]
     ]
 
 
 def _row_pairs(rows, place_pattern):
     """Пары (место, приз) средней колонки: ячейка места и ячейка `$` на одной строке."""
-    places = [(t, y) for t, y in rows if re.fullmatch(place_pattern, t)]
-    prizes = [(t, y) for t, y in rows if re.fullmatch(r"\$[\d,]+\.\d\d", t)]
+    places = [row for row in rows if re.fullmatch(place_pattern, row[0])]
+    prizes = [row for row in rows if re.fullmatch(r"\$[\d,]+\.\d\d", row[0])]
     pairs = []
-    for text, y in places:
-        near = [t for t, py in prizes if abs(py - y) < 6]
+    for text, y, h in places:
+        # одна строка таблицы: центры отличаются меньше чем на полвысоты более низкой ячейки
+        near = [t for t, py, ph in prizes if abs(py - y) < min(h, ph) / 2]
         if near:
             pairs.append((text, near[0]))
     return pairs
@@ -199,7 +243,7 @@ def test_fixture_final_payouts_are_exact():
         ("56~84", "$23.54"), ("85~131", "$18.67"), ("132~207", "$14.81"),
         ("208~330", "$11.75"),
     ]  # fmt: skip
-    texts = [t for t, _ in rows]
+    texts = [t for t, *_ in rows]
     for wanted in ("$11,896.06", "802/2,351", "1808|543", "146,571"):
         assert any(wanted in t for t in texts), wanted
     assert any(t.startswith("330") for t in texts)
@@ -212,21 +256,21 @@ def test_fixture_provisional_payouts_are_exact():
     assert pairs[0] == ("1", "$1,154.30") and pairs[-1] == ("170~270", "$11.15")
     assert [p for p, _ in pairs[:10]] == [str(n) for n in range(1, 11)]
     assert dict(pairs)["6"] == "$314.40" and dict(pairs)["9"] == "$144.15"
-    texts = [t for t, _ in rows]
+    texts = [t for t, *_ in rows]
     for wanted in ("951/1,823", "1474|349", "$9,224.38", "95,951"):
         assert any(wanted in t for t in texts), wanted
 
 
 def test_fixture_info_and_old_shots_values():
-    info = [t for t, _ in _fixture("pass1-info-level13")]
+    info = [t for t, *_ in _fixture("pass1-info-level13")]
     for wanted in ("$5.06+$0.44", "50,000", "30, 23:05", "17)", "1455|335", "$9,057.40"):
         assert any(wanted in t for t in info), wanted
     assert any(t.endswith("8MNH") for t in info)  # интервал блайндов «8 Мин»
     assert any(t.startswith("8MrpoKOB") for t in info)  # «8 игроков на стол»
     old = _fixture("win_2026-09-10_00-31-04")
     assert ("13~15", "$58.94") in _row_pairs(old, r"\d+(~\d+)?")
-    texts = [t for t, _ in old]
+    texts = [t for t, *_ in old]
     assert any(t.startswith("165") for t in texts)
     assert any("783/1,134" in t for t in texts)
-    small = [t for t, _ in _fixture("win_2026-09-10_00-29-09")]
+    small = [t for t, *_ in _fixture("win_2026-09-10_00-29-09")]
     assert any("09, 23:05" in t for t in small) and any("$8,000" in t for t in small)
