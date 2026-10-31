@@ -1,0 +1,359 @@
+"""Файл турнира из кадров лобби (план D40, Задача 4; спека лобби §4–§7).
+
+Один вызов — один заход (спека §5): кадры «Инфо» и «Призового фонда», уже прочитанные
+`lobby_read.read_shot`. Проверки спеки §7 идут по порядку таблицы плана; первая не прошедшая —
+`ValueError` с именем строки, поля и кадра, и файл турнира не трогается (спека §4): пропущенная
+строка выплат не достраивается, число под сумму не двигается.
+
+Запись турнира — контекст `coach start` плюс справка (название, дата начала, бай-ин, PKO,
+интервал блайндов, призовой фонд). Файл лежит в папке турниров под именем «<название>
+<YYYY-MM-DD>.json» по дате начала из «Инфо»: заход 1 его создаёт, заход 2 заменяет в нём выплаты
+и входы. Кадра «Инфо» во втором заходе может не быть — тогда файл ищется по названию.
+
+Модуль не тянет распознавание, поэтому импортируется без группы `[lobby]`.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+from datetime import date
+
+from ._checks import check_positive
+from .coach import _write
+from .frames import context_payload
+from .handstate import _validate_context, context_from_dict
+from .lobby_read import Info, Shot
+
+FORMAT = "poker-coach-tournament"
+VERSION = 1
+_AVERAGE_TOLERANCE = 0.005  # средний стек шапки против расчёта: 0.5% (спека §7.5, замер 0.11%)
+_CENT = 0.005  # округление выплат: полцента на место и полцента на фонд (спека §7.4)
+_RESERVED = re.compile(r'[<>:"/\\|?*\x00-\x1f]')  # запрещены в именах файлов Windows
+# поля «Инфо» в записи: без кадра «Инфо» они берутся из файла турнира
+_INFO_KEYS = (
+    "start", "prizeShareUsd", "feeUsd", "blindIntervalMin", "lateRegCloseLevel", "earlyBird",
+    "seatsPerTable", "startingStackChips",
+)  # fmt: skip
+
+
+def merge(
+    shots: list[tuple[str, Shot]], existing: dict | None, captured: date
+) -> tuple[dict, list[str]]:
+    """Запись турнира из кадров захода и прежнего файла (`existing`, `None` — файла нет) и
+    предупреждения. `captured` — дата съёмки: год начала турнира на кадре не виден.
+
+    Строка кортежа — имя файла кадра для текстов отказов. Выплаты, входы и шапка — из кадров
+    «Призового фонда»; поля «Инфо» — из кадра «Инфо», а без него из файла.
+    """
+    prizes, infos, used, warnings = _sorted(shots)  # проверки 1, 14
+    if not infos and existing is None:  # 2
+        raise ValueError("нет кадра «Инфо»: без него не узнать стартовый стек и размер стола")
+    _legible(used)  # 3
+    title = _one_title(used)
+    facts = _info_facts(infos, captured) if infos else _file_facts(existing)
+
+    final = _one_pass(prizes, facts["lateRegCloseLevel"])
+    places_paid = _places_paid(prizes)
+    payouts = _joined(prizes)  # 4
+    _seams(payouts, places_paid)  # 5, 6
+    for name, shot in used:  # 7, 8
+        _header_consistent(name, shot, facts["startingStackChips"])
+
+    header = max((shot.header for _, shot in prizes), key=lambda h: (h.entrants, -h.players_left))
+    total = sum((last - first + 1) * amount for first, last, amount in payouts)
+    if abs(total - header.prize_pool_usd) > _CENT * places_paid + _CENT:
+        if final:  # 9
+            raise ValueError(
+                f"сумма выплат {_usd(total)} не равна призовому фонду "
+                f"{_usd(header.prize_pool_usd)}: перечитайте строки или снимите кадр заново"
+            )
+        warnings.append(  # 10
+            f"выплаты предварительные: сумма {_usd(total)} против фонда "
+            f"{_usd(header.prize_pool_usd)}"
+        )
+
+    if existing is not None:
+        _same_tournament(existing, title, facts["startingStackChips"], header.entrants)  # 11
+        if _file_field(existing, "payoutsFinal") is True and not final:  # 12
+            raise ValueError(
+                "в файле турнира уже окончательные выплаты, а кадры сняты во время поздней "
+                "регистрации"
+            )
+
+    record = {
+        "format": FORMAT,
+        "version": VERSION,
+        "title": title,
+        "start": facts["start"],
+        "prizeShareUsd": facts["prizeShareUsd"],
+        "feeUsd": facts["feeUsd"],
+        "buyInUsd": header.buy_in_usd,
+        "pko": "Bounty" in title,
+        "blindIntervalMin": facts["blindIntervalMin"],
+        "lateRegCloseLevel": facts["lateRegCloseLevel"],
+        "earlyBird": facts["earlyBird"],
+        "seatsPerTable": facts["seatsPerTable"],
+        "startingStackChips": facts["startingStackChips"],
+        "payouts": [
+            {"from": first, "to": last, "amount": amount} for first, last, amount in payouts
+        ],
+        "placesPaid": places_paid,
+        "payoutsFinal": final,
+        "entrants": header.entrants,
+        "playersLeft": header.players_left,
+        "lateRegOpen": not final,
+        "prizePoolUsd": header.prize_pool_usd,
+    }
+    # 15: та же проверка, что у `coach start`
+    _validate_context(context_from_dict(context_payload(record, None)))
+    return record, warnings
+
+
+def tournament_path(directory: str, title: str, start: date) -> str:
+    """`<directory>/<title> <YYYY-MM-DD>.json`; знаки, запрещённые в именах Windows, — `_`."""
+    return os.path.join(directory, f"{_RESERVED.sub('_', title)} {start:%Y-%m-%d}.json")
+
+
+def find(directory: str, title: str) -> list[dict]:
+    """Файлы турниров с этим названием в папке по дате начала: `[{"path", "start",
+    "payoutsFinal"}]`. JSON не файла турнира и нечитаемый JSON пропускаются; нет папки — `[]`."""
+    if not os.path.isdir(directory):
+        return []
+    found = []
+    for name in sorted(os.listdir(directory)):
+        path = os.path.join(directory, name)
+        if not name.endswith(".json") or not os.path.isfile(path):
+            continue
+        try:
+            record = _load(path)
+        except ValueError:
+            continue
+        if record.get("title") == title:
+            found.append(
+                {
+                    "path": path,
+                    "start": record.get("start"),
+                    "payoutsFinal": record.get("payoutsFinal"),
+                }
+            )
+    return sorted(found, key=lambda entry: str(entry["start"]))
+
+
+def save(shots: list[tuple[str, Shot]], directory: str, captured: date) -> dict:
+    """Заход в файл турнира: найти файл, `merge`, записать целиком (временный файл и замена).
+
+    С кадром «Инфо» файл — по названию и дате начала; без него — единственный файл с этим
+    названием в папке. Ответ — `{"tournament": путь, "payoutsFinal", "warnings"}`.
+    """
+    # До поиска файла кадры должны быть прочитаны уверенно: неуверенное название выбрало бы
+    # чужой файл или ни одного
+    _, infos, used, _ = _sorted(shots)
+    _legible(used)
+    title = _one_title(used)
+    if infos:
+        name, shot = infos[0]
+        path = tournament_path(directory, title, _start(name, shot.info, captured)[0])
+        existing = _load(path) if os.path.exists(path) else None
+    else:
+        found = find(directory, title)
+        if len(found) > 1:  # 13
+            paths = ", ".join(entry["path"] for entry in found)
+            raise ValueError(f"турниров «{title}» несколько: {paths} — добавьте кадр «Инфо»")
+        path = found[0]["path"] if found else None
+        existing = _load(path) if path else None
+    record, warnings = merge(shots, existing, captured)
+    os.makedirs(directory, exist_ok=True)
+    _write(path, record)
+    return {"tournament": path, "payoutsFinal": record["payoutsFinal"], "warnings": warnings}
+
+
+# --- проверки ---------------------------------------------------------------------------------
+
+
+def _sorted(shots):
+    """Кадры «Призового фонда», «Инфо», те и другие в порядке вызова и предупреждения о прочих
+    (проверки 1 и 14)."""
+    prizes = [(name, shot) for name, shot in shots if shot.kind == "prizes"]
+    infos = [(name, shot) for name, shot in shots if shot.kind == "info"]
+    if not prizes:
+        raise ValueError("нет кадра «Призового фонда»")
+    used = [(name, shot) for name, shot in shots if shot.kind in ("prizes", "info")]
+    warnings = [
+        f"кадр {name} пропущен: это не «Инфо» и не «Призовой фонд»"
+        for name, shot in shots
+        if shot.kind not in ("prizes", "info")
+    ]
+    return prizes, infos, used, warnings
+
+
+def _legible(shots) -> None:
+    """Проверка 3: у нужного поля уверенность OCR ниже порога — отказ с полем и кадром."""
+    for name, shot in shots:
+        if shot.low_confidence:
+            raise ValueError(
+                f"поле «{shot.low_confidence[0]}» прочитано неуверенно на кадре {name}: "
+                "снимите его заново"
+            )
+
+
+def _one_title(shots) -> str:
+    """Название турнира; у кадров одного вызова оно одно, иначе кадры от разных турниров."""
+    title = shots[0][1].title
+    for _, shot in shots:
+        if shot.title != title:
+            raise _other_tournament("название", f"«{title}»", f"«{shot.title}»")
+    return title
+
+
+def _info_facts(infos, captured: date) -> dict:
+    """Поля «Инфо» записи с кадра; кадры «Инфо» одного вызова читаются одинаково."""
+    first_name, first = infos[0]
+    for name, shot in infos[1:]:
+        if shot.info != first.info:
+            raise ValueError(f"кадры «Инфо» читаются по-разному: {first_name} и {name}")
+    info = first.info
+    return {
+        "start": _start(first_name, info, captured)[1],
+        "prizeShareUsd": info.prize_share_usd,
+        "feeUsd": info.fee_usd,
+        "blindIntervalMin": info.blind_interval_min,
+        "lateRegCloseLevel": info.late_reg_close_level,
+        "earlyBird": info.early_bird,
+        "seatsPerTable": info.seats_per_table,
+        "startingStackChips": info.starting_stack_chips,
+    }
+
+
+def _file_facts(existing: dict) -> dict:
+    return {key: _file_field(existing, key) for key in _INFO_KEYS}
+
+
+def _start(name: str, info: Info, captured: date) -> tuple[date, str]:
+    """Дата начала и `YYYY-MM-DDTHH:MM`. Год на кадре не виден: год съёмки, а месяц начала
+    позже месяца съёмки — прошлый год (турнир начался до Нового года)."""
+    month, day, hour, minute = info.start
+    year = captured.year - (month > captured.month)
+    try:
+        start = date(year, month, day)
+    except ValueError:
+        raise ValueError(f"на кадре {name} невозможная дата начала: {day:02}.{month:02}") from None
+    return start, f"{start:%Y-%m-%d}T{hour:02}:{minute:02}"
+
+
+def _one_pass(prizes, close_level: int) -> bool:
+    """Выплаты окончательные: шапка кадров выплат на уровне закрытия поздней регистрации или
+    позже. Кадры одного вызова — из одного захода (R13)."""
+    finals = {shot.header.level >= close_level for _, shot in prizes}
+    if len(finals) > 1:
+        names = ", ".join(name for name, _ in prizes)
+        raise ValueError(f"кадры «Призового фонда» сняты в разных заходах: {names}")
+    return finals.pop()
+
+
+def _places_paid(prizes) -> int:
+    """«N призовых мест» — с кадров, где строка видна (у продолжения прокрутки её нет), одно на
+    всех (R12, R13)."""
+    seen = [(name, shot.places_paid) for name, shot in prizes if shot.places_paid is not None]
+    if not seen:
+        raise ValueError(
+            "не найдено число призовых мест: снимите кадр «Призового фонда» со строкой "
+            "«N призовых мест»"
+        )
+    first_name, places_paid = seen[0]
+    for name, other in seen[1:]:
+        if other != places_paid:
+            raise ValueError(
+                f"число призовых мест читается по-разному: {places_paid} на кадре {first_name} "
+                f"и {other} на кадре {name}"
+            )
+    return places_paid
+
+
+def _joined(prizes) -> list[tuple[int, int, float]]:
+    """Проверка 4: строки всех кадров по местам; строка, видная на двух кадрах, читается
+    одинаково — иначе отказ с обоими прочтениями, а не выбор одного."""
+    rows: dict[tuple[int, int], float] = {}
+    for _, shot in prizes:
+        for first, last, amount in shot.payouts:
+            seen = rows.setdefault((first, last), amount)
+            if seen != amount:
+                raise ValueError(
+                    f"строка мест {first}–{last} читается по-разному: {_usd(seen)} и {_usd(amount)}"
+                )
+    return [(first, last, amount) for (first, last), amount in sorted(rows.items())]
+
+
+def _seams(payouts, places_paid: int) -> None:
+    """Проверки 5 и 6: первая строка с места 1, каждая следующая — с «прошлый конец + 1»,
+    последняя кончается на `places_paid`. Пересечения строк — забота `_validate_context`."""
+    expected = 1
+    for first, last, _ in payouts:
+        if first > expected:  # 5
+            raise _hole(expected, first - 1)
+        expected = max(expected, last + 1)
+    if expected - 1 < places_paid:  # 6
+        raise _hole(expected, places_paid)
+
+
+def _hole(first: int, last: int) -> ValueError:
+    return ValueError(f"нет мест {first}–{last}: снимите кадр «Призового фонда», где они видны")
+
+
+def _header_consistent(name: str, shot: Shot, starting: int) -> None:
+    """Проверки 7 и 8: шапка сама с собой на каждом кадре."""
+    header = shot.header
+    if header.unique + header.reentries != header.entrants:  # 7
+        raise ValueError(
+            f"в шапке {name} уникальных и ре-энтри {header.unique} + {header.reentries}, "
+            f"а входов {header.entrants}"
+        )
+    check_positive(header.players_left, "остаток игроков")
+    calc = starting * header.entrants / header.players_left
+    if abs(calc - header.average_stack_chips) > _AVERAGE_TOLERANCE * calc:  # 8
+        raise ValueError(
+            f"средний стек шапки {header.average_stack_chips:,} не сходится с расчётом "
+            f"{calc:,.0f} на кадре {name}"
+        )
+
+
+def _same_tournament(existing: dict, title: str, starting: int, entrants: int) -> None:
+    """Проверка 11: заход 2 — тот же турнир, что заход 1 в файле: название, стартовый стек,
+    входов не меньше."""
+    if _file_field(existing, "title") != title:
+        raise _other_tournament("название", f"«{existing['title']}»", f"«{title}»")
+    was = _file_field(existing, "startingStackChips")
+    if was != starting:
+        raise _other_tournament("стартовый стек", f"{was:,}", f"{starting:,}")
+    if entrants < _file_field(existing, "entrants"):
+        raise _other_tournament("входы", existing["entrants"], entrants)
+
+
+def _other_tournament(field: str, was, now) -> ValueError:
+    return ValueError(f"кадры от другого турнира: {field} {was} против {now}")
+
+
+# --- файл -------------------------------------------------------------------------------------
+
+
+def _load(path: str) -> dict:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            record = json.load(handle)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"файл турнира повреждён: {path}") from exc
+    if not isinstance(record, dict) or record.get("format") != FORMAT:
+        raise ValueError(f"файл турнира повреждён: {path}")
+    return record
+
+
+def _file_field(existing: dict, key: str):
+    if key not in existing:
+        raise ValueError(f"файл турнира повреждён: нет поля {key}")
+    return existing[key]
+
+
+def _usd(amount: float) -> str:
+    """Сумма как в лобби: `$11,896.06`."""
+    return f"${amount:,.2f}"
