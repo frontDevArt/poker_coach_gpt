@@ -131,11 +131,14 @@ def test_a_three_bet_and_the_call():
     assert ranges[4]["reach"] == btn["reach"]
 
 
-@pytest.mark.parametrize("seat, noise", [(4, -0.1), (3, -0.1), (3, 0.1), (5, -0.1)])
+@pytest.mark.parametrize(
+    "seat, noise", [(4, -0.1), (3, -0.1), (3, 0.1), (5, -0.1), (4, -0.2), (3, -0.2), (3, 0.2)]
+)
 def test_rounding_of_the_flop_stacks_is_not_an_action(seat, noise):
     # Приёмка, Фаза 14 (WSOP, кадр флопа): стек на экране округлён до 0.1 BB, и вложенное
     # префлопа — разность стеков двух кадров — уходит на шаг от уравненного 7.0. Это колл, а не
     # рейз до 7.1 (`BTN` — 3-беттор, не 4-беттор) и не колл до 6.9; у сфолдившего `SB` — фолд.
+    # Фаза 14d, N5: и на два шага — граница шума четырёх чисел экрана, здесь вся в одном.
     frames = preflop_vs_3bet()
     flop = flop_frame(3, {3: 7.0, 4: 7.0}, {7, 2, 5, 6})
     exact = _summary([*frames, flop])
@@ -147,15 +150,16 @@ def test_rounding_of_the_flop_stacks_is_not_an_action(seat, noise):
     assert {s: e["role"] for s, e in _by_seat(summary).items()} == {3: "opener", 4: "3bettor"}
 
 
+@pytest.mark.parametrize("noise", [0.1, 0.2])
 @pytest.mark.parametrize("seat, position", [(4, "BTN"), (5, "SB")])
-def test_rounding_of_a_fold_after_the_last_frame_is_not_a_call(seat, position):
+def test_rounding_of_a_fold_after_the_last_frame_is_not_a_call(seat, position, noise):
     # Фаза 14b, N3: `BTN` и `SB` в раздаче на кадре открытия героя и сфолдили после него. Их
     # вложенное по кадру флопа уходит от своего (0.0 и 0.5) на шаг — это фолд, а не колл до 0.1
-    # или 0.6: прижим к своему вложенному на последнем кадре префлопа.
+    # или 0.6: прижим к своему вложенному на последнем кадре префлопа. Фаза 14d, N5: и на два.
     first = preflop_frame(3, folded={7, 2})
     flop = flop_frame(3, {3: 2.0, 6: 2.0}, {7, 2, 4, 5})
     exact = _summary([first, flop])
-    next(s for s in flop["seats"] if s["seatIndex"] == seat)["stackBb"] -= 0.1
+    next(s for s in flop["seats"] if s["seatIndex"] == seat)["stackBb"] -= noise
     summary = _summary([first, flop])
 
     assert summary["line"] == exact["line"]

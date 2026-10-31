@@ -30,6 +30,9 @@ _SAME_BB = ROUNDING_STEP_BB / 2
 # Вложенное на исходе префлопа — разность двух сумм «стек плюс вложенное», четыре числа экрана по
 # полшага ошибки каждое: от уравненного или прежнего вложенного оно отходит до двух шагов.
 _DERIVED_BB = 2 * ROUNDING_STEP_BB
+# Такая разность против точного числа экрана: ровно два шага на плавающей точке чуть больше
+# (7.2 − 7.0 > 0.2), поэтому сравнение — с запасом полшага.
+_NEAR_BB = _DERIVED_BB + _SAME_BB
 # Уравненные вложенные двух мест на исходе префлопа — оба такие разности: они расходятся до двух
 # `_DERIVED_BB`. Оба на шаге печати, поэтому сравнение — с запасом полшага.
 _CALLED_BB = 2 * _DERIVED_BB + _SAME_BB
@@ -127,7 +130,7 @@ def _closing(preflop_nodes: list[DecisionNode], next_node: DecisionNode) -> dict
     вложенное префлопа: место, сфолдившее на флопе до героя, на его кадре уже вне раздачи, а на
     префлопе фолда у него не было.
 
-    Вложенное в пределах `_DERIVED_BB` от наибольшего вложенного последнего кадра префлопа или
+    Вложенное в пределах `_DERIVED_BB` (сравнение — `_NEAR_BB`) от наибольшего вложенного последнего кадра префлопа или
     от своего вложенного там — оно и есть: это шум округления стеков, а не ставка (рейз меньше
     большого блайнда не бывает, олл-ин виден по стеку 0). Наибольшее вложенное улицы ставится и
     после последнего кадра — рейз героя на своём шаге и колл на него: прижать его не к чему, и
@@ -143,7 +146,7 @@ def _closing(preflop_nodes: list[DecisionNode], next_node: DecisionNode) -> dict
     for index, start in starts.items():
         if index in began:
             amount = began[index] - start
-            near = [at for at in (known, last.get(index, 0.0)) if abs(amount - at) <= _DERIVED_BB]
+            near = [at for at in (known, last.get(index, 0.0)) if abs(amount - at) < _NEAR_BB]
             put[index] = min(near, key=lambda at: abs(amount - at)) if near else _on_step(amount)
     top = max(put.values())
     put = {index: top if top - amount < _CALLED_BB else amount for index, amount in put.items()}
