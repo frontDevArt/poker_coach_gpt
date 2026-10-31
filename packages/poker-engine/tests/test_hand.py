@@ -228,6 +228,19 @@ def test_a_limp_and_the_check():
     assert _close(ranges[5]["reach"], answer["ranges"]["hero"]["byAction"]["limp"])
 
 
+def test_a_folded_small_blind_is_not_a_call_of_the_limp():
+    # Фаза 14d, N6: прижим к наибольшему на исходе улицы — в четырёх шагах, а `SB`, сфолдивший
+    # против лимпа, на 0.5 ниже него: это фолд, а не колл лимпа (мультипот на флопе).
+    first = preflop_frame(6, {7: 1.0}, folded={2, 3, 4, 5})
+    summary = _summary([first, flop_frame(6, {7: 1.0}, {2, 3, 4, 5})])
+
+    assert summary["line"][-2:] == [
+        {"seatIndex": 5, "position": "SB", "action": "fold"},
+        {"seatIndex": 6, "position": "BB", "action": "check"},
+    ]
+    assert set(_by_seat(summary)) == {7, 6}
+
+
 # --- итога нет: причины -----------------------------------------------------------------------
 
 
