@@ -292,3 +292,49 @@ def test_starting_stack_is_checked_even_when_not_needed():
     raw = {**_context(), "startingStackChips": -5}
     with pytest.raises(ValueError, match="стартовый стек должен быть > 0"):
         context_payload(raw, preflop_vs_open()[0], first_frame=preflop_vs_open()[0])
+
+
+def test_table_average_is_the_same_for_a_first_frame_in_chips():
+    first = preflop_vs_open()[0]
+    raw = {**_context(), "startingStackChips": 50000, "lateRegOpen": True}
+    raw.pop("averageStackBb")
+    last = preflop_vs_open()[-1]
+    in_bb = context_payload(raw, last, first_frame=first)["averageStackBb"]
+    in_chips = context_payload(raw, last, first_frame=_in_chips(first))["averageStackBb"]
+    assert in_chips == pytest.approx(in_bb)
+
+
+@pytest.mark.parametrize("null_field", ["averageStackChips", "averageStackBb"])
+def test_a_null_average_stack_is_derived_from_the_starting_stack(null_field):
+    raw = {**_context(), "startingStackChips": 50000, "lateRegOpen": False, null_field: None}
+    if null_field == "averageStackChips":
+        raw.pop("averageStackBb")
+    frame = {**preflop_vs_open()[0], "playersLeft": 802, "blinds": {"sb": 2500, "bb": 5000}}
+    payload = context_payload(raw, frame, first_frame=frame)
+    assert payload["averageStackBb"] == pytest.approx(50000 * raw["entrants"] / 802 / 5000)
+    assert payload["averageStackSource"] == "lobby"
+    assert "averageStackChips" not in payload
+
+
+def test_starting_stack_without_a_big_blind_is_refused():
+    raw = {**_context(), "startingStackChips": 50000, "lateRegOpen": False}
+    raw.pop("averageStackBb")
+    frame = {key: value for key, value in preflop_vs_open()[0].items() if key != "blinds"}
+    with pytest.raises(ValueError, match=re.escape("средний стек из стартового стека без большого блайнда")):
+        context_payload(raw, frame, first_frame=frame)
+
+
+def test_starting_stack_with_no_players_left_is_refused():
+    raw = {**_context(), "startingStackChips": 50000, "lateRegOpen": False}
+    raw.pop("averageStackBb")
+    frame = {**preflop_vs_open()[0], "playersLeft": 0, "blinds": {"sb": 2500, "bb": 5000}}
+    with pytest.raises(ValueError, match="остаток игроков должен быть > 0"):
+        context_payload(raw, frame, first_frame=frame)
+
+
+def test_table_average_of_a_first_frame_with_no_seats_is_refused():
+    raw = {**_context(), "startingStackChips": 50000, "lateRegOpen": True}
+    raw.pop("averageStackBb")
+    first = {**preflop_vs_open()[0], "seats": []}
+    with pytest.raises(ValueError, match="в первом кадре нет мест"):
+        context_payload(raw, preflop_vs_open()[-1], first_frame=first)

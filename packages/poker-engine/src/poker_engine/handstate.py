@@ -122,7 +122,8 @@ class TournamentContext:
     # Из лобби (план D40). `payouts_final`: `False` — выплаты сняты до
     # закрытия поздней регистрации, лесенка предварительна; `None` — не
     # сказано, старые контексты не меняются. `average_stack_source` —
-    # откуда средний стек: `"lobby"` или `"table"`; `None` — задан вручную.
+    # откуда средний стек: `"lobby"` или `"table"`; `None` — источник не
+    # выведен: средний стек задан вручную или неизвестен.
     payouts_final: bool | None = None
     average_stack_source: str | None = None
 
@@ -257,7 +258,7 @@ def _as_bool(raw: dict, key: str) -> bool:
     return value
 
 
-def _as_optional_bool(raw: dict, key: str, default: bool = False) -> bool:
+def _as_optional_bool(raw: dict, key: str, default: bool | None = False) -> bool | None:
     """Необязательное поле как булево, см. `_as_bool`. Отсутствие ключа и
     `null` дают `default`."""
     if not _present(raw, key):
@@ -336,7 +337,7 @@ def context_from_dict(raw: dict) -> TournamentContext:
         seats_per_table=_as_int(raw, "seatsPerTable"),
         average_stack_bb=_as_optional_float(raw, "averageStackBb"),
         bubble_refund_usd=_as_optional_float(raw, "bubbleRefundUsd"),
-        payouts_final=_as_bool(raw, "payoutsFinal") if _present(raw, "payoutsFinal") else None,
+        payouts_final=_as_optional_bool(raw, "payoutsFinal", None),
         average_stack_source=_as_average_stack_source(raw),
     )
 

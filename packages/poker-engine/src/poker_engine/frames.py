@@ -11,7 +11,14 @@ from __future__ import annotations
 import math
 
 from ._checks import check_positive
-from .handstate import _as_bool, _as_float, _as_int, _as_optional_dict, _present
+from .handstate import (
+    _as_bool,
+    _as_float,
+    _as_int,
+    _as_optional_dict,
+    _as_optional_float,
+    _present,
+)
 
 UNITS = ("bb", "chips")
 _SUFFIX = {"bb": "Bb", "chips": "Chips"}
@@ -116,8 +123,7 @@ def _derive_average_stack(
         if not isinstance(seats, list) or not seats:
             raise ValueError("средний стек по столу: в первом кадре нет мест")
         total = sum(
-            _as_float(seat, "stackBb")
-            + (_as_float(seat, "investedBb") if _present(seat, "investedBb") else 0.0)
+            _as_float(seat, "stackBb") + _as_optional_float(seat, "investedBb", 0.0)
             for seat in seats
         )
         context["averageStackBb"] = total / len(seats)
