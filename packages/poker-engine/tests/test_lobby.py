@@ -25,6 +25,9 @@ TITLE = "Fifty Stack $5.50"
 FILE_NAME = "Fifty Stack $5.50 2026-10-30.json"
 PASS1 = date(2026, 10, 30)
 PASS2 = date(2026, 10, 31)
+# моменты съёмки для `save`: турнир начался 2026-10-30 в 23:05, заход 2 — после полуночи
+PASS1_AT = datetime.datetime(2026, 10, 30, 23, 50)
+PASS2_AT = datetime.datetime(2026, 10, 31, 1, 30)
 SKIPPED = "кадр pass1-structure-level16.png пропущен: это не «Инфо» и не «Призовой фонд»"
 PROVISIONAL = "выплаты предварительные: сумма $9,234.50 против фонда $9,224.38"
 
@@ -82,7 +85,7 @@ def _read(out):
 
 def _final_record(tmp_path):
     """Файл турнира после захода 2 с «Инфо»: окончательные выплаты."""
-    out = lobby.save([_info2(), _prizes2()], str(tmp_path), PASS2)
+    out = lobby.save([_info2(), _prizes2()], str(tmp_path), PASS2_AT)
     return out, _read(out)
 
 
@@ -102,7 +105,7 @@ def _total(record):
 
 def test_two_passes_end_to_end(tmp_path):
     tmp = str(tmp_path)
-    first = lobby.save([_shot("pass1-info-level13"), _shot("pass1-prizes-level14")], tmp, PASS1)
+    first = lobby.save([_shot("pass1-info-level13"), _shot("pass1-prizes-level14")], tmp, PASS1_AT)
     record = _read(first)
     assert first["tournament"].endswith("Fifty Stack $5.50 2026-10-30.json")
     assert record["payoutsFinal"] is False and record["placesPaid"] == 270
@@ -111,7 +114,7 @@ def test_two_passes_end_to_end(tmp_path):
         w.startswith("выплаты предварительные: сумма $9,234.50 против фонда $9,224.38")
         for w in first["warnings"]
     )
-    second = lobby.save([_shot("pass2-prizes-level17")], tmp, PASS2)
+    second = lobby.save([_shot("pass2-prizes-level17")], tmp, PASS2_AT)
     record = _read(second)
     assert second["tournament"] == first["tournament"] and second["warnings"] == []
     assert second["payoutsFinal"] is True
@@ -129,13 +132,13 @@ def test_old_partial_list_names_missing_places(tmp_path):
         lobby.save(
             [_shot("win_2026-09-10_00-29-09"), _shot("win_2026-09-10_00-31-04")],
             tmp,
-            date(2026, 9, 10),
+            datetime.datetime(2026, 9, 10, 0, 31),
         )
     assert os.listdir(tmp) == []
 
 
 def test_first_pass_record(tmp_path):
-    record = _read(lobby.save([_info1(), _prizes1()], str(tmp_path), PASS1))
+    record = _read(lobby.save([_info1(), _prizes1()], str(tmp_path), PASS1_AT))
     payouts = record.pop("payouts")
     assert record == {
         "format": "poker-coach-tournament",
@@ -177,6 +180,20 @@ def test_start_year_steps_back_over_new_year():
     shots = [_info(_info2(), start=(12, 30, 23, 5)), _prizes2()]
     record, _ = lobby.merge(shots, None, date(2027, 1, 2))
     assert record["start"] == "2026-12-30T23:05"
+
+
+def test_start_year_steps_forward_over_new_year():
+    # «янв 1» на кадре, снятом 2026-12-31 до начала: регистрация открыта до старта — турнир 2027
+    shots = [_info(_info2(), start=(1, 1, 0, 5)), _prizes2()]
+    record, _ = lobby.merge(shots, None, date(2026, 12, 31))
+    assert record["start"] == "2027-01-01T00:05"
+
+
+@pytest.mark.parametrize("captured", [date(2026, 11, 1), date(2026, 10, 1)])
+def test_start_year_stays_within_the_same_year(captured):
+    # месяц начала рядом с месяцем съёмки — тот же год в обе стороны
+    record, _ = lobby.merge([_info2(), _prizes2()], None, captured)
+    assert record["start"] == "2026-10-30T23:05"
 
 
 def test_impossible_start_date():
@@ -442,7 +459,7 @@ def test_11_fewer_entrants(tmp_path):
     _final_record(tmp_path)
     before = _snapshot(tmp_path)
     with pytest.raises(ValueError, match="^кадры от другого турнира: входы 2351 против 1823$"):
-        lobby.save([_info1(), _prizes1()], str(tmp_path), PASS1)
+        lobby.save([_info1(), _prizes1()], str(tmp_path), PASS1_AT)
     assert _snapshot(tmp_path) == before
 
 
@@ -461,21 +478,21 @@ def test_11_other_start_time_on_the_same_day(tmp_path):
     # R21: турнир того же названия в тот же день, начало в 15:00 — имя файла то же, но это
     # другой турнир: отказ, а не перезапись файла турнира 23:05
     tmp = str(tmp_path)
-    lobby.save([_info1(), _prizes1()], tmp, PASS1)
+    lobby.save([_info1(), _prizes1()], tmp, PASS1_AT)
     before = _snapshot(tmp_path)
     with pytest.raises(
         ValueError,
         match="^кадры от другого турнира: начало 2026-10-30 23:05 против 2026-10-30 15:00$",
     ):
-        lobby.save([_info(_info1(), start=(10, 30, 15, 0)), _prizes1()], tmp, PASS1)
+        lobby.save([_info(_info1(), start=(10, 30, 15, 0)), _prizes1()], tmp, PASS1_AT)
     assert _snapshot(tmp_path) == before
 
 
 def test_11_the_same_start_passes(tmp_path):
     # заход 2 с «Инфо» того же начала — тот же турнир, файл заменяется
     tmp = str(tmp_path)
-    first = lobby.save([_info1(), _prizes1()], tmp, PASS1)
-    second = lobby.save([_info2(), _prizes2()], tmp, PASS2)
+    first = lobby.save([_info1(), _prizes1()], tmp, PASS1_AT)
+    second = lobby.save([_info2(), _prizes2()], tmp, PASS2_AT)
     assert second["tournament"] == first["tournament"] and _read(second)["payoutsFinal"] is True
 
 
@@ -484,9 +501,9 @@ def test_11_without_info_the_capture_date_is_the_start_or_the_next_day(tmp_path,
     # R21: без «Инфо» файл выбран по одному названию; кадры другого дня — другой турнир того же
     # названия (выплаты дня 7 не ложатся в файл 10-30)
     tmp = str(tmp_path)
-    lobby.save([_info1(), _prizes1()], tmp, PASS1)
+    lobby.save([_info1(), _prizes1()], tmp, PASS1_AT)
     before = _snapshot(tmp_path)
-    captured = PASS1 + datetime.timedelta(days=days)
+    captured = PASS1_AT + datetime.timedelta(days=days)
     text = (
         f"кадры сняты {captured:%Y-%m-%d}, а турнир в файле начался 2026-10-30: "
         "добавьте кадр «Инфо»"
@@ -499,8 +516,8 @@ def test_11_without_info_the_capture_date_is_the_start_or_the_next_day(tmp_path,
 @pytest.mark.parametrize("days", [0, 1])
 def test_11_without_info_on_the_start_day_or_the_next_passes(tmp_path, days):
     tmp = str(tmp_path)
-    lobby.save([_info1(), _prizes1()], tmp, PASS1)
-    out = lobby.save([_prizes2()], tmp, PASS1 + datetime.timedelta(days=days))
+    lobby.save([_info1(), _prizes1()], tmp, PASS1_AT)
+    out = lobby.save([_prizes2()], tmp, PASS1_AT + datetime.timedelta(days=days))
     assert _read(out)["payoutsFinal"] is True and os.listdir(tmp) == [FILE_NAME]
 
 
@@ -511,7 +528,7 @@ def test_11_without_info_a_damaged_start_in_the_file(tmp_path, start):
     before = _snapshot(tmp_path)
     text = f"файл турнира повреждён: поле start не дата начала ({start!r})"
     with pytest.raises(ValueError, match=f"^{re.escape(text)}$"):
-        lobby.save([_prizes2()], str(tmp_path), PASS2)
+        lobby.save([_prizes2()], str(tmp_path), PASS2_AT)
     assert _snapshot(tmp_path) == before
 
 
@@ -522,7 +539,7 @@ def test_11_final_over_final_with_other_entrants(tmp_path):
     before = _snapshot(tmp_path)
     more = _header(_prizes2(), entrants=2360, unique=1817, average_stack_chips=147132)
     with pytest.raises(ValueError, match="^кадры от другого турнира: входы 2351 против 2360$"):
-        lobby.save([more], str(tmp_path), PASS2)
+        lobby.save([more], str(tmp_path), PASS2_AT)
     assert _snapshot(tmp_path) == before
 
 
@@ -535,21 +552,21 @@ def test_11_final_over_final_with_another_prize_pool(tmp_path):
         ValueError,
         match=re.escape("кадры от другого турнира: призовой фонд $11,900.00 против $11,896.06"),
     ):
-        lobby.save([_prizes2()], str(tmp_path), PASS2)
+        lobby.save([_prizes2()], str(tmp_path), PASS2_AT)
     assert _snapshot(tmp_path) == before
 
 
 def test_provisional_over_provisional_may_grow_the_pool(tmp_path):
     # до закрытия регистрации фонд и входы растут: равенство — только у окончательных
     tmp = str(tmp_path)
-    out = lobby.save([_info1(), _prizes1()], tmp, PASS1)
+    out = lobby.save([_info1(), _prizes1()], tmp, PASS1_AT)
     _rewrite(out, prizePoolUsd=9000.0, entrants=1790)
-    assert _read(lobby.save([_prizes1()], tmp, PASS1))["prizePoolUsd"] == 9224.38
+    assert _read(lobby.save([_prizes1()], tmp, PASS1_AT))["prizePoolUsd"] == 9224.38
 
 
 def test_11_final_over_the_same_final_passes(tmp_path):
     out, record = _final_record(tmp_path)
-    again = lobby.save([_prizes2()], str(tmp_path), PASS2)
+    again = lobby.save([_prizes2()], str(tmp_path), PASS2_AT)
     assert again["tournament"] == out["tournament"] and _read(again) == record
 
 
@@ -602,24 +619,80 @@ def test_structure_shot_is_skipped_with_warning(tmp_path):
     # «Структура» в заходе: предупреждение, не отказ; её шапка (уровень 16, 2,116 входов) в
     # запись не идёт
     plain, _ = lobby.merge([_info1(), _prizes1()], None, PASS1)
-    out = lobby.save([_shot("pass1-structure-level16"), _info1(), _prizes1()], str(tmp_path), PASS1)
+    shots = [_shot("pass1-structure-level16"), _info1(), _prizes1()]
+    out = lobby.save(shots, str(tmp_path), PASS1_AT)
     assert out["warnings"] == [PROVISIONAL, SKIPPED]  # 10 раньше 14, по порядку таблицы
     record = _read(out)
     assert record == plain and record["entrants"] == 1823
 
 
-def test_second_pass_ambiguous_without_info(tmp_path):
-    # проверка 13: тот же турнир днём раньше — два файла с одним названием, кадра «Инфо» нет;
-    # какой из них, не угадывается
+def _daily(tmp, *starts):
+    """Файлы захода 1 одного названия с началом `starts` (месяц, день, час, минута)."""
+    return [
+        lobby.save([_info(_info1(), start=start), _prizes1()], tmp, PASS1_AT)["tournament"]
+        for start in starts
+    ]
+
+
+@pytest.mark.parametrize(
+    "captured, chosen",
+    [
+        (PASS2_AT, 1),  # после полуночи: 10-30 23:05 начался 2 ч 25 мин назад, 10-29 — сутки назад
+        (datetime.datetime(2026, 10, 30, 23, 5), 1),  # ровно в начало: 10-29 — ровно сутки
+        (datetime.datetime(2026, 10, 30, 23, 4), 0),  # минутой раньше 10-30 ещё не начался
+    ],
+)
+def test_second_pass_without_info_takes_the_tournament_of_the_last_day(tmp_path, captured, chosen):
+    # проверка 13 (R23): ежедневный турнир — файл на каждый день; без «Инфо» берётся тот, что
+    # начался не позже съёмки и меньше суток до неё, прочие не трогаются
     tmp = str(tmp_path)
-    first = lobby.save([_info1(), _prizes1()], tmp, PASS1)
-    earlier = lobby.save([_info(_info1(), start=(10, 29, 23, 5)), _prizes1()], tmp, PASS1)
+    paths = _daily(tmp, (10, 29, 23, 5), (10, 30, 23, 5))
+    other = pathlib.Path(paths[1 - chosen]).read_bytes()
+    out = lobby.save([_prizes2()], tmp, captured)
+    assert out["tournament"] == paths[chosen] and _read(out)["payoutsFinal"] is True
+    assert pathlib.Path(paths[1 - chosen]).read_bytes() == other
+
+
+def test_second_pass_without_info_on_the_start_day_of_a_day_tournament(tmp_path):
+    # дневной ежедневный турнир: заход 2 в день начала, вчерашний файл — в окне дат R21
+    tmp = str(tmp_path)
+    paths = _daily(tmp, (10, 29, 15, 0), (10, 30, 15, 0))
+    out = lobby.save([_prizes2()], tmp, datetime.datetime(2026, 10, 30, 17, 30))
+    assert out["tournament"] == paths[1]
+
+
+def test_second_pass_without_info_skips_a_tournament_not_yet_started(tmp_path):
+    tmp = str(tmp_path)
+    paths = _daily(tmp, (10, 30, 23, 5), (10, 31, 23, 5))
+    assert lobby.save([_prizes2()], tmp, PASS2_AT)["tournament"] == paths[0]
+
+
+@pytest.mark.parametrize(
+    "starts, named",
+    [
+        ([(10, 30, 23, 5), (10, 31, 0, 30)], [0, 1]),  # оба начались меньше суток до съёмки
+        ([(10, 29, 23, 5), (10, 30, 23, 5), (10, 31, 0, 30)], [1, 2]),  # названы подходящие
+        ([(10, 28, 23, 5), (10, 29, 23, 5)], [0, 1]),  # ни один — названы все
+    ],
+)
+def test_second_pass_ambiguous_without_info(tmp_path, starts, named):
+    # проверка 13: какой из турниров одного названия снят, по времени не выбрать — не угадывается
+    tmp = str(tmp_path)
+    files = _daily(tmp, *starts)
+    paths = ", ".join(files[index] for index in named)
     before = _snapshot(tmp_path)
-    paths = f"{earlier['tournament']}, {first['tournament']}"
     text = f"турниров «{TITLE}» несколько: {paths} — добавьте кадр «Инфо»"
     with pytest.raises(ValueError, match=f"^{re.escape(text)}$"):
-        lobby.save([_prizes2()], tmp, PASS2)
+        lobby.save([_prizes2()], tmp, PASS2_AT)
     assert _snapshot(tmp_path) == before
+
+
+def test_second_pass_without_info_skips_a_file_with_a_damaged_start(tmp_path):
+    # испорченное начало у одного из файлов — тот файл не выбирается, а не отказ всему заходу
+    tmp = str(tmp_path)
+    paths = _daily(tmp, (10, 29, 23, 5), (10, 30, 23, 5))
+    _rewrite({"tournament": paths[0]}, start="30.10.2026")
+    assert lobby.save([_prizes2()], tmp, PASS2_AT)["tournament"] == paths[1]
 
 
 def test_provisional_never_overwrites_final(tmp_path):
@@ -627,10 +700,10 @@ def test_provisional_never_overwrites_final(tmp_path):
     before = _snapshot(tmp_path)
     # повторный заход 1 (те же кадры уровней 13–14): входов меньше
     with pytest.raises(ValueError, match="^кадры от другого турнира: входы"):
-        lobby.save([_info1(), _prizes1()], str(tmp_path), PASS1)
+        lobby.save([_info1(), _prizes1()], str(tmp_path), PASS1_AT)
     # предварительный кадр с теми же входами
     with pytest.raises(ValueError, match="^в файле турнира уже окончательные выплаты"):
-        lobby.save([_header(_prizes2(), level=16)], str(tmp_path), PASS2)
+        lobby.save([_header(_prizes2(), level=16)], str(tmp_path), PASS2_AT)
     assert _snapshot(tmp_path) == before
     assert _read(out)["payoutsFinal"] is True
 
@@ -643,7 +716,7 @@ def test_save_checks_confidence_before_the_lookup(tmp_path):
         match="^поле «название» прочитано неуверенно на кадре pass2-prizes-level17.png: "
         "снимите его заново$",
     ):
-        lobby.save([_with(_prizes2(), low_confidence=["название"])], str(tmp_path), PASS2)
+        lobby.save([_with(_prizes2(), low_confidence=["название"])], str(tmp_path), PASS2_AT)
     assert os.listdir(tmp_path) == []
 
 
@@ -656,15 +729,15 @@ def test_info_read_as_other_without_file_is_check_2():
 def test_save_without_info_into_an_empty_folder_is_check_2(tmp_path):
     # без «Инфо» файла не найти и не создать: отказ 2 в `save`, до `merge`
     with pytest.raises(ValueError, match="^нет кадра «Инфо»: без него не узнать"):
-        lobby.save([_prizes1(), _shot("pass1-structure-level16")], str(tmp_path), PASS1)
+        lobby.save([_prizes1(), _shot("pass1-structure-level16")], str(tmp_path), PASS1_AT)
     assert os.listdir(tmp_path) == []
 
 
 def test_info_read_as_other_with_file_is_skipped(tmp_path):
     # тот же пропуск при файле турнира: поля «Инфо» из файла, кадр — в предупреждениях
     tmp = str(tmp_path)
-    first = lobby.save([_info1(), _prizes1()], tmp, PASS1)
-    out = lobby.save([_prizes1(), _shot("pass1-structure-level16")], tmp, PASS1)
+    first = lobby.save([_info1(), _prizes1()], tmp, PASS1_AT)
+    out = lobby.save([_prizes1(), _shot("pass1-structure-level16")], tmp, PASS1_AT)
     assert out["tournament"] == first["tournament"]
     assert out["warnings"] == [PROVISIONAL, SKIPPED]
     assert _read(out)["startingStackChips"] == 50000 and os.listdir(tmp) == [FILE_NAME]
@@ -673,8 +746,8 @@ def test_info_read_as_other_with_file_is_skipped(tmp_path):
 def test_provisional_may_replace_provisional(tmp_path):
     # заход 1 дважды: выплаты заменяются, файл тот же
     tmp = str(tmp_path)
-    lobby.save([_info1(), _prizes1()], tmp, PASS1)
-    out = lobby.save([_header(_prizes1(), level=16)], tmp, PASS1)
+    lobby.save([_info1(), _prizes1()], tmp, PASS1_AT)
+    out = lobby.save([_header(_prizes1(), level=16)], tmp, PASS1_AT)
     assert _read(out)["payoutsFinal"] is False and os.listdir(tmp) == [FILE_NAME]
 
 
@@ -739,7 +812,7 @@ def test_tournament_path_replaces_windows_reserved_characters(tmp_path):
 
 def test_find_lists_files_of_the_title(tmp_path):
     tmp = str(tmp_path)
-    first = lobby.save([_info1(), _prizes1()], tmp, PASS1)
+    first = lobby.save([_info1(), _prizes1()], tmp, PASS1_AT)
     (tmp_path / "notes.json").write_text("[1, 2]", encoding="utf-8")
     (tmp_path / "broken.json").write_text("{", encoding="utf-8")
     # словарь с тем же названием, но не файл турнира: формат другой или его нет
@@ -760,7 +833,7 @@ def test_damaged_tournament_file_is_not_overwritten(tmp_path):
     pathlib.Path(path).write_text("{", encoding="utf-8")
     before = _snapshot(tmp_path)
     with pytest.raises(ValueError, match="^файл турнира повреждён: "):
-        lobby.save([_info1(), _prizes1()], str(tmp_path), PASS1)
+        lobby.save([_info1(), _prizes1()], str(tmp_path), PASS1_AT)
     assert _snapshot(tmp_path) == before
 
 
@@ -771,7 +844,7 @@ def test_foreign_file_at_the_tournament_path_is_not_overwritten(tmp_path):
     pathlib.Path(path).write_text(json.dumps(foreign), encoding="utf-8")
     before = _snapshot(tmp_path)
     with pytest.raises(ValueError, match=f"^файл турнира повреждён: {re.escape(path)}$"):
-        lobby.save([_info1(), _prizes1()], str(tmp_path), PASS1)
+        lobby.save([_info1(), _prizes1()], str(tmp_path), PASS1_AT)
     assert _snapshot(tmp_path) == before
 
 
@@ -789,13 +862,13 @@ def test_save_into_a_file_instead_of_a_folder(tmp_path):
     occupied.write_text("", encoding="utf-8")
     path = os.path.join(str(occupied), FILE_NAME)
     with pytest.raises(ValueError, match=f"^не удалось записать {re.escape(repr(path))}: "):
-        lobby.save([_info1(), _prizes1()], str(occupied), PASS1)
+        lobby.save([_info1(), _prizes1()], str(occupied), PASS1_AT)
     assert occupied.read_text(encoding="utf-8") == "" and os.listdir(tmp_path) == ["tournaments"]
 
 
 def test_save_creates_the_directory(tmp_path):
     directory = tmp_path / "tournaments"
-    out = lobby.save([_info1(), _prizes1()], str(directory), PASS1)
+    out = lobby.save([_info1(), _prizes1()], str(directory), PASS1_AT)
     assert os.listdir(directory) == [FILE_NAME]
     assert out["tournament"] == os.path.join(str(directory), FILE_NAME)
 
@@ -803,24 +876,24 @@ def test_save_creates_the_directory(tmp_path):
 def test_bubble_refund_added_by_the_user_survives_pass_two(tmp_path):
     # R22: `bubbleRefundUsd` дописывает пользователь (L6) — заход 2 его не теряет
     tmp = str(tmp_path)
-    out = lobby.save([_info1(), _prizes1()], tmp, PASS1)
+    out = lobby.save([_info1(), _prizes1()], tmp, PASS1_AT)
     _rewrite(out, bubbleRefundUsd=5.5)
-    assert _read(lobby.save([_prizes2()], tmp, PASS2))["bubbleRefundUsd"] == 5.5
+    assert _read(lobby.save([_prizes2()], tmp, PASS2_AT))["bubbleRefundUsd"] == 5.5
 
 
 def test_no_bubble_refund_in_the_file_stays_absent(tmp_path):
     out, _ = _final_record(tmp_path)
-    assert "bubbleRefundUsd" not in _read(lobby.save([_prizes2()], str(tmp_path), PASS2))
+    assert "bubbleRefundUsd" not in _read(lobby.save([_prizes2()], str(tmp_path), PASS2_AT))
 
 
 def test_a_negative_bubble_refund_in_the_file_is_refused(tmp_path):
     # перенесённое поле проходит ту же проверку 15, что у `coach start`
     tmp = str(tmp_path)
-    out = lobby.save([_info1(), _prizes1()], tmp, PASS1)
+    out = lobby.save([_info1(), _prizes1()], tmp, PASS1_AT)
     _rewrite(out, bubbleRefundUsd=-1)
     before = _snapshot(tmp_path)
     with pytest.raises(ValueError, match="^возврат бай-ина не может быть отрицательным: -1\\.0$"):
-        lobby.save([_prizes2()], tmp, PASS2)
+        lobby.save([_prizes2()], tmp, PASS2_AT)
     assert _snapshot(tmp_path) == before
 
 
@@ -829,6 +902,41 @@ def test_tournament_file_without_a_field_is_damaged(tmp_path):
     del record["entrants"]
     with pytest.raises(ValueError, match="^файл турнира повреждён: нет поля entrants$"):
         lobby.merge([_prizes2()], record, PASS2)
+
+
+_DAMAGED = [  # поле, испорченное значение, ожидаемый тип; с «Инфо» читается ли поле файла
+    ("startingStackChips", "50000", "целое число", True),
+    ("startingStackChips", 50000.0, "целое число", True),
+    ("entrants", "2351", "целое число", True),
+    ("prizePoolUsd", "11896.06", "число", True),
+    ("payoutsFinal", 1, "true или false", True),
+    ("lateRegCloseLevel", None, "целое число", False),
+    ("blindIntervalMin", True, "целое число", False),
+    ("seatsPerTable", "8", "целое число", False),
+    ("prizeShareUsd", False, "число", False),
+    ("feeUsd", "0.50", "число", False),
+    ("earlyBird", "true", "true или false", False),
+]
+
+
+@pytest.mark.parametrize(
+    "key, value, kind, with_info",
+    [case for case in _DAMAGED if case[3]]
+    + [case[:3] + (False,) for case in _DAMAGED if case[3]]
+    + [case for case in _DAMAGED if not case[3]]
+    + [("title", 5, "строка", True)],  # без «Инфо» файл ищется по названию и не найдётся
+)
+def test_a_damaged_field_of_the_file_refuses(tmp_path, key, value, kind, with_info):
+    # поле файла, испорченное руками, — отказ с полем, а не TypeError мимо JSON-ответа и не
+    # мусор в новом файле; с «Инфо» поля «Инфо» берутся с кадра, и файл читает только проверки 11–12
+    out, _ = _final_record(tmp_path)
+    _rewrite(out, **{key: value})
+    before = _snapshot(tmp_path)
+    shots = ([_info2()] if with_info else []) + [_prizes2()]
+    text = f"файл турнира повреждён: поле {key} не {kind} ({value!r})"
+    with pytest.raises(ValueError, match=f"^{re.escape(text)}$"):
+        lobby.save(shots, str(tmp_path), PASS2_AT)
+    assert _snapshot(tmp_path) == before
 
 
 # --- заход из файлов кадров (Задача 5) --------------------------------------------------------
@@ -869,10 +977,11 @@ def test_read_two_passes_from_frame_files(tmp_path, monkeypatch):
     assert os.listdir(tournaments) == [FILE_NAME]
 
 
-def test_captured_is_the_newest_frame_date(tmp_path):
+def test_captured_is_the_newest_frame_moment(tmp_path):
     older, newer = _frames(tmp_path, ["a"], PASS1) + _frames(tmp_path, ["b"], PASS2)
-    assert lobby.captured_date([newer, older]) == PASS2
-    assert lobby.captured_date([older]) == PASS1
+    noon = datetime.time(12)  # `_frames` ставит кадрам полдень
+    assert lobby.captured_at([newer, older]) == datetime.datetime.combine(PASS2, noon)
+    assert lobby.captured_at([older]) == datetime.datetime.combine(PASS1, noon)
 
 
 def test_read_missing_frame_refuses_before_recognition(tmp_path, monkeypatch):
@@ -912,8 +1021,8 @@ def _hand_on_the_file(tmp_path, late_reg_open):
     """Файл турнира после двух заходов → `coach start` → шаг кадра префлопа уровня захода 2:
     блайнды 2,500 / 5,000, осталось 802."""
     tournaments = str(tmp_path / "tournaments")
-    lobby.save([_info1(), _prizes1()], tournaments, PASS1)
-    record = _read(lobby.save([_prizes2()], tournaments, PASS2))
+    lobby.save([_info1(), _prizes1()], tournaments, PASS1_AT)
+    record = _read(lobby.save([_prizes2()], tournaments, PASS2_AT))
     hand = tmp_path / f"hand-{late_reg_open}.json"
     coach.start(str(hand), record, late_reg_open=late_reg_open)
     frame = {
@@ -945,7 +1054,7 @@ def test_lobby_file_during_late_registration_takes_the_field_from_the_table(tmp_
 def test_pass_one_file_after_late_registration_takes_the_field_from_the_table(tmp_path):
     # R20: второго захода не было — 1,823 входа файла устарели для раздачи после регистрации
     tournaments = str(tmp_path / "tournaments")
-    record = _read(lobby.save([_info1(), _prizes1()], tournaments, PASS1))
+    record = _read(lobby.save([_info1(), _prizes1()], tournaments, PASS1_AT))
     hand = tmp_path / "hand.json"
     coach.start(str(hand), record, late_reg_open=False)
     frame = {

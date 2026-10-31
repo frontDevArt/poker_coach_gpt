@@ -9,8 +9,9 @@
 интервал блайндов, призовой фонд). Файл лежит в папке турниров под именем «<название>
 <YYYY-MM-DD>.json» по дате начала из «Инфо»: заход 1 его создаёт, заход 2 заменяет в нём выплаты
 и входы. Кадра «Инфо» во втором заходе может не быть — тогда файл ищется по названию, а кадры
-должны быть сняты в день начала турнира или на следующий (решение R21). Поле `bubbleRefundUsd`,
-дописанное в файл пользователем, заход переносит (решение R22).
+должны быть сняты в день начала турнира или на следующий (решение R21); у ежедневного турнира
+файлов с названием несколько, и берётся начавшийся меньше суток до съёмки (решение R23). Поле
+`bubbleRefundUsd`, дописанное в файл пользователем, заход переносит (решение R22).
 
 `read` (Задача 5) — заход из файлов кадров: распознавание `lobby_ocr`, разбор, `save`.
 
@@ -24,7 +25,7 @@ import json
 import os
 import pathlib
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from . import lobby_ocr
 from ._checks import check_positive
@@ -37,6 +38,7 @@ FORMAT = "poker-coach-tournament"
 VERSION = 1
 _AVERAGE_TOLERANCE = 0.005  # средний стек шапки против расчёта: 0.5% (спека §7.5, замер 0.11%)
 _CENT = 0.005  # округление выплат: полцента на место и полцента на фонд (спека §7.4)
+_DAY = timedelta(days=1)  # R23: из нескольких файлов без «Инфо» — начавшийся меньше суток назад
 _RESERVED = re.compile(r'[<>:"/\\|?*\x00-\x1f]')  # запрещены в именах файлов Windows
 # поля «Инфо» в записи: без кадра «Инфо» они берутся из файла турнира
 _INFO_KEYS = (
@@ -160,12 +162,14 @@ def find(directory: str, title: str) -> list[dict]:
     return sorted(found, key=lambda entry: str(entry["start"]))
 
 
-def save(shots: list[tuple[str, Shot]], directory: str, captured: date) -> dict:
+def save(shots: list[tuple[str, Shot]], directory: str, captured: datetime) -> dict:
     """Заход в файл турнира: найти файл, `merge`, записать целиком (временный файл и замена).
+    `captured` — момент съёмки: без «Инфо» по нему выбирается файл ежедневного турнира.
 
     С кадром «Инфо» файл — по названию и дате начала, и время начала в нём то же (проверка 11);
-    без него — единственный файл с этим названием в папке, начавшийся в день съёмки или накануне
-    (`merge`). Ответ — `{"tournament": путь, "payoutsFinal", "warnings"}`.
+    без него — файл с этим названием в папке, начавшийся в день съёмки или накануне (`merge`), а
+    если таких файлов несколько — начавшийся не позже съёмки и меньше суток до неё (`_pick`).
+    Ответ — `{"tournament": путь, "payoutsFinal", "warnings"}`.
 
     Поиск файла идёт по названию, поэтому до него — проверки 1 и 3 (решение R14): неуверенное
     название выбрало бы чужой файл или ни одного. Отсюда единственное отступление от порядка
@@ -177,18 +181,12 @@ def save(shots: list[tuple[str, Shot]], directory: str, captured: date) -> dict:
     title = _one_title(used)
     if infos:
         name, shot = infos[0]
-        path = tournament_path(directory, title, _start(name, shot.info, captured)[0])
+        path = tournament_path(directory, title, _start(name, shot.info, captured.date())[0])
         existing = _load(path) if os.path.exists(path) else None
     else:
-        found = find(directory, title)
-        if len(found) > 1:  # 13
-            paths = ", ".join(entry["path"] for entry in found)
-            raise ValueError(f"турниров «{title}» несколько: {paths} — добавьте кадр «Инфо»")
-        if not found:  # 2: файла нет, а без «Инфо» его не создать
-            raise _no_info()
-        path = found[0]["path"]
+        path = _pick(find(directory, title), title, captured)
         existing = _load(path)
-    record, warnings = merge(shots, existing, captured)
+    record, warnings = merge(shots, existing, captured.date())
     try:
         os.makedirs(directory, exist_ok=True)
     except OSError as exc:
@@ -212,15 +210,15 @@ def default_directory() -> str:
 
 
 def read(paths: list[str], directory: str) -> dict:
-    """Заход из файлов кадров (`poker-engine lobby read`): дата съёмки, распознавание каждого
+    """Заход из файлов кадров (`poker-engine lobby read`): момент съёмки, распознавание каждого
     кадра, разбор и `save`. Ответ — как у `save`.
 
-    Файлы проверяются до распознавания (`captured_date`): оно идёт 11–16 с на кадр, и пропавший
+    Файлы проверяются до распознавания (`captured_at`): оно идёт 11–16 с на кадр, и пропавший
     последний кадр не должен ждать первых. Имя кадра в текстах отказов — имя файла без папки.
     """
     if not paths:
         raise ValueError("нет кадров лобби")
-    captured = captured_date(paths)
+    captured = captured_at(paths)
     shots = []
     for path in paths:
         try:
@@ -231,16 +229,17 @@ def read(paths: list[str], directory: str) -> dict:
     return save(shots, directory, captured)
 
 
-def captured_date(paths: list[str]) -> date:
-    """Дата съёмки — дата изменения самого нового кадра: год начала турнира на кадре не виден
-    (`_start`), а кадры захода снимаются подряд."""
+def captured_at(paths: list[str]) -> datetime:
+    """Момент съёмки — время изменения самого нового кадра: год начала турнира на кадре не виден
+    (`_start`), файл ежедневного турнира без «Инфо» выбирается по времени (`_pick`), а кадры
+    захода снимаются подряд."""
     stamps = []
     for path in paths:
         try:
             stamps.append(os.path.getmtime(path))
         except OSError as exc:
             raise ValueError(f"не удалось прочитать {path!r}: {exc}") from exc
-    return date.fromtimestamp(max(stamps))
+    return datetime.fromtimestamp(max(stamps))
 
 
 # --- проверки ---------------------------------------------------------------------------------
@@ -305,7 +304,7 @@ def _file_facts(existing: dict, captured: date) -> dict:
     кадры сняты в день его начала или на следующий (решение R21), иначе это может быть турнир
     того же названия другого дня — отказ с просьбой о кадре «Инфо», а не запись в чужой файл."""
     facts = {key: _file_field(existing, key) for key in _INFO_KEYS}
-    start = _file_start(facts["start"])
+    start = _file_start(facts["start"]).date()
     if not 0 <= (captured - start).days <= 1:
         raise ValueError(
             f"кадры сняты {captured:%Y-%m-%d}, а турнир в файле начался {start:%Y-%m-%d}: "
@@ -314,10 +313,10 @@ def _file_facts(existing: dict, captured: date) -> dict:
     return facts
 
 
-def _file_start(value) -> date:
-    """Дата начала из поля `start` файла (`YYYY-MM-DDTHH:MM`, как его пишет `_start`)."""
+def _file_start(value) -> datetime:
+    """Начало из поля `start` файла (`YYYY-MM-DDTHH:MM`, как его пишет `_start`)."""
     try:
-        return datetime.strptime(value, "%Y-%m-%dT%H:%M").date()
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M")
     except (TypeError, ValueError):
         raise ValueError(
             f"файл турнира повреждён: поле start не дата начала ({value!r})"
@@ -325,10 +324,12 @@ def _file_start(value) -> date:
 
 
 def _start(name: str, info: Info, captured: date) -> tuple[date, str]:
-    """Дата начала и `YYYY-MM-DDTHH:MM`. Год на кадре не виден: год съёмки, а месяц начала
-    позже месяца съёмки — прошлый год (турнир начался до Нового года)."""
+    """Дата начала и `YYYY-MM-DDTHH:MM`. Год на кадре не виден: тот, при котором начало ближе к
+    съёмке, — прошлый, если турнир начался до Нового года («дек» на кадре января), и следующий,
+    если кадр снят до начала под Новый год («янв» на кадре декабря: регистрация открыта до
+    старта)."""
     month, day, hour, minute = info.start
-    year = captured.year - (month > captured.month)
+    year = captured.year - (month - captured.month > 6) + (captured.month - month > 6)
     try:
         start = date(year, month, day)
     except ValueError:
@@ -407,6 +408,29 @@ def _hole(first: int, last: int) -> ValueError:
     return ValueError(f"нет мест {first}–{last}: снимите кадр «Призового фонда», где они видны")
 
 
+def _pick(found: list[dict], title: str, captured: datetime) -> str:
+    """Файл турнира без «Инфо» из найденных по названию (`find`). Один — он: день съёмки проверит
+    `merge` (R21). Несколько — у ежедневного турнира файл на каждый день (R23): тот, что начался
+    не позже съёмки и меньше суток до неё; файл с нечитаемым началом не выбирается."""
+    if not found:  # 2: файла нет, а без «Инфо» его не создать
+        raise _no_info()
+    if len(found) == 1:
+        return found[0]["path"]
+    near = [entry for entry in found if _started_within_a_day(entry["start"], captured)]
+    if len(near) != 1:  # 13
+        paths = ", ".join(entry["path"] for entry in near or found)
+        raise ValueError(f"турниров «{title}» несколько: {paths} — добавьте кадр «Инфо»")
+    return near[0]["path"]
+
+
+def _started_within_a_day(value, captured: datetime) -> bool:
+    try:
+        start = _file_start(value)
+    except ValueError:
+        return False
+    return start <= captured < start + _DAY
+
+
 def _no_info() -> ValueError:
     return ValueError("нет кадра «Инфо»: без него не узнать стартовый стек и размер стола")
 
@@ -481,10 +505,49 @@ def _load(path: str) -> dict:
     return record
 
 
+def _is_int(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _is_bool(value) -> bool:
+    return isinstance(value, bool)
+
+
+def _is_str(value) -> bool:
+    return isinstance(value, str)
+
+
+# поля файла, которые читает заход, и их тип: файл правит пользователь (`bubbleRefundUsd`, L6), и
+# испорченное поле — отказ с его именем, а не TypeError в проверках и не мусор в новом файле;
+# `start` проверяет `_file_start`
+_FILE_KINDS = {
+    "title": (_is_str, "строка"),
+    "prizeShareUsd": (_is_number, "число"),
+    "feeUsd": (_is_number, "число"),
+    "prizePoolUsd": (_is_number, "число"),
+    "blindIntervalMin": (_is_int, "целое число"),
+    "lateRegCloseLevel": (_is_int, "целое число"),
+    "seatsPerTable": (_is_int, "целое число"),
+    "startingStackChips": (_is_int, "целое число"),
+    "entrants": (_is_int, "целое число"),
+    "earlyBird": (_is_bool, "true или false"),
+    "payoutsFinal": (_is_bool, "true или false"),
+}
+
+
 def _file_field(existing: dict, key: str):
     if key not in existing:
         raise ValueError(f"файл турнира повреждён: нет поля {key}")
-    return existing[key]
+    value = existing[key]
+    if key in _FILE_KINDS:
+        valid, kind = _FILE_KINDS[key]
+        if not valid(value):
+            raise ValueError(f"файл турнира повреждён: поле {key} не {kind} ({value!r})")
+    return value
 
 
 def _usd(amount: float) -> str:
