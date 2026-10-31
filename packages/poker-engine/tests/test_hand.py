@@ -145,6 +145,23 @@ def test_rounding_of_the_flop_stacks_is_not_an_action(seat, noise):
     assert {s: e["role"] for s, e in _by_seat(summary).items()} == {3: "opener", 4: "3bettor"}
 
 
+@pytest.mark.parametrize("seat, position", [(4, "BTN"), (5, "SB")])
+def test_rounding_of_a_fold_after_the_last_frame_is_not_a_call(seat, position):
+    # Фаза 14b, N3: `BTN` и `SB` в раздаче на кадре открытия героя и сфолдили после него. Их
+    # вложенное по кадру флопа уходит от своего (0.0 и 0.5) на шаг — это фолд, а не колл до 0.1
+    # или 0.6: прижим к своему вложенному на последнем кадре префлопа.
+    first = preflop_frame(3, folded={7, 2})
+    flop = flop_frame(3, {3: 2.0, 6: 2.0}, {7, 2, 4, 5})
+    exact = _summary([first, flop])
+    next(s for s in flop["seats"] if s["seatIndex"] == seat)["stackBb"] -= 0.1
+    summary = _summary([first, flop])
+
+    assert summary["line"] == exact["line"]
+    assert [a for a in summary["line"] if a["seatIndex"] == seat] == [
+        {"seatIndex": seat, "position": position, "action": "fold"}
+    ]
+
+
 def test_a_limp_and_the_check():
     # Чек виден только тем, что вложенное `BB` не выросло: линия дочитывает его чеком. Герой
     # `SB` первым в банк залимпил — `reach` героя — его частоты лимпа шага 1.
