@@ -21,7 +21,7 @@ import re
 from datetime import date
 
 from ._checks import check_positive
-from .coach import _write
+from ._files import write_json
 from .frames import context_payload
 from .handstate import _validate_context, context_from_dict
 from .lobby_read import Info, Shot
@@ -49,7 +49,7 @@ def merge(
     """
     prizes, infos, used, skipped = _sorted(shots)  # проверки 1, 14
     if not infos and existing is None:  # 2
-        raise ValueError("нет кадра «Инфо»: без него не узнать стартовый стек и размер стола")
+        raise _no_info()
     _legible(used)  # 3
     title = _one_title(used)
     facts = _info_facts(infos, captured) if infos else _file_facts(existing)
@@ -122,11 +122,16 @@ def tournament_path(directory: str, title: str, start: date) -> str:
 
 def find(directory: str, title: str) -> list[dict]:
     """Файлы турниров с этим названием в папке по дате начала: `[{"path", "start",
-    "payoutsFinal"}]`. JSON не файла турнира и нечитаемый JSON пропускаются; нет папки — `[]`."""
-    if not os.path.isdir(directory):
+    "payoutsFinal"}]`. JSON не файла турнира и нечитаемый JSON пропускаются; нет папки — `[]`,
+    не папка или папка не читается — `ValueError`."""
+    if not os.path.exists(directory):
         return []
+    try:
+        names = sorted(os.listdir(directory))
+    except OSError as exc:
+        raise ValueError(f"не удалось прочитать папку {directory!r}: {exc}") from exc
     found = []
-    for name in sorted(os.listdir(directory)):
+    for name in names:
         path = os.path.join(directory, name)
         if not name.endswith(".json") or not os.path.isfile(path):
             continue
@@ -153,8 +158,8 @@ def save(shots: list[tuple[str, Shot]], directory: str, captured: date) -> dict:
 
     Поиск файла идёт по названию, поэтому до него — проверки 1 и 3 (решение R14): неуверенное
     название выбрало бы чужой файл или ни одного. Отсюда единственное отступление от порядка
-    таблицы: без «Инфо», без файла и с неуверенным полем отказ — проверка 3, а не 2. Проверка 13
-    — отказ поиска, она тоже до `merge`.
+    таблицы: без «Инфо», без файла и с неуверенным полем отказ — проверка 3, а не 2. Отказы поиска
+    — тоже до `merge`: 13 (файлов несколько) и 2 (без «Инфо» файла нет — путь не из чего взять).
     """
     _, infos, used, _ = _sorted(shots)
     _legible(used)
@@ -168,11 +173,16 @@ def save(shots: list[tuple[str, Shot]], directory: str, captured: date) -> dict:
         if len(found) > 1:  # 13
             paths = ", ".join(entry["path"] for entry in found)
             raise ValueError(f"турниров «{title}» несколько: {paths} — добавьте кадр «Инфо»")
-        path = found[0]["path"] if found else None
-        existing = _load(path) if path else None
+        if not found:  # 2: файла нет, а без «Инфо» его не создать
+            raise _no_info()
+        path = found[0]["path"]
+        existing = _load(path)
     record, warnings = merge(shots, existing, captured)
-    os.makedirs(directory, exist_ok=True)
-    _write(path, record)
+    try:
+        os.makedirs(directory, exist_ok=True)
+    except OSError as exc:
+        raise ValueError(f"не удалось записать {path!r}: {exc}") from exc
+    write_json(path, record, prefix=".tournament-")
     return {"tournament": path, "payoutsFinal": record["payoutsFinal"], "warnings": warnings}
 
 
@@ -315,7 +325,13 @@ def _seams(payouts, places_paid: int) -> None:
 
 
 def _hole(first: int, last: int) -> ValueError:
+    if first == last:
+        return ValueError(f"нет места {first}: снимите кадр «Призового фонда», где оно видно")
     return ValueError(f"нет мест {first}–{last}: снимите кадр «Призового фонда», где они видны")
+
+
+def _no_info() -> ValueError:
+    return ValueError("нет кадра «Инфо»: без него не узнать стартовый стек и размер стола")
 
 
 def _header_sums(name: str, shot: Shot) -> None:

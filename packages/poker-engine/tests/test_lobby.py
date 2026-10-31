@@ -94,7 +94,7 @@ def _total(record):
 def test_two_passes_end_to_end(tmp_path):
     tmp = str(tmp_path)
     first = lobby.save([_shot("pass1-info-level13"), _shot("pass1-prizes-level14")], tmp, PASS1)
-    record = json.load(open(first["tournament"], encoding="utf-8"))
+    record = _read(first)
     assert first["tournament"].endswith("Fifty Stack $5.50 2026-10-30.json")
     assert record["payoutsFinal"] is False and record["placesPaid"] == 270
     assert first["payoutsFinal"] is False
@@ -103,7 +103,7 @@ def test_two_passes_end_to_end(tmp_path):
         for w in first["warnings"]
     )
     second = lobby.save([_shot("pass2-prizes-level17")], tmp, PASS2)
-    record = json.load(open(second["tournament"], encoding="utf-8"))
+    record = _read(second)
     assert second["tournament"] == first["tournament"] and second["warnings"] == []
     assert second["payoutsFinal"] is True
     assert record["payoutsFinal"] is True and record["lateRegOpen"] is False
@@ -197,6 +197,17 @@ def test_record_header_is_the_latest_prizes_shot():
     assert record["playersLeft"] == 800
 
 
+def test_record_header_prefers_more_entrants():
+    # R13: сначала больше входов, потом меньше осталось — у позднего кадра 2,360 входов и 810
+    # осталось (больше, чем 802); средний 50,000 × 2,360 / 810 = 145,679
+    later = _header(
+        _prizes2(), "later.png", entrants=2360, unique=1817, players_left=810,
+        average_stack_chips=145679,
+    )  # fmt: skip
+    record, _ = lobby.merge([_info2(), _prizes2(), later], None, PASS2)
+    assert (record["entrants"], record["playersLeft"]) == (2360, 810)
+
+
 # --- таблица проверок, по строке на тест -----------------------------------------------------
 
 
@@ -264,18 +275,20 @@ def test_overlap_further_down_names_both_rows():
 
 
 @pytest.mark.parametrize(
-    "drop, hole",
-    [(0, "1–1"), (11, "13–15"), (19, "208–330")],
+    "drop, text",
+    [
+        (0, "нет места 1: снимите кадр «Призового фонда», где оно видно"),
+        (11, "нет мест 13–15: снимите кадр «Призового фонда», где они видны"),
+        (19, "нет мест 208–330: снимите кадр «Призового фонда», где они видны"),
+    ],
     ids=["first-row", "inner-row", "last-row"],
 )
-def test_5_6_missing_row_is_named(drop, hole):
+def test_5_6_missing_row_is_named(drop, text):
     # строка, которую OCR не прочитал, просто отсутствует; проверка стыка называет её места
+    # (одно место — «нет места N», R17)
     prizes = _prizes2()
     rows = [row for i, row in enumerate(prizes[1].payouts) if i != drop]
-    with pytest.raises(
-        ValueError,
-        match=f"^нет мест {hole}: снимите кадр «Призового фонда», где они видны$",
-    ):
+    with pytest.raises(ValueError, match=f"^{text}$"):
         lobby.merge([_info2(), _rows(prizes, rows)], None, PASS2)
 
 
@@ -324,6 +337,27 @@ def test_8_average_within_half_percent_passes():
     lobby.merge([_info2(), _header(_prizes2(), average_stack_chips=147289)], None, PASS2)
 
 
+def test_8_average_just_over_half_percent_refuses():
+    # 147,310 − 146,571.07 = 738.9 > 0.005 × 146,571.07 = 732.9 (0.504%)
+    with pytest.raises(
+        ValueError,
+        match="^средний стек шапки 147,310 не сходится с расчётом 146,571 на кадре "
+        "pass2-prizes-level17.png$",
+    ):
+        lobby.merge([_info2(), _header(_prizes2(), average_stack_chips=147310)], None, PASS2)
+
+
+def test_8_checks_the_info_header_too():
+    # 50,000 × 2,351 / 805 = 146,024.8 на кадре «Инфо»
+    shots = [_header(_info2(), average_stack_chips=140000), _prizes2()]
+    with pytest.raises(
+        ValueError,
+        match="^средний стек шапки 140,000 не сходится с расчётом 146,025 на кадре "
+        "pass2-info-level17.png$",
+    ):
+        lobby.merge(shots, None, PASS2)
+
+
 def test_8_uses_starting_stack_from_the_file(tmp_path):
     _, record = _final_record(tmp_path)
     shot = _header(_prizes2(), average_stack_chips=140000)
@@ -356,6 +390,26 @@ def test_9_rounding_within_half_cent_per_place_passes():
     rows = [(1, 1, 1450.18)] + prizes[1].payouts[1:]
     record, warnings = lobby.merge([_info2(), _rows(prizes, rows)], None, PASS2)
     assert record["payoutsFinal"] is True and warnings == []
+
+
+def test_9_tolerance_counts_places_not_rows():
+    # место 1 на $1.00 больше: 0.005 × 20 строк + 0.005 = 0.105 < $1.00 ≤ 0.005 × 330 мест +
+    # 0.005 = 1.655 — допуск по местам, не по строкам
+    prizes = _prizes2()
+    rows = [(1, 1, 1451.17)] + prizes[1].payouts[1:]
+    record, warnings = lobby.merge([_info2(), _rows(prizes, rows)], None, PASS2)
+    assert record["payoutsFinal"] is True and warnings == []
+
+
+def test_9_just_over_tolerance_refuses():
+    # место 1 на $1.66 больше: 1.66 > 1.655
+    prizes = _prizes2()
+    rows = [(1, 1, 1451.83)] + prizes[1].payouts[1:]
+    with pytest.raises(
+        ValueError,
+        match=re.escape("сумма выплат $11,897.72 не равна призовому фонду $11,896.06"),
+    ):
+        lobby.merge([_info2(), _rows(prizes, rows)], None, PASS2)
 
 
 def test_10_provisional_sum_is_a_warning():
@@ -483,6 +537,13 @@ def test_info_read_as_other_without_file_is_check_2():
         lobby.merge([_prizes1(), _shot("pass1-structure-level16")], None, PASS1)
 
 
+def test_save_without_info_into_an_empty_folder_is_check_2(tmp_path):
+    # без «Инфо» файла не найти и не создать: отказ 2 в `save`, до `merge`
+    with pytest.raises(ValueError, match="^нет кадра «Инфо»: без него не узнать"):
+        lobby.save([_prizes1(), _shot("pass1-structure-level16")], str(tmp_path), PASS1)
+    assert os.listdir(tmp_path) == []
+
+
 def test_info_read_as_other_with_file_is_skipped(tmp_path):
     # тот же пропуск при файле турнира: поля «Инфо» из файла, кадр — в предупреждениях
     tmp = str(tmp_path)
@@ -565,6 +626,12 @@ def test_find_lists_files_of_the_title(tmp_path):
     first = lobby.save([_info1(), _prizes1()], tmp, PASS1)
     (tmp_path / "notes.json").write_text("[1, 2]", encoding="utf-8")
     (tmp_path / "broken.json").write_text("{", encoding="utf-8")
+    # словарь с тем же названием, но не файл турнира: формат другой или его нет
+    for name, record in (
+        ("foreign", {"format": "poker-coach-hand", "title": TITLE}),
+        ("bare", {"title": TITLE}),
+    ):
+        (tmp_path / f"{name}.json").write_text(json.dumps(record), encoding="utf-8")
     assert lobby.find(tmp, TITLE) == [
         {"path": first["tournament"], "start": "2026-10-30T23:05", "payoutsFinal": False}
     ]
@@ -579,6 +646,35 @@ def test_damaged_tournament_file_is_not_overwritten(tmp_path):
     with pytest.raises(ValueError, match="^файл турнира повреждён: "):
         lobby.save([_info1(), _prizes1()], str(tmp_path), PASS1)
     assert _snapshot(tmp_path) == before
+
+
+def test_foreign_file_at_the_tournament_path_is_not_overwritten(tmp_path):
+    # на месте файла турнира — JSON-словарь другого формата: отказ, а не перезапись
+    path = lobby.tournament_path(str(tmp_path), TITLE, date(2026, 10, 30))
+    foreign = {"format": "poker-coach-hand", "title": TITLE}
+    pathlib.Path(path).write_text(json.dumps(foreign), encoding="utf-8")
+    before = _snapshot(tmp_path)
+    with pytest.raises(ValueError, match=f"^файл турнира повреждён: {re.escape(path)}$"):
+        lobby.save([_info1(), _prizes1()], str(tmp_path), PASS1)
+    assert _snapshot(tmp_path) == before
+
+
+def test_find_in_a_file_instead_of_a_folder(tmp_path):
+    occupied = tmp_path / "tournaments"
+    occupied.write_text("", encoding="utf-8")
+    with pytest.raises(
+        ValueError, match=f"^не удалось прочитать папку {re.escape(repr(str(occupied)))}: "
+    ):
+        lobby.find(str(occupied), TITLE)
+
+
+def test_save_into_a_file_instead_of_a_folder(tmp_path):
+    occupied = tmp_path / "tournaments"
+    occupied.write_text("", encoding="utf-8")
+    path = os.path.join(str(occupied), FILE_NAME)
+    with pytest.raises(ValueError, match=f"^не удалось записать {re.escape(repr(path))}: "):
+        lobby.save([_info1(), _prizes1()], str(occupied), PASS1)
+    assert occupied.read_text(encoding="utf-8") == "" and os.listdir(tmp_path) == ["tournaments"]
 
 
 def test_save_creates_the_directory(tmp_path):

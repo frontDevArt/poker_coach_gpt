@@ -11,12 +11,11 @@
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
-import tempfile
 
 from . import explain, frames
+from ._files import write_json
 from .advice import advise, read_hand, why
 from .handstate import STREETS, _validate_context, context_from_dict
 from .lint import untraced
@@ -178,24 +177,6 @@ def _damaged(what: str) -> ValueError:
 
 
 def _write(path: str, data: dict) -> None:
-    """Атомарная запись: временный файл в той же папке, затем `os.replace` поверх.
-
-    Байты собираются до того, как тронут диск: сериализация, упавшая на середине, не оставит
-    полфайла. Отступ и порядок ключей постоянны — `step` + `undo` дают тот же файл байт в байт.
-    """
-    payload = (json.dumps(data, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
-    directory = os.path.dirname(os.path.abspath(path))
-    try:
-        handle, temporary = tempfile.mkstemp(prefix=".hand-", suffix=".tmp", dir=directory)
-    except OSError as exc:
-        raise ValueError(f"не удалось записать {path!r}: {exc}") from exc
-    try:
-        with os.fdopen(handle, "wb") as out:
-            out.write(payload)
-        os.replace(temporary, path)
-    except BaseException as exc:
-        with contextlib.suppress(OSError):
-            os.remove(temporary)
-        if isinstance(exc, OSError):
-            raise ValueError(f"не удалось записать {path!r}: {exc}") from exc
-        raise
+    """Атомарная запись файла раздачи (`_files.write_json`): отступ и порядок ключей постоянны —
+    `step` + `undo` дают тот же файл байт в байт."""
+    write_json(path, data, prefix=".hand-")
