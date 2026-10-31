@@ -47,7 +47,7 @@ def merge(
     Строка кортежа — имя файла кадра для текстов отказов. Выплаты, входы и шапка — из кадров
     «Призового фонда»; поля «Инфо» — из кадра «Инфо», а без него из файла.
     """
-    prizes, infos, used, warnings = _sorted(shots)  # проверки 1, 14
+    prizes, infos, used, skipped = _sorted(shots)  # проверки 1, 14
     if not infos and existing is None:  # 2
         raise ValueError("нет кадра «Инфо»: без него не узнать стартовый стек и размер стола")
     _legible(used)  # 3
@@ -56,13 +56,16 @@ def merge(
 
     final = _one_pass(prizes, facts["lateRegCloseLevel"])
     places_paid = _places_paid(prizes)
-    payouts = _joined(prizes)  # 4
+    payouts = _joined(prizes)  # 4, R15
     _seams(payouts, places_paid)  # 5, 6
-    for name, shot in used:  # 7, 8
-        _header_consistent(name, shot, facts["startingStackChips"])
+    for name, shot in used:  # 7 на всех кадрах, затем 8 на всех
+        _header_sums(name, shot)
+    for name, shot in used:
+        _header_average(name, shot, facts["startingStackChips"])
 
     header = max((shot.header for _, shot in prizes), key=lambda h: (h.entrants, -h.players_left))
     total = sum((last - first + 1) * amount for first, last, amount in payouts)
+    warnings = []
     if abs(total - header.prize_pool_usd) > _CENT * places_paid + _CENT:
         if final:  # 9
             raise ValueError(
@@ -73,6 +76,7 @@ def merge(
             f"выплаты предварительные: сумма {_usd(total)} против фонда "
             f"{_usd(header.prize_pool_usd)}"
         )
+    warnings += skipped  # 14 — после 10, по порядку таблицы
 
     if existing is not None:
         _same_tournament(existing, title, facts["startingStackChips"], header.entrants)  # 11
@@ -146,9 +150,12 @@ def save(shots: list[tuple[str, Shot]], directory: str, captured: date) -> dict:
 
     С кадром «Инфо» файл — по названию и дате начала; без него — единственный файл с этим
     названием в папке. Ответ — `{"tournament": путь, "payoutsFinal", "warnings"}`.
+
+    Поиск файла идёт по названию, поэтому до него — проверки 1 и 3 (решение R14): неуверенное
+    название выбрало бы чужой файл или ни одного. Отсюда единственное отступление от порядка
+    таблицы: без «Инфо», без файла и с неуверенным полем отказ — проверка 3, а не 2. Проверка 13
+    — отказ поиска, она тоже до `merge`.
     """
-    # До поиска файла кадры должны быть прочитаны уверенно: неуверенное название выбрало бы
-    # чужой файл или ни одного
     _, infos, used, _ = _sorted(shots)
     _legible(used)
     title = _one_title(used)
@@ -180,12 +187,12 @@ def _sorted(shots):
     if not prizes:
         raise ValueError("нет кадра «Призового фонда»")
     used = [(name, shot) for name, shot in shots if shot.kind in ("prizes", "info")]
-    warnings = [
+    skipped = [
         f"кадр {name} пропущен: это не «Инфо» и не «Призовой фонд»"
         for name, shot in shots
         if shot.kind not in ("prizes", "info")
     ]
-    return prizes, infos, used, warnings
+    return prizes, infos, used, skipped
 
 
 def _legible(shots) -> None:
@@ -272,27 +279,37 @@ def _places_paid(prizes) -> int:
 
 
 def _joined(prizes) -> list[tuple[int, int, float]]:
-    """Проверка 4: строки всех кадров по местам; строка, видная на двух кадрах, читается
-    одинаково — иначе отказ с обоими прочтениями, а не выбор одного."""
-    rows: dict[tuple[int, int], float] = {}
-    for _, shot in prizes:
+    """Строки всех кадров по местам; строка, видная на двух кадрах, читается одинаково — иначе
+    отказ с обоими прочтениями, а не выбор одного (спека §7.2). Проверка 4 — те же места, другой
+    приз; R15 — места строк пересекаются, но не совпадают («11–12» и «11–13»)."""
+    rows: dict[tuple[int, int], tuple[float, str]] = {}
+    for name, shot in prizes:
         for first, last, amount in shot.payouts:
-            seen = rows.setdefault((first, last), amount)
-            if seen != amount:
+            seen, _ = rows.setdefault((first, last), (amount, name))
+            if seen != amount:  # 4
                 raise ValueError(
                     f"строка мест {first}–{last} читается по-разному: {_usd(seen)} и {_usd(amount)}"
                 )
-    return [(first, last, amount) for (first, last), amount in sorted(rows.items())]
+    ordered = sorted(rows.items())
+    reach = (0, 0, "")  # строка, дальше всех ушедшая вниз по местам: с места, по место, кадр
+    for (first, last), (_, name) in ordered:
+        if first <= reach[1]:  # R15
+            raise ValueError(
+                f"строка мест читается по-разному: {reach[0]}–{reach[1]} на кадре {reach[2]} "
+                f"и {first}–{last} на кадре {name}"
+            )
+        reach = (first, last, name)
+    return [(first, last, amount) for (first, last), (amount, _) in ordered]
 
 
 def _seams(payouts, places_paid: int) -> None:
     """Проверки 5 и 6: первая строка с места 1, каждая следующая — с «прошлый конец + 1»,
-    последняя кончается на `places_paid`. Пересечения строк — забота `_validate_context`."""
+    последняя кончается на `places_paid`. Строки не пересекаются — это уже проверил `_joined`."""
     expected = 1
     for first, last, _ in payouts:
         if first > expected:  # 5
             raise _hole(expected, first - 1)
-        expected = max(expected, last + 1)
+        expected = last + 1
     if expected - 1 < places_paid:  # 6
         raise _hole(expected, places_paid)
 
@@ -301,14 +318,19 @@ def _hole(first: int, last: int) -> ValueError:
     return ValueError(f"нет мест {first}–{last}: снимите кадр «Призового фонда», где они видны")
 
 
-def _header_consistent(name: str, shot: Shot, starting: int) -> None:
-    """Проверки 7 и 8: шапка сама с собой на каждом кадре."""
+def _header_sums(name: str, shot: Shot) -> None:
+    """Проверка 7: уникальные и ре-энтри шапки дают входы."""
     header = shot.header
     if header.unique + header.reentries != header.entrants:  # 7
         raise ValueError(
             f"в шапке {name} уникальных и ре-энтри {header.unique} + {header.reentries}, "
             f"а входов {header.entrants}"
         )
+
+
+def _header_average(name: str, shot: Shot, starting: int) -> None:
+    """Проверка 8: средний стек шапки против стартового стека × входы / осталось."""
+    header = shot.header
     check_positive(header.players_left, "остаток игроков")
     calc = starting * header.entrants / header.players_left
     if abs(calc - header.average_stack_chips) > _AVERAGE_TOLERANCE * calc:  # 8

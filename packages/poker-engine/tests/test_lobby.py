@@ -24,6 +24,7 @@ FILE_NAME = "Fifty Stack $5.50 2026-10-30.json"
 PASS1 = date(2026, 10, 30)
 PASS2 = date(2026, 10, 31)
 SKIPPED = "кадр pass1-structure-level16.png пропущен: это не «Инфо» и не «Призовой фонд»"
+PROVISIONAL = "выплаты предварительные: сумма $9,234.50 против фонда $9,224.38"
 
 
 def _shot(name, file=None):
@@ -233,6 +234,35 @@ def test_4_overlapping_row_reads_differently():
         lobby.merge(shots, None, PASS2)
 
 
+def test_overlapping_ranges_on_two_shots():
+    # R15: строка «11–12» на одном кадре и «11–13» на другом — одна строка, прочитанная
+    # по-разному; отказ с обоими прочтениями и кадрами до проверки стыка
+    prizes = _prizes2()
+    other = list(prizes[1].payouts)
+    other[10] = (11, 13, 94.42)
+    shots = [_info2(), prizes, _rows(prizes, other[10:], file="scroll.png", places_paid=None)]
+    with pytest.raises(
+        ValueError,
+        match="^строка мест читается по-разному: 11–12 на кадре pass2-prizes-level17.png "
+        "и 11–13 на кадре scroll.png$",
+    ):
+        lobby.merge(shots, None, PASS2)
+
+
+def test_overlap_further_down_names_both_rows():
+    # «13–15» с одного кадра и «14–19» с другого: пересечение не на первом месте строки
+    prizes = _prizes2()
+    other = list(prizes[1].payouts)
+    other[12] = (14, 19, 59.43)
+    shots = [_info2(), prizes, _rows(prizes, other[12:], file="scroll.png", places_paid=None)]
+    with pytest.raises(
+        ValueError,
+        match="^строка мест читается по-разному: 13–15 на кадре pass2-prizes-level17.png "
+        "и 14–19 на кадре scroll.png$",
+    ):
+        lobby.merge(shots, None, PASS2)
+
+
 @pytest.mark.parametrize(
     "drop, hole",
     [(0, "1–1"), (11, "13–15"), (19, "208–330")],
@@ -263,6 +293,13 @@ def test_7_header_unique_and_reentries():
         ),
     ):
         lobby.merge([_info2(), _header(_prizes2(), unique=1807)], None, PASS2)
+
+
+def test_7_runs_on_every_shot_before_8():
+    # кадр «Инфо» ломает 8, кадр выплат — 7: сначала 7 на всех кадрах, потом 8 на всех
+    shots = [_header(_info2(), average_stack_chips=140000), _header(_prizes2(), unique=1807)]
+    with pytest.raises(ValueError, match="^в шапке pass2-prizes-level17.png уникальных и ре-энтри"):
+        lobby.merge(shots, None, PASS2)
 
 
 def test_7_checks_the_info_header_too():
@@ -323,7 +360,7 @@ def test_9_rounding_within_half_cent_per_place_passes():
 
 def test_10_provisional_sum_is_a_warning():
     record, warnings = lobby.merge([_info1(), _prizes1()], None, PASS1)
-    assert warnings == ["выплаты предварительные: сумма $9,234.50 против фонда $9,224.38"]
+    assert warnings == [PROVISIONAL]
     assert record["payoutsFinal"] is False
 
 
@@ -396,7 +433,7 @@ def test_structure_shot_is_skipped_with_warning(tmp_path):
     # запись не идёт
     plain, _ = lobby.merge([_info1(), _prizes1()], None, PASS1)
     out = lobby.save([_shot("pass1-structure-level16"), _info1(), _prizes1()], str(tmp_path), PASS1)
-    assert out["warnings"][0] == SKIPPED
+    assert out["warnings"] == [PROVISIONAL, SKIPPED]  # 10 раньше 14, по порядку таблицы
     record = _read(out)
     assert record == plain and record["entrants"] == 1823
 
@@ -426,6 +463,34 @@ def test_provisional_never_overwrites_final(tmp_path):
         lobby.save([_header(_prizes2(), level=16)], str(tmp_path), PASS2)
     assert _snapshot(tmp_path) == before
     assert _read(out)["payoutsFinal"] is True
+
+
+def test_save_checks_confidence_before_the_lookup(tmp_path):
+    # R14: без «Инфо» и без файла, поле неуверенно — отказ 3, а не 2: файл ищется по названию,
+    # и до поиска кадры должны быть прочитаны уверенно
+    with pytest.raises(
+        ValueError,
+        match="^поле «название» прочитано неуверенно на кадре pass2-prizes-level17.png: "
+        "снимите его заново$",
+    ):
+        lobby.save([_with(_prizes2(), low_confidence=["название"])], str(tmp_path), PASS2)
+    assert os.listdir(tmp_path) == []
+
+
+def test_info_read_as_other_without_file_is_check_2():
+    # R12: кадр «Инфо», прочитанный как "other", пропускается — и без файла это отказ 2
+    with pytest.raises(ValueError, match="^нет кадра «Инфо»: без него не узнать"):
+        lobby.merge([_prizes1(), _shot("pass1-structure-level16")], None, PASS1)
+
+
+def test_info_read_as_other_with_file_is_skipped(tmp_path):
+    # тот же пропуск при файле турнира: поля «Инфо» из файла, кадр — в предупреждениях
+    tmp = str(tmp_path)
+    first = lobby.save([_info1(), _prizes1()], tmp, PASS1)
+    out = lobby.save([_prizes1(), _shot("pass1-structure-level16")], tmp, PASS1)
+    assert out["tournament"] == first["tournament"]
+    assert out["warnings"] == [PROVISIONAL, SKIPPED]
+    assert _read(out)["startingStackChips"] == 50000 and os.listdir(tmp) == [FILE_NAME]
 
 
 def test_provisional_may_replace_provisional(tmp_path):
