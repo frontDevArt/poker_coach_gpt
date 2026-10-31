@@ -11,6 +11,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+lobby = ["rapidocr-onnxruntime==1.4.4", "onnxruntime==1.20.1", "pillow==13.0.0"]
 
 [project.scripts]
 poker-engine = "poker_engine.cli:main"
