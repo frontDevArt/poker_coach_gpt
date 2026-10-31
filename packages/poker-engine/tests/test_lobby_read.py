@@ -43,12 +43,13 @@ def _without(lines, text):
     return [line for line in lines if line.text != text]
 
 
-def _torn(lines, text, head, tail):
-    """Строка `text` разорвана на две рамки вплотную: `head` слева, `tail` справа (зазор 1 px)."""
+def _torn(lines, text, head, tail, gap=None):
+    """Строка `text` разорвана на две рамки вплотную: `head` слева, `tail` справа; зазор — 1 px
+    или `gap` высот строки."""
     line = next(line for line in lines if line.text == text)
     cut = line.w * len(head) / len(text)
     return _without(lines, text) + [
-        dataclasses.replace(line, text=head, w=cut - 1.0),
+        dataclasses.replace(line, text=head, w=cut - (1.0 if gap is None else gap * line.h)),
         dataclasses.replace(line, text=tail, x=line.x + cut, w=line.w - cut),
     ]
 
@@ -225,14 +226,37 @@ def test_overlay_label_is_not_the_title():
         ("1808|543", "1808|5", "43", "уникальные и ре-энтри"),
         ("1808|543", "18", "08|543", "уникальные и ре-энтри"),  # хвост читается сам по себе
         ("802/2,351", "802/2", ",351", "счётчик игроков"),
+        # диапазон мест по разделителю: иначе (11, 11, …) или (12, 12, …) молча
+        ("11~12", "11", "~12", "выплата места 11"),
+        ("11~12", "11~", "12", "выплата места 12"),
+        ("16~19", "16", "-19", "выплата места 16"),  # `-` вне рамки `_norm` в `~` не меняет
+        ("16~19", "16-", "19", "выплата места 19"),
+        ("Fifty Stack $5.50", "Fifty Stack $5", ".50", "название"),  # цена названия — число
     ],
 )
-def test_number_torn_across_boxes_refuses(text, head, tail, field):
+@pytest.mark.parametrize("gap", [None, 0.45], ids=["1px", "0.45h"])
+def test_number_torn_across_boxes_refuses(text, head, tail, field, gap):
     # R10: число в двух рамках вплотную не склеивается и не обрезается — отказ с именем поля
     lines, width, height = _fixture("pass2-prizes-level17")
     pieces = f"«{re.escape(head)}» \\+ «{re.escape(tail)}»"
     with pytest.raises(ValueError, match=f"^на кадре поле «{field}» разорвано на части: {pieces}$"):
-        read_shot(_torn(lines, text, head, tail), width, height)
+        read_shot(_torn(lines, text, head, tail, gap), width, height)
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["pass1-prizes-level14", "pass2-prizes-level17", "win_2026-09-10_00-31-04"],
+)
+def test_every_torn_range_row_refuses(name):
+    # каждая строка-диапазон всех трёх кадров выплат, разорванная по `~` с обеих сторон
+    lines, width, height = _fixture(name)
+    ranges = [line.text for line in lines if re.fullmatch(r"\d+\s*~\s*\d+", line.text)]
+    assert ranges
+    for text in ranges:
+        lo, hi = re.split(r"\s*~\s*", text)
+        for head, tail, place in ((lo, f"~{hi}", lo), (f"{lo}~", hi, hi)):
+            with pytest.raises(ValueError, match=f"^на кадре поле «выплата места {place}»"):
+                read_shot(_torn(lines, text, head, tail), width, height)
 
 
 def test_next_prize_in_three_boxes_is_not_a_payout():

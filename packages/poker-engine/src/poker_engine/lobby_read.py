@@ -36,9 +36,10 @@ _TITLE = re.compile(rf".*[^\W\d_].*?\s*{_MONEY}")  # «Fifty Stack $5.50»: сл
 _LEVEL = re.compile(r"\D*[^\W\d_]\s*(\d{1,3})")  # «ypOBeHb17»: подпись и номер в конце
 _PLACE = re.compile(r"(\d+)(?:~(\d+))?")  # «11~12» или «7»
 _SHARE = re.compile(r"\$(\d+\.\d{2})\s*\+\s*\$(\d+\.\d{2})")  # «$5.06+$0.44»
-# кусок числа в соседней рамке: хвост («.06», «,351», «43») или голова («$11,», «18»)
-_TORN_TAIL = re.compile(r"[.,|/\d]")
-_TORN_HEAD = re.compile(r"[.,|/\d$]$")
+# кусок числа в соседней рамке: хвост («.06», «,351», «43», «~12») или голова («$11,», «18»,
+# «11~»); `~` и `-` — разделитель диапазона мест, `_norm` меняет `-` на `~` только внутри рамки
+_TORN_TAIL = re.compile(r"[.,|/~\-\d]")
+_TORN_HEAD = re.compile(r"[.,|/~\-\d$]$")
 
 # по свёрнутому тексту (`_fold`): двойники приведены к латинице в нижнем регистре
 _PLACES_PAID = re.compile(rf"({_NUM})\s*np.*")  # «330 npM30BbIX MeCT»
@@ -163,6 +164,11 @@ def _missing(field: str) -> ValueError:
     return ValueError(f"на кадре не найдено: {field}")
 
 
+def _payout_name(place) -> str:
+    """Имя строки выплат по ячейке места, как она прочитана: «выплата мест 11–12»."""
+    return f"выплата мест {place[1]}–{place[2]}" if place[2] else f"выплата места {place[1]}"
+
+
 def _one_column(rows):
     """Пары таблицы выплат, ячейки которых стоят в столбцах таблицы: центр ячейки места и
     центр ячейки приза ближе своей высоты к медиане центров своего столбца. Строка «следующий
@@ -190,26 +196,25 @@ class _Reader:
         return _cx(line) > self.width / 2
 
     def _whole(self, field: str, *lines: Line) -> None:
-        """Число поля целиком в своей рамке (R10). Сосед в том же ряду вплотную справа,
-        начинающийся с `.`, `,`, `|`, `/` или цифры, или вплотную слева, кончающийся ими или `$`, —
-        кусок того же числа, разорванного OCR на две рамки («$11,896» + «.06»). Цифры не
-        склеиваются: отказ с именем поля и обоими кусками."""
+        """Число поля целиком в своей рамке (R10). Сосед в том же ряду вплотную справа или слева —
+        кусок того же числа, разорванного OCR на две рамки, когда стык идёт внутри числа: левый
+        кусок кончается цифрой, `.`, `,`, `|`, `/`, `~`, `-` или `$`, а правый начинается цифрой
+        или одним из этих знаков, кроме `$` («$11,896» + «.06», «11» + «~12»). Подпись перед
+        числом («CpeAHNiCTeK» + «146,571 (29.3 BB)») и «th -» + «$11.75» — не стык. Цифры не
+        склеиваются: отказ с именем поля и кусками."""
         for line in lines:
             for other in self.lines:
                 if other is line or not _same_row(line, other):
                     continue
-                limit = _GLUE * max(line.h, other.h)
-                text = _norm(other.text)
-                if other.x > line.x:
-                    torn = other.x - (line.x + line.w) < limit and _TORN_TAIL.match(text)
-                    pieces = (line, other)
-                else:
-                    torn = line.x - (other.x + other.w) < limit and _TORN_HEAD.search(text)
-                    pieces = (other, line)
-                if torn:
+                head, tail = (line, other) if other.x > line.x else (other, line)
+                if (
+                    tail.x - (head.x + head.w) < _GLUE * max(head.h, tail.h)
+                    and _TORN_HEAD.search(_norm(head.text))
+                    and _TORN_TAIL.match(_norm(tail.text))
+                ):
                     raise ValueError(
                         f"на кадре поле «{field}» разорвано на части: "
-                        f"«{pieces[0].text}» + «{pieces[1].text}»"
+                        f"«{head.text}» + «{tail.text}»"
                     )
 
     def _take(self, field: str, *lines: Line) -> None:
@@ -238,11 +243,14 @@ class _Reader:
     def title(self) -> str:
         """Строка со словами и ценой в конце, начатая в левой четверти шапки, и её соседи слева в
         том же ряду той же высоты: «Fifty» + «Stack $5.50» склеиваются через пробел (это текст, не
-        число). Подпись с суммой правее («Оверлей $2,398.58») названием не становится."""
+        число). Подпись с суммой правее («Оверлей $2,398.58») названием не становится. Цена в
+        конце названия — число: разорвана («Fifty Stack $5» + «.50») — отказ «название»; слова,
+        приклеенные слева, кончаются буквой и стыком числа не считаются."""
         anchor, _ = self._find(
             self.header, _TITLE, "название",
             where=lambda line, match: line.x < _TITLE_LEFT * self.width,
         )  # fmt: skip
+        self._whole("название", anchor)
         parts = [anchor]
         while True:
             left = parts[0]
@@ -372,6 +380,10 @@ class _Reader:
             place_line, place = nearest(prize_line, places, left=True)
             if place_line is not None and nearest(place_line, prizes, left=False)[0] is prize_line:
                 rows.append((prize_line, place_line, place, prize))
+        # разрыв проверяется до столбцов: обрывок «11» от «11~12» сдвинут из столбца мест, и
+        # строка иначе выпала бы молча
+        for prize_line, place_line, place, _ in rows:
+            self._whole(_payout_name(place), place_line, prize_line)
         rows = _one_column(rows)
 
         top = min((_cy(row[0]) for row in rows), default=None)
@@ -392,10 +404,8 @@ class _Reader:
         payouts = []
         for prize_line, place_line, place, prize in rows:
             lo = int(place[1])
-            hi = int(place[2]) if place[2] else lo
-            name = f"выплата мест {lo}–{hi}" if hi != lo else f"выплата места {lo}"
-            self._take(name, place_line, prize_line)
-            payouts.append((lo, hi, _usd(prize[1])))
+            self._take(_payout_name(place), place_line, prize_line)
+            payouts.append((lo, int(place[2]) if place[2] else lo, _usd(prize[1])))
         return payouts, places_paid
 
     # --- «Инфо» ---
