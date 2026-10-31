@@ -10,6 +10,7 @@ import json
 import pathlib
 import re
 import sys
+import types
 
 import pytest
 from conftest import LOBBY_SHOTS
@@ -163,6 +164,11 @@ def test_repair_counter_ignores_other_lines():
 def test_ocr_without_dependencies_refuses(monkeypatch):
     import poker_engine.lobby_ocr as lobby_ocr
 
+    # `ocr_image` импортирует Pillow раньше RapidOCR: поддельный `PIL` с атрибутом `Image`
+    # доводит до RapidOCR и там, где Pillow нет (облако)
+    fake_pil = types.ModuleType("PIL")
+    fake_pil.Image = types.ModuleType("PIL.Image")
+    monkeypatch.setitem(sys.modules, "PIL", fake_pil)
     monkeypatch.setitem(sys.modules, "rapidocr_onnxruntime", None)
     monkeypatch.setattr(lobby_ocr, "_engine", None)
     with pytest.raises(ValueError, match=r"для разбора лобби нужны зависимости: pip install") as info:
@@ -171,6 +177,17 @@ def test_ocr_without_dependencies_refuses(monkeypatch):
     assert isinstance(info.value.__cause__, ImportError)
     assert info.value.__cause__.name == "rapidocr_onnxruntime"
     assert str(info.value).endswith("(не импортируется: rapidocr_onnxruntime)")
+
+
+def test_ocr_without_pillow_refuses(monkeypatch):
+    import poker_engine.lobby_ocr as lobby_ocr
+
+    monkeypatch.setitem(sys.modules, "PIL", None)
+    with pytest.raises(ValueError, match=r"^для разбора лобби нужны зависимости: ") as info:
+        lobby_ocr.ocr_image("нет-такого-кадра.png")
+    assert isinstance(info.value.__cause__, ImportError)
+    assert info.value.__cause__.name == "PIL"
+    assert str(info.value).endswith("(не импортируется: PIL)")
 
 
 @pytest.mark.parametrize(

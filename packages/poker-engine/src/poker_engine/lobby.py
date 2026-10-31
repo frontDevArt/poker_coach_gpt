@@ -8,7 +8,9 @@
 Запись турнира — контекст `coach start` плюс справка (название, дата начала, бай-ин, PKO,
 интервал блайндов, призовой фонд). Файл лежит в папке турниров под именем «<название>
 <YYYY-MM-DD>.json» по дате начала из «Инфо»: заход 1 его создаёт, заход 2 заменяет в нём выплаты
-и входы. Кадра «Инфо» во втором заходе может не быть — тогда файл ищется по названию.
+и входы. Кадра «Инфо» во втором заходе может не быть — тогда файл ищется по названию, а кадры
+должны быть сняты в день начала турнира или на следующий (решение R21). Поле `bubbleRefundUsd`,
+дописанное в файл пользователем, заход переносит (решение R22).
 
 `read` (Задача 5) — заход из файлов кадров: распознавание `lobby_ocr`, разбор, `save`.
 
@@ -22,14 +24,14 @@ import json
 import os
 import pathlib
 import re
-from datetime import date
+from datetime import date, datetime
 
 from . import lobby_ocr
 from ._checks import check_positive
 from ._files import write_json
 from .frames import context_payload
 from .handstate import _validate_context, context_from_dict
-from .lobby_read import Info, Shot, read_shot
+from .lobby_read import Header, Info, Shot, read_shot
 
 FORMAT = "poker-coach-tournament"
 VERSION = 1
@@ -57,7 +59,7 @@ def merge(
         raise _no_info()
     _legible(used)  # 3
     title = _one_title(used)
-    facts = _info_facts(infos, captured) if infos else _file_facts(existing)
+    facts = _info_facts(infos, captured) if infos else _file_facts(existing, captured)
 
     final = _one_pass(prizes, facts["lateRegCloseLevel"])
     places_paid = _places_paid(prizes)
@@ -84,7 +86,7 @@ def merge(
     warnings += skipped  # 14 — после 10, по порядку таблицы
 
     if existing is not None:
-        _same_tournament(existing, title, facts["startingStackChips"], header.entrants)  # 11
+        _same_tournament(existing, title, facts, header, final)  # 11
         if _file_field(existing, "payoutsFinal") is True and not final:  # 12
             raise ValueError(
                 "в файле турнира уже окончательные выплаты, а кадры сняты во время поздней "
@@ -115,6 +117,9 @@ def merge(
         "lateRegOpen": not final,
         "prizePoolUsd": header.prize_pool_usd,
     }
+    if existing is not None and "bubbleRefundUsd" in existing:
+        # R22: поле дописывает пользователь (L6), заход его не теряет; проверка — 15 ниже
+        record["bubbleRefundUsd"] = existing["bubbleRefundUsd"]
     # 15: та же проверка, что у `coach start`
     _validate_context(context_from_dict(context_payload(record, None)))
     return record, warnings
@@ -158,8 +163,9 @@ def find(directory: str, title: str) -> list[dict]:
 def save(shots: list[tuple[str, Shot]], directory: str, captured: date) -> dict:
     """Заход в файл турнира: найти файл, `merge`, записать целиком (временный файл и замена).
 
-    С кадром «Инфо» файл — по названию и дате начала; без него — единственный файл с этим
-    названием в папке. Ответ — `{"tournament": путь, "payoutsFinal", "warnings"}`.
+    С кадром «Инфо» файл — по названию и дате начала, и время начала в нём то же (проверка 11);
+    без него — единственный файл с этим названием в папке, начавшийся в день съёмки или накануне
+    (`merge`). Ответ — `{"tournament": путь, "payoutsFinal", "warnings"}`.
 
     Поиск файла идёт по названию, поэтому до него — проверки 1 и 3 (решение R14): неуверенное
     название выбрало бы чужой файл или ни одного. Отсюда единственное отступление от порядка
@@ -294,8 +300,28 @@ def _info_facts(infos, captured: date) -> dict:
     }
 
 
-def _file_facts(existing: dict) -> dict:
-    return {key: _file_field(existing, key) for key in _INFO_KEYS}
+def _file_facts(existing: dict, captured: date) -> dict:
+    """Поля «Инфо» записи из файла турнира. Без «Инфо» файл выбран по одному названию, поэтому
+    кадры сняты в день его начала или на следующий (решение R21), иначе это может быть турнир
+    того же названия другого дня — отказ с просьбой о кадре «Инфо», а не запись в чужой файл."""
+    facts = {key: _file_field(existing, key) for key in _INFO_KEYS}
+    start = _file_start(facts["start"])
+    if not 0 <= (captured - start).days <= 1:
+        raise ValueError(
+            f"кадры сняты {captured:%Y-%m-%d}, а турнир в файле начался {start:%Y-%m-%d}: "
+            "добавьте кадр «Инфо»"
+        )
+    return facts
+
+
+def _file_start(value) -> date:
+    """Дата начала из поля `start` файла (`YYYY-MM-DDTHH:MM`, как его пишет `_start`)."""
+    try:
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M").date()
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"файл турнира повреждён: поле start не дата начала ({value!r})"
+        ) from None
 
 
 def _start(name: str, info: Info, captured: date) -> tuple[date, str]:
@@ -407,16 +433,34 @@ def _header_average(name: str, shot: Shot, starting: int) -> None:
         )
 
 
-def _same_tournament(existing: dict, title: str, starting: int, entrants: int) -> None:
-    """Проверка 11: заход 2 — тот же турнир, что заход 1 в файле: название, стартовый стек,
-    входов не меньше."""
+def _same_tournament(existing: dict, title: str, facts: dict, header: Header, final: bool) -> None:
+    """Проверка 11: заход — тот же турнир, что в файле: название, начало (дата и время, решение
+    R21: у двух турниров одного названия в один день имя файла одно), стартовый стек, входов не
+    меньше. Окончательные выплаты поверх окончательных — те же входы и тот же призовой фонд:
+    после закрытия регистрации они не меняются."""
     if _file_field(existing, "title") != title:
         raise _other_tournament("название", f"«{existing['title']}»", f"«{title}»")
+    was = _file_field(existing, "start")
+    if was != facts["start"]:  # без «Инфо» начало взято из файла и совпадает
+        raise _other_tournament("начало", _shown(was), _shown(facts["start"]))
     was = _file_field(existing, "startingStackChips")
+    starting = facts["startingStackChips"]
     if was != starting:
         raise _other_tournament("стартовый стек", f"{was:,}", f"{starting:,}")
+    entrants = header.entrants
     if entrants < _file_field(existing, "entrants"):
         raise _other_tournament("входы", existing["entrants"], entrants)
+    if final and _file_field(existing, "payoutsFinal") is True:
+        if entrants != existing["entrants"]:
+            raise _other_tournament("входы", existing["entrants"], entrants)
+        pool = _file_field(existing, "prizePoolUsd")
+        if pool != header.prize_pool_usd:
+            raise _other_tournament("призовой фонд", _usd(pool), _usd(header.prize_pool_usd))
+
+
+def _shown(start) -> str:
+    """Начало как в тексте отказа: `2026-10-30 23:05`."""
+    return str(start).replace("T", " ")
 
 
 def _other_tournament(field: str, was, now) -> ValueError:

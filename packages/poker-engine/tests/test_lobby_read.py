@@ -295,6 +295,36 @@ def test_missing_info_field_refuses(missing, field):
         read_shot(_without(lines, missing), width, height)
 
 
+@pytest.mark.parametrize("cut", ["7 yaca 30 MMH", "7 часа 30 мин"])  # двойник и кириллица
+def test_late_reg_duration_without_its_tail_is_not_the_interval(cut):
+    # M1: «7 часа 30 минут» поздней регистрации, у которого OCR потерял «ут», кончается на «мин»
+    # и стоит выше «Интервал блайндов 8 мин» — строка с часами не интервал
+    lines, width, height = _fixture("pass1-info-level13")
+    lines = _replace(lines, "7 yaca 30 MMHyT", text=cut)
+    assert read_shot(lines, width, height).info.blind_interval_min == 8
+
+
+def test_late_reg_duration_alone_is_not_the_interval():
+    lines, width, height = _fixture("pass1-info-level13")
+    lines = _without(lines, "WHTepBan 6naMHAOB 8MNH")
+    lines = _replace(lines, "7 yaca 30 MMHyT", text="7 yaca 30 MMH")
+    with pytest.raises(ValueError, match="^на кадре не найдено: интервал блайндов$"):
+        read_shot(lines, width, height)
+
+
+def test_two_interval_candidates_refuse():
+    # две строки «… N мин» без часов: какая из них интервал, не угадывается
+    lines, width, height = _fixture("pass1-info-level13")
+    interval = next(line for line in lines if line.text == "WHTepBan 6naMHAOB 8MNH")
+    lines = [*lines, dataclasses.replace(interval, text="Ab-oH 10MNH", y=interval.y + 40.0)]
+    with pytest.raises(
+        ValueError,
+        match="^на кадре поле «интервал блайндов» читается неоднозначно: "
+        "«WHTepBan 6naMHAOB 8MNH» и «Ab-oH 10MNH»$",
+    ):
+        read_shot(lines, width, height)
+
+
 def test_places_count_without_table_refuses():
     lines, width, height = _fixture("pass2-prizes-level17")
     lines = [line for line in lines if not line.text.startswith("$") or line.y < 200]

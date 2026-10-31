@@ -15,6 +15,7 @@ from .handstate import (
     _as_bool,
     _as_float,
     _as_int,
+    _as_optional_bool,
     _as_optional_dict,
     _as_optional_float,
     _present,
@@ -77,11 +78,12 @@ def context_payload(raw: dict, last_frame: dict | None, first_frame: dict | None
        `blinds.bb` последнего кадра, остальное как пришло, источник не ставится. Средний стек —
        с экрана лобби, а не со стола: его единица от единицы кадра не зависит, и `blinds` нужен
        у кадра в любых единицах. Без кадра (`coach start`) проверяется только само число.
-    2. Иначе есть `startingStackChips` и кадр: при закрытой поздней регистрации средний стек —
-       `startingStackChips × entrants / playersLeft / bb` последнего кадра (источник `lobby`), при
-       открытой — средний `stackBb + investedBb` по местам первого кадра (источник `table`).
-       Без кадра, а при открытой регистрации — без первого кадра, вывода нет: средний стек
-       остаётся неизвестным до шага.
+    2. Иначе есть `startingStackChips` и кадр: при закрытой поздней регистрации и окончательных
+       входах (`payoutsFinal` не `false`) средний стек — `startingStackChips × entrants /
+       playersLeft / bb` последнего кадра (источник `lobby`; `playersLeft` кадра больше
+       `entrants` — отказ), иначе — средний `stackBb + investedBb` по местам первого кадра
+       (источник `table`). Без кадра, а для среднего по столу — без первого кадра, вывода нет:
+       средний стек остаётся неизвестным до шага.
     3. `startingStackChips`, если он есть, проверяется всегда, нужен он для вывода или нет.
     """
     if not isinstance(raw, dict):
@@ -115,8 +117,15 @@ def context_payload(raw: dict, last_frame: dict | None, first_frame: dict | None
 def _derive_average_stack(
     context: dict, starting: float, last_frame: dict | None, first_frame: dict | None
 ) -> None:
-    """Средний стек в BB из стартового стека; результат и источник ложатся в `context`."""
-    if _as_bool(context, "lateRegOpen"):
+    """Средний стек в BB из стартового стека; результат и источник ложатся в `context`.
+
+    Формула лобби — только при окончательных входах: регистрация закрыта и выплаты не сняты до
+    её закрытия (`payoutsFinal` не `false`, решение R20). Файл только захода 1 несёт входы
+    середины регистрации, и после её закрытия формула занизила бы средний стек — там, как и во
+    время регистрации, средний по столу первого кадра.
+    """
+    provisional = _as_optional_bool(context, "payoutsFinal", None) is False
+    if _as_bool(context, "lateRegOpen") or provisional:
         if first_frame is None:
             return
         seats = node_payload(first_frame).get("seats")
@@ -137,7 +146,12 @@ def _derive_average_stack(
     )
     left = _as_int(last_frame, "playersLeft")
     check_positive(left, "остаток игроков")
-    context["averageStackBb"] = starting * _as_int(context, "entrants") / left / bb
+    entrants = _as_int(context, "entrants")
+    if left > entrants:
+        raise ValueError(
+            f"осталось игроков на кадре ({left}) больше, чем входов в контексте ({entrants})"
+        )
+    context["averageStackBb"] = starting * entrants / left / bb
     context["averageStackSource"] = "lobby"
 
 

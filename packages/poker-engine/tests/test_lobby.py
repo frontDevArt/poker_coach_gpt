@@ -86,6 +86,13 @@ def _final_record(tmp_path):
     return out, _read(out)
 
 
+def _rewrite(out, **changes):
+    """Файл турнира `out` с полями, изменёнными руками (как их правит пользователь)."""
+    path = pathlib.Path(out["tournament"])
+    record = {**json.loads(path.read_text(encoding="utf-8")), **changes}
+    path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def _total(record):
     return sum((p["to"] - p["from"] + 1) * p["amount"] for p in record["payouts"])
 
@@ -450,6 +457,102 @@ def test_11_other_title(tmp_path):
         lobby.merge([_with(_prizes2(), title="Fifty Stack $11")], record, PASS2)
 
 
+def test_11_other_start_time_on_the_same_day(tmp_path):
+    # R21: турнир того же названия в тот же день, начало в 15:00 — имя файла то же, но это
+    # другой турнир: отказ, а не перезапись файла турнира 23:05
+    tmp = str(tmp_path)
+    lobby.save([_info1(), _prizes1()], tmp, PASS1)
+    before = _snapshot(tmp_path)
+    with pytest.raises(
+        ValueError,
+        match="^кадры от другого турнира: начало 2026-10-30 23:05 против 2026-10-30 15:00$",
+    ):
+        lobby.save([_info(_info1(), start=(10, 30, 15, 0)), _prizes1()], tmp, PASS1)
+    assert _snapshot(tmp_path) == before
+
+
+def test_11_the_same_start_passes(tmp_path):
+    # заход 2 с «Инфо» того же начала — тот же турнир, файл заменяется
+    tmp = str(tmp_path)
+    first = lobby.save([_info1(), _prizes1()], tmp, PASS1)
+    second = lobby.save([_info2(), _prizes2()], tmp, PASS2)
+    assert second["tournament"] == first["tournament"] and _read(second)["payoutsFinal"] is True
+
+
+@pytest.mark.parametrize("days", [-1, 2, 7])
+def test_11_without_info_the_capture_date_is_the_start_or_the_next_day(tmp_path, days):
+    # R21: без «Инфо» файл выбран по одному названию; кадры другого дня — другой турнир того же
+    # названия (выплаты дня 7 не ложатся в файл 10-30)
+    tmp = str(tmp_path)
+    lobby.save([_info1(), _prizes1()], tmp, PASS1)
+    before = _snapshot(tmp_path)
+    captured = PASS1 + datetime.timedelta(days=days)
+    text = (
+        f"кадры сняты {captured:%Y-%m-%d}, а турнир в файле начался 2026-10-30: "
+        "добавьте кадр «Инфо»"
+    )
+    with pytest.raises(ValueError, match=f"^{re.escape(text)}$"):
+        lobby.save([_prizes2()], tmp, captured)
+    assert _snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("days", [0, 1])
+def test_11_without_info_on_the_start_day_or_the_next_passes(tmp_path, days):
+    tmp = str(tmp_path)
+    lobby.save([_info1(), _prizes1()], tmp, PASS1)
+    out = lobby.save([_prizes2()], tmp, PASS1 + datetime.timedelta(days=days))
+    assert _read(out)["payoutsFinal"] is True and os.listdir(tmp) == [FILE_NAME]
+
+
+@pytest.mark.parametrize("start", ["30.10.2026", None, 20261030])
+def test_11_without_info_a_damaged_start_in_the_file(tmp_path, start):
+    out, _ = _final_record(tmp_path)
+    _rewrite(out, start=start)
+    before = _snapshot(tmp_path)
+    text = f"файл турнира повреждён: поле start не дата начала ({start!r})"
+    with pytest.raises(ValueError, match=f"^{re.escape(text)}$"):
+        lobby.save([_prizes2()], str(tmp_path), PASS2)
+    assert _snapshot(tmp_path) == before
+
+
+def test_11_final_over_final_with_other_entrants(tmp_path):
+    # R21: после закрытия регистрации входы не растут — окончательный заход с 2,360 входами
+    # поверх файла с 2,351 — другой турнир (средний 50,000 × 2,360 / 802 = 147,132)
+    _final_record(tmp_path)
+    before = _snapshot(tmp_path)
+    more = _header(_prizes2(), entrants=2360, unique=1817, average_stack_chips=147132)
+    with pytest.raises(ValueError, match="^кадры от другого турнира: входы 2351 против 2360$"):
+        lobby.save([more], str(tmp_path), PASS2)
+    assert _snapshot(tmp_path) == before
+
+
+def test_11_final_over_final_with_another_prize_pool(tmp_path):
+    # фонд кадров сходится с их выплатами (проверка 9), а в файле — другой окончательный фонд
+    out, _ = _final_record(tmp_path)
+    _rewrite(out, prizePoolUsd=11900.0)
+    before = _snapshot(tmp_path)
+    with pytest.raises(
+        ValueError,
+        match=re.escape("кадры от другого турнира: призовой фонд $11,900.00 против $11,896.06"),
+    ):
+        lobby.save([_prizes2()], str(tmp_path), PASS2)
+    assert _snapshot(tmp_path) == before
+
+
+def test_provisional_over_provisional_may_grow_the_pool(tmp_path):
+    # до закрытия регистрации фонд и входы растут: равенство — только у окончательных
+    tmp = str(tmp_path)
+    out = lobby.save([_info1(), _prizes1()], tmp, PASS1)
+    _rewrite(out, prizePoolUsd=9000.0, entrants=1790)
+    assert _read(lobby.save([_prizes1()], tmp, PASS1))["prizePoolUsd"] == 9224.38
+
+
+def test_11_final_over_the_same_final_passes(tmp_path):
+    out, record = _final_record(tmp_path)
+    again = lobby.save([_prizes2()], str(tmp_path), PASS2)
+    assert again["tournament"] == out["tournament"] and _read(again) == record
+
+
 def test_12_provisional_over_final(tmp_path):
     # предварительный кадр с теми же входами (уровень 16 < 17): входов не меньше, но выплаты
     # во время поздней регистрации окончательные не заменяют
@@ -460,6 +563,17 @@ def test_12_provisional_over_final(tmp_path):
         "регистрации$",
     ):
         lobby.merge([_header(_prizes2(), level=16)], record, PASS2)
+
+
+def test_12_provisional_with_more_entrants_over_final(tmp_path):
+    # равенство входов — только у окончательных поверх окончательных: предварительный кадр с
+    # 2,360 входами поверх файла с 2,351 — отказ 12, а не «другой турнир»
+    _, record = _final_record(tmp_path)
+    more = _header(
+        _prizes2(), level=16, entrants=2360, unique=1817, average_stack_chips=147132
+    )  # fmt: skip
+    with pytest.raises(ValueError, match="^в файле турнира уже окончательные выплаты"):
+        lobby.merge([more], record, PASS2)
 
 
 # проверка 13 — `test_second_pass_ambiguous_without_info` ниже (Review Focus 3)
@@ -686,6 +800,30 @@ def test_save_creates_the_directory(tmp_path):
     assert out["tournament"] == os.path.join(str(directory), FILE_NAME)
 
 
+def test_bubble_refund_added_by_the_user_survives_pass_two(tmp_path):
+    # R22: `bubbleRefundUsd` дописывает пользователь (L6) — заход 2 его не теряет
+    tmp = str(tmp_path)
+    out = lobby.save([_info1(), _prizes1()], tmp, PASS1)
+    _rewrite(out, bubbleRefundUsd=5.5)
+    assert _read(lobby.save([_prizes2()], tmp, PASS2))["bubbleRefundUsd"] == 5.5
+
+
+def test_no_bubble_refund_in_the_file_stays_absent(tmp_path):
+    out, _ = _final_record(tmp_path)
+    assert "bubbleRefundUsd" not in _read(lobby.save([_prizes2()], str(tmp_path), PASS2))
+
+
+def test_a_negative_bubble_refund_in_the_file_is_refused(tmp_path):
+    # перенесённое поле проходит ту же проверку 15, что у `coach start`
+    tmp = str(tmp_path)
+    out = lobby.save([_info1(), _prizes1()], tmp, PASS1)
+    _rewrite(out, bubbleRefundUsd=-1)
+    before = _snapshot(tmp_path)
+    with pytest.raises(ValueError, match="^возврат бай-ина не может быть отрицательным: -1\\.0$"):
+        lobby.save([_prizes2()], tmp, PASS2)
+    assert _snapshot(tmp_path) == before
+
+
 def test_tournament_file_without_a_field_is_damaged(tmp_path):
     _, record = _final_record(tmp_path)
     del record["entrants"]
@@ -802,3 +940,18 @@ def test_lobby_file_during_late_registration_takes_the_field_from_the_table(tmp_
     assert "field_from_table" in answer["flags"]
     assert "payouts_provisional" not in answer["flags"]  # выплаты захода 2 — окончательные
     assert stored["context"]["lateRegOpen"] is True
+
+
+def test_pass_one_file_after_late_registration_takes_the_field_from_the_table(tmp_path):
+    # R20: второго захода не было — 1,823 входа файла устарели для раздачи после регистрации
+    tournaments = str(tmp_path / "tournaments")
+    record = _read(lobby.save([_info1(), _prizes1()], tournaments, PASS1))
+    hand = tmp_path / "hand.json"
+    coach.start(str(hand), record, late_reg_open=False)
+    frame = {
+        **preflop_frame(3, folded={7, 2}),
+        "blinds": {"sb": 2500, "bb": 5000, "ante": 600},
+        "playersLeft": 802,
+    }
+    answer = coach.step(str(hand), frame)["answer"]
+    assert {"field_from_table", "payouts_provisional"} <= set(answer["flags"])

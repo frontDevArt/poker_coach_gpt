@@ -254,6 +254,61 @@ def test_late_reg_hand_with_final_lobby_uses_table():
     assert payload["averageStackSource"] == "table"
 
 
+def test_pass_one_file_after_late_reg_uses_table():
+    # R20: файл только захода 1 (выплаты предварительные, 1,823 входа на уровне 14), раздача
+    # после закрытия регистрации: входы файла устарели и занизили бы средний стек (50,000 × 1,823
+    # / 802 / 5,000 = 22.7 BB против 29.3 при 2,351) — средний по столу первого кадра
+    first = preflop_vs_open()[0]
+    raw = {
+        **_context(), "startingStackChips": 50000, "entrants": 1823, "lateRegOpen": False,
+        "payoutsFinal": False,
+    }  # fmt: skip
+    raw.pop("averageStackBb")
+    last = {**preflop_vs_open()[-1], "playersLeft": 802, "blinds": {"sb": 2500, "bb": 5000}}
+    payload = context_payload(raw, last, first_frame=first)
+    seats = node_payload(first)["seats"]
+    expected = sum(s["stackBb"] + s.get("investedBb", 0.0) for s in seats) / len(seats)
+    assert payload["averageStackBb"] == pytest.approx(expected)
+    assert payload["averageStackSource"] == "table"
+
+
+def test_pass_one_file_after_late_reg_without_first_frame_derives_nothing():
+    raw = {**_context(), "startingStackChips": 50000, "lateRegOpen": False, "payoutsFinal": False}
+    raw.pop("averageStackBb")
+    payload = context_payload(raw, preflop_vs_open()[0])
+    assert "averageStackBb" not in payload and "averageStackSource" not in payload
+
+
+def test_final_payouts_after_late_reg_use_the_lobby_formula():
+    # `payoutsFinal: true` и без поля — входы окончательные: формула лобби, как раньше
+    frame = {**preflop_vs_open()[0], "playersLeft": 802, "blinds": {"sb": 2500, "bb": 5000}}
+    for extra in ({"payoutsFinal": True}, {}):
+        raw = {**_context(), "startingStackChips": 50000, "lateRegOpen": False, **extra}
+        raw.pop("averageStackBb")
+        payload = context_payload(raw, frame, first_frame=frame)
+        assert payload["averageStackBb"] == pytest.approx(50000 * raw["entrants"] / 802 / 5000)
+        assert payload["averageStackSource"] == "lobby"
+
+
+def test_frame_players_left_over_entrants_is_refused():
+    raw = {**_context(), "startingStackChips": 50000, "entrants": 800, "lateRegOpen": False}
+    raw.pop("averageStackBb")
+    frame = {**preflop_vs_open()[0], "playersLeft": 802, "blinds": {"sb": 2500, "bb": 5000}}
+    with pytest.raises(
+        ValueError,
+        match=re.escape("осталось игроков на кадре (802) больше, чем входов в контексте (800)"),
+    ):
+        context_payload(raw, frame, first_frame=frame)
+
+
+def test_frame_players_left_equal_to_entrants_passes():
+    raw = {**_context(), "startingStackChips": 50000, "entrants": 802, "lateRegOpen": False}
+    raw.pop("averageStackBb")
+    frame = {**preflop_vs_open()[0], "playersLeft": 802, "blinds": {"sb": 2500, "bb": 5000}}
+    payload = context_payload(raw, frame, first_frame=frame)
+    assert payload["averageStackBb"] == pytest.approx(50000 / 5000)
+
+
 def test_explicit_average_stack_wins_over_starting_stack():
     raw = {**_context(), "averageStackBb": 50.5, "startingStackChips": 50000}
     payload = context_payload(raw, preflop_vs_open()[0], first_frame=preflop_vs_open()[0])

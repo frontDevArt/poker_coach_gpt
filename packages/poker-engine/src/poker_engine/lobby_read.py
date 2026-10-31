@@ -46,6 +46,8 @@ _PLACES_PAID = re.compile(rf"({_NUM})\s*np.*")  # «330 npM30BbIX MeCT»
 # месяц — ровно три знака: ключи `_MONTHS` — трёхбуквенные сокращения
 _DATE = re.compile(r"(\S{3})\s*(\d{1,2}),\s*(\d{1,2}):(\d{2})(?:\s*\(.*?(\d+)\))?")
 _INTERVAL = re.compile(r"(?<!\d)(\d+)\s*m[nwmu]h$")  # «… 8MNH» — «8 мин» в конце строки
+# «7 yaca» или «7 чaca» — «7 часа»: длительность, не интервал блайндов («ч» `_FOLD` не сворачивает)
+_HOURS = re.compile(r"\d+\s*[yч]ac")
 _SEATS = re.compile(r"(\d+)\s*\D*rpok\D*ha\s*cto\D*")  # «8MrpoKOBHa CTOn», не «за финальным»
 _EARLY_BIRD = re.compile(r"early\s*bird|pahh")  # «Early Bird» или «PaHHAA nITAWKa»
 
@@ -429,9 +431,18 @@ class _Reader:
             below, _DATE, "конец поздней регистрации", fold=True,
             where=lambda line, m: m[5] is not None,
         )  # fmt: skip
-        intervals = [(line, m) for line in below if (m := _INTERVAL.search(_fold(line.text)))]
+        # строка с часами — длительность поздней регистрации («7 часа 30 минут»), у которой OCR
+        # мог потерять «ут»; из оставшихся одна, иначе какая из них интервал, не угадывается
+        intervals = [
+            (line, m)
+            for line in below
+            if (m := _INTERVAL.search(_fold(line.text))) and not _HOURS.search(_fold(line.text))
+        ]
         if not intervals:
             raise _missing("интервал блайндов")
+        if len(intervals) > 1:
+            shown = " и ".join(f"«{line.text}»" for line, _ in intervals)
+            raise ValueError(f"на кадре поле «интервал блайндов» читается неоднозначно: {shown}")
         interval_line, interval = intervals[0]
         self._whole("интервал блайндов", interval_line)  # справочное: уверенность не помечается
         _, seats = self._field(below, _SEATS, "размер стола", fold=True)
