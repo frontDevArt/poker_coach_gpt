@@ -496,6 +496,42 @@ def test_coach_start_step_undo(tmp_path, capsys):
     assert (code, data) == (0, {"undone": 1, "steps": 0})
 
 
+@pytest.mark.parametrize(
+    "extra, expected", [([], None), (["--late-reg", "open"], True), (["--late-reg", "closed"], False)]
+)
+def test_coach_start_late_reg_flag(tmp_path, capsys, monkeypatch, extra, expected):
+    seen = {}
+
+    def fake_start(path, context, late_reg_open=None):
+        seen["late_reg_open"] = late_reg_open
+        return {"hand": path, "steps": 0}
+
+    monkeypatch.setattr("poker_engine.cli.coach.start", fake_start)
+    context = _write(tmp_path / "context.json", _context())
+    hand = str(tmp_path / "hand.json")
+    code, _ = run(["coach", "start", "--hand", hand, "--context", context, *extra], capsys)
+    assert code == 0 and seen["late_reg_open"] is expected
+
+
+def test_coach_start_late_reg_rejects_other_values(tmp_path, capsys):
+    hand = tmp_path / "hand.json"
+    context = _write(tmp_path / "context.json", _context())
+    code, data = run(
+        ["coach", "start", "--hand", str(hand), "--context", context, "--late-reg", "maybe"], capsys
+    )
+    assert code == 1 and "--late-reg" in data["error"] and "maybe" in data["error"]
+    assert not hand.exists()
+
+
+def test_coach_start_late_reg_open_is_written(tmp_path, capsys):
+    hand = tmp_path / "hand.json"
+    context = _write(tmp_path / "context.json", {**_context(), "lateRegOpen": False})
+    code, _ = run(["coach", "start", "--hand", str(hand), "--context", context,
+                   "--late-reg", "open"], capsys)
+    assert code == 0
+    assert json.loads(hand.read_text(encoding="utf-8"))["context"]["lateRegOpen"] is True
+
+
 def test_coach_step_reads_the_frame_from_stdin(tmp_path, monkeypatch, capsys):
     hand = str(tmp_path / "hand.json")
     _stdin(monkeypatch, _context())

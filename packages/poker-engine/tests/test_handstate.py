@@ -1115,3 +1115,32 @@ def test_a_zero_bubble_refund_is_accepted():
     quiet = dict(CONTEXT)
     quiet["bubbleRefundUsd"] = 0.0
     validate_hand(context_from_dict(quiet), [node_from_dict(_node())])
+
+
+# --- пометки лобби (план D40, Задача 1) ------------------------------------------------------
+
+
+def test_lobby_fields_default_to_none():
+    context = context_from_dict(CONTEXT)
+    assert context.payouts_final is None and context.average_stack_source is None
+
+
+def test_lobby_fields_are_read():
+    context = context_from_dict({**CONTEXT, "payoutsFinal": False, "averageStackSource": "table"})
+    assert context.payouts_final is False and context.average_stack_source == "table"
+
+
+@pytest.mark.parametrize("source", ["lobby", "table"])
+def test_a_known_average_stack_source_is_accepted(source):
+    assert context_from_dict({**CONTEXT, "averageStackSource": source}).average_stack_source == source
+
+
+@pytest.mark.parametrize("source", ["screen", "", 1])
+def test_an_unknown_average_stack_source_is_rejected(source):
+    with pytest.raises(ValueError, match="averageStackSource"):
+        context_from_dict({**CONTEXT, "averageStackSource": source})
+
+
+def test_payouts_final_must_be_a_boolean():
+    with pytest.raises(ValueError, match=re.escape("поле 'payoutsFinal' должно быть true или false")):
+        context_from_dict({**CONTEXT, "payoutsFinal": "no"})

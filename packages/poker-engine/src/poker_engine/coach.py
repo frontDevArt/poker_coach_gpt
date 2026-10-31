@@ -27,14 +27,18 @@ VERSION = 1
 _FIELDS = (("context", dict), ("frames", list), ("steps", list), ("streets", dict))
 
 
-def start(path: str, context: dict) -> dict:
+def start(path: str, context: dict, late_reg_open: bool | None = None) -> dict:
     """Новый файл раздачи без кадров. Файл уже есть — отказ: перезаписи нет.
 
     Контекст проверяется сразу, чтобы ошибка в нём не всплыла только на первом кадре. Средний
     стек в фишках делится на большой блайнд кадра — до первого шага проверяется только он сам.
+    `late_reg_open`, если задан, перекрывает `lateRegOpen` контекста: была ли в этой раздаче
+    открыта поздняя регистрация, решает пользователь, а не лобби (план D40).
     """
     if os.path.exists(path):
         raise ValueError(f"файл раздачи уже есть: {path}")
+    if late_reg_open is not None and isinstance(context, dict):
+        context = {**context, "lateRegOpen": late_reg_open}
     _validate_context(context_from_dict(frames.context_payload(context, None)))
     _write(
         path,
@@ -61,7 +65,7 @@ def step(path: str, frame: dict) -> dict:
     data = _load(path)
     seen = [*data["frames"], frame]
     nodes = [frames.node_payload(raw) for raw in seen]
-    context = frames.context_payload(data["context"], seen[-1])
+    context = frames.context_payload(data["context"], seen[-1], first_frame=seen[0])
     answer = advise(context, nodes, [done["answer"] for done in data["steps"]])
     hand = read_hand(context, nodes)
     facts = why(answer, hand.nodes[-1])

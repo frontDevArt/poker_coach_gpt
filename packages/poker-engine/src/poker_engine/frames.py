@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 
 from ._checks import check_positive
-from .handstate import _as_float, _as_optional_dict, _present
+from .handstate import _as_bool, _as_float, _as_int, _as_optional_dict, _present
 
 UNITS = ("bb", "chips")
 _SUFFIX = {"bb": "Bb", "chips": "Chips"}
@@ -61,21 +61,39 @@ def node_payload(raw: dict) -> dict:
     return node
 
 
-def context_payload(raw: dict, last_frame: dict | None) -> dict:
-    """Контекст → форма `analyze`: `averageStackChips` делится на `blinds.bb` последнего кадра.
+def context_payload(raw: dict, last_frame: dict | None, first_frame: dict | None = None) -> dict:
+    """Контекст → форма `analyze`: средний стек в BB из того, что есть в контексте.
 
-    Средний стек — с экрана лобби, а не со стола: его единица от единицы кадра не зависит, и
-    `blinds` нужен у кадра в любых единицах. Без кадра (`coach start`) проверяется только само
-    число, а средний стек в BB остаётся неизвестным до первого шага.
+    Порядок (спека лобби §6):
+
+    1. Есть `averageStackBb` или `averageStackChips` — `averageStackChips` делится на
+       `blinds.bb` последнего кадра, остальное как пришло, источник не ставится. Средний стек —
+       с экрана лобби, а не со стола: его единица от единицы кадра не зависит, и `blinds` нужен
+       у кадра в любых единицах. Без кадра (`coach start`) проверяется только само число.
+    2. Иначе есть `startingStackChips` и кадр: при закрытой поздней регистрации средний стек —
+       `startingStackChips × entrants / playersLeft / bb` последнего кадра (источник `lobby`), при
+       открытой — средний `stackBb + investedBb` по местам первого кадра (источник `table`).
+       Без кадра, а при открытой регистрации — без первого кадра, вывода нет: средний стек
+       остаётся неизвестным до шага.
+    3. `startingStackChips`, если он есть, проверяется всегда, нужен он для вывода или нет.
     """
     if not isinstance(raw, dict):
         raise ValueError(f"поле 'context' должно быть объектом, получено {raw!r}")
+    starting = None
+    if _present(raw, "startingStackChips"):
+        starting = _as_float(raw, "startingStackChips")
+        check_positive(starting, "стартовый стек")
     if "averageStackChips" not in raw:
-        return dict(raw)
+        context = dict(raw)
+        if starting is not None and not _present(raw, "averageStackBb"):
+            _derive_average_stack(context, starting, last_frame, first_frame)
+        return context
     if "averageStackBb" in raw:
         raise ValueError("в контексте два средних стека: нужен в BB или в фишках, не оба")
     context = {key: value for key, value in raw.items() if key != "averageStackChips"}
     if not _present(raw, "averageStackChips"):
+        if starting is not None:
+            _derive_average_stack(context, starting, last_frame, first_frame)
         return context
     chips = _as_float(raw, "averageStackChips")
     check_positive(chips, "средний стек")
@@ -85,6 +103,36 @@ def context_payload(raw: dict, last_frame: dict | None) -> dict:
         )
         context["averageStackBb"] = chips / bb
     return context
+
+
+def _derive_average_stack(
+    context: dict, starting: float, last_frame: dict | None, first_frame: dict | None
+) -> None:
+    """Средний стек в BB из стартового стека; результат и источник ложатся в `context`."""
+    if _as_bool(context, "lateRegOpen"):
+        if first_frame is None:
+            return
+        seats = node_payload(first_frame).get("seats")
+        if not isinstance(seats, list) or not seats:
+            raise ValueError("средний стек по столу: в первом кадре нет мест")
+        total = sum(
+            _as_float(seat, "stackBb")
+            + (_as_float(seat, "investedBb") if _present(seat, "investedBb") else 0.0)
+            for seat in seats
+        )
+        context["averageStackBb"] = total / len(seats)
+        context["averageStackSource"] = "table"
+        return
+    if last_frame is None:
+        return
+    bb = _big_blind(
+        last_frame,
+        "средний стек из стартового стека без большого блайнда: нужно blinds.bb > 0 в кадре",
+    )
+    left = _as_int(last_frame, "playersLeft")
+    check_positive(left, "остаток игроков")
+    context["averageStackBb"] = starting * _as_int(context, "entrants") / left / bb
+    context["averageStackSource"] = "lobby"
 
 
 def _big_blind(frame: dict, text: str) -> float:

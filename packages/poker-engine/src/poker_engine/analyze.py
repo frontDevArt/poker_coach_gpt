@@ -205,6 +205,10 @@ def analyze(
         result["flags"].append("ladder_incomplete")
     if context.late_reg_open:
         result["flags"].append("late_reg_open")
+    if context.payouts_final is False:
+        result["flags"].append("payouts_provisional")
+    if context.average_stack_source == "table":
+        result["flags"].append("field_from_table")
     if node.street == "preflop":
         result["flags"].append("no_pushfold")
     if protected is not None:

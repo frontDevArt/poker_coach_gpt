@@ -119,6 +119,12 @@ class TournamentContext:
     # вылетевшему на баббле. `None` — защиты нет. Как она входит в модель —
     # `protected_ladder`.
     bubble_refund_usd: float | None
+    # Из лобби (план D40). `payouts_final`: `False` — выплаты сняты до
+    # закрытия поздней регистрации, лесенка предварительна; `None` — не
+    # сказано, старые контексты не меняются. `average_stack_source` —
+    # откуда средний стек: `"lobby"` или `"table"`; `None` — задан вручную.
+    payouts_final: bool | None = None
+    average_stack_source: str | None = None
 
     def ladder(self) -> PayoutLadder:
         """Лесенка выплат контекста. Её гарды — у `PayoutLadder`."""
@@ -264,6 +270,18 @@ def _as_optional_bool(raw: dict, key: str, default: bool = False) -> bool:
     return value
 
 
+def _as_average_stack_source(raw: dict) -> str | None:
+    """Необязательный источник среднего стека: `"lobby"`, `"table"` или `None`."""
+    if not _present(raw, "averageStackSource"):
+        return None
+    value = raw["averageStackSource"]
+    if value not in ("lobby", "table"):
+        raise ValueError(
+            f"поле 'averageStackSource' должно быть 'lobby' или 'table', получено {value!r}"
+        )
+    return value
+
+
 def _as_list(raw: dict, key: str) -> list:
     """Обязательное поле как список. Форма — часть контракта, а не предмет
     интерпретации: `list(...)` на строке не бросает и молча разваливает её
@@ -318,6 +336,8 @@ def context_from_dict(raw: dict) -> TournamentContext:
         seats_per_table=_as_int(raw, "seatsPerTable"),
         average_stack_bb=_as_optional_float(raw, "averageStackBb"),
         bubble_refund_usd=_as_optional_float(raw, "bubbleRefundUsd"),
+        payouts_final=_as_bool(raw, "payoutsFinal") if _present(raw, "payoutsFinal") else None,
+        average_stack_source=_as_average_stack_source(raw),
     )
 
 

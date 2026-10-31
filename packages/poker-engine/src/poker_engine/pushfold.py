@@ -230,6 +230,10 @@ def _context_flags(context: TournamentContext, node: DecisionNode, pko: bool) ->
         flags.append("ladder_incomplete")
     if context.late_reg_open:
         flags.append("late_reg_open")
+    if context.payouts_final is False:
+        flags.append("payouts_provisional")
+    if context.average_stack_source == "table":
+        flags.append("field_from_table")
     return flags
 
 

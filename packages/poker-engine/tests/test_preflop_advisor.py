@@ -542,6 +542,22 @@ def test_context_flags_only_when_true(answers):
         assert (flag in _advise(preflop_vs_open(), context)["flags"]) == present, key
 
 
+@pytest.mark.parametrize(
+    "extra, flag, present",
+    [
+        ({"payoutsFinal": False}, "payouts_provisional", True),
+        ({"payoutsFinal": True}, "payouts_provisional", False),
+        ({}, "payouts_provisional", False),
+        ({"averageStackSource": "table"}, "field_from_table", True),
+        ({"averageStackSource": "lobby"}, "field_from_table", False),
+        ({}, "field_from_table", False),
+    ],
+)
+def test_lobby_flags_only_when_they_are(extra, flag, present):
+    answer = _advise(preflop_vs_open(), {**_context(), **extra})
+    assert (flag in answer["flags"]) == present
+
+
 def test_classic_has_no_bounty(answers):
     # Инвариант 13: без ценников нет ни `bountyUsd`, ни `pko`.
     for answer in answers.values():

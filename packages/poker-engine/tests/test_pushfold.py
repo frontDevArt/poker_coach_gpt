@@ -393,6 +393,22 @@ def test_late_reg_open_only_when_it_is(first_in_answer):
     assert "late_reg_open" not in _advise(pushfold_first_in_node(), context_raw)["flags"]
 
 
+@pytest.mark.parametrize(
+    "extra, flag, present",
+    [
+        ({"payoutsFinal": False}, "payouts_provisional", True),
+        ({"payoutsFinal": True}, "payouts_provisional", False),
+        ({}, "payouts_provisional", False),
+        ({"averageStackSource": "table"}, "field_from_table", True),
+        ({"averageStackSource": "lobby"}, "field_from_table", False),
+        ({}, "field_from_table", False),
+    ],
+)
+def test_lobby_flags_only_when_they_are(extra, flag, present):
+    answer = _advise(pushfold_first_in_node(), {**_context(), **extra})
+    assert (flag in answer["flags"]) == present
+
+
 def test_no_overcall_only_with_more_than_one_responder(first_in_answer, facing_answer):
     assert "no_overcall" in first_in_answer["flags"]
     assert "no_overcall" in facing_answer["flags"]

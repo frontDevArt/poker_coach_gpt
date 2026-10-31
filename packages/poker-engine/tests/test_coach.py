@@ -77,6 +77,39 @@ def test_start_takes_the_average_stack_in_chips(tmp_path):
         coach.start(str(tmp_path / "other.json"), {**raw, "averageStackChips": -1})
 
 
+def test_start_late_reg_overrides_context(tmp_path):
+    closed = {**_context(), "lateRegOpen": False}
+    path = tmp_path / "hand.json"
+    coach.start(str(path), closed, late_reg_open=True)
+    assert json.loads(path.read_text(encoding="utf-8"))["context"]["lateRegOpen"] is True
+    assert closed["lateRegOpen"] is False  # вход не меняется
+    other = tmp_path / "other.json"
+    coach.start(str(other), closed)
+    assert json.loads(other.read_text(encoding="utf-8"))["context"]["lateRegOpen"] is False
+    third = tmp_path / "third.json"
+    coach.start(str(third), _context(), late_reg_open=False)
+    assert json.loads(third.read_text(encoding="utf-8"))["context"]["lateRegOpen"] is False
+
+
+def test_start_checks_the_starting_stack(tmp_path):
+    path = tmp_path / "hand.json"
+    with pytest.raises(ValueError, match="стартовый стек должен быть > 0"):
+        coach.start(str(path), {**_context(), "startingStackChips": 0})
+    assert not path.exists()
+
+
+def test_step_derives_the_average_stack_from_the_starting_stack(tmp_path):
+    raw = {**_context(), "startingStackChips": 50000, "lateRegOpen": False}
+    del raw["averageStackBb"]
+    path = tmp_path / "hand.json"
+    coach.start(str(path), raw)
+    frame = {**preflop_frame(3, folded={7, 2}), "blinds": {"sb": 700, "bb": 1400, "ante": 175}}
+    answer = _step(path, frame)["answer"]
+    average = 50000 * raw["entrants"] / frame["playersLeft"] / 1400
+    expected = {**raw, "averageStackBb": average, "averageStackSource": "lobby"}
+    assert answer == advise(expected, [frame], [])
+
+
 # --- step ------------------------------------------------------------------------------------
 
 

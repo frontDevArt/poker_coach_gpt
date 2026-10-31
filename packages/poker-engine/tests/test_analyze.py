@@ -164,6 +164,22 @@ def test_open_late_registration_is_flagged(analyze_base_result):
     assert "late_reg_open" in analyze_base_result["flags"]
 
 
+@pytest.mark.parametrize(
+    "extra, flag, present",
+    [
+        ({"payoutsFinal": False}, "payouts_provisional", True),
+        ({"payoutsFinal": True}, "payouts_provisional", False),
+        ({}, "payouts_provisional", False),
+        ({"averageStackSource": "table"}, "field_from_table", True),
+        ({"averageStackSource": "lobby"}, "field_from_table", False),
+        ({}, "field_from_table", False),
+    ],
+)
+def test_lobby_flags_only_when_they_are(run_analyze, analyze_context, extra, flag, present):
+    result = run_analyze(context={**analyze_context, **extra})
+    assert (flag in result["flags"]) == present
+
+
 def test_mh_bias_is_always_flagged(analyze_base_result, run_analyze):
     assert "mh_bias" in analyze_base_result["flags"]
     assert "mh_bias" in run_analyze()["flags"]

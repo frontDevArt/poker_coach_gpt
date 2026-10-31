@@ -228,3 +228,67 @@ def test_the_average_stack_in_chips_needs_the_big_blind():
         match=re.escape("средний стек в фишках без большого блайнда: нужно blinds.bb > 0 в кадре"),
     ):
         context_payload(raw, frame)
+
+
+# --- средний стек из стартового стека (план D40, Задача 1) --------------------------------------
+
+
+def test_average_stack_from_starting_stack_after_late_reg():
+    raw = {**_context(), "startingStackChips": 50000, "entrants": 2351, "lateRegOpen": False}
+    raw.pop("averageStackBb")
+    frame = {**preflop_vs_open()[0], "playersLeft": 802, "unit": "bb"}
+    frame["blinds"] = {"sb": 2500, "bb": 5000, "ante": 600}
+    payload = context_payload(raw, frame, first_frame=frame)
+    assert payload["averageStackBb"] == pytest.approx(50000 * 2351 / 802 / 5000)
+    assert payload["averageStackSource"] == "lobby"
+
+
+def test_late_reg_hand_with_final_lobby_uses_table():
+    first = preflop_vs_open()[0]
+    raw = {**_context(), "startingStackChips": 50000, "lateRegOpen": True, "payoutsFinal": True}
+    raw.pop("averageStackBb")
+    payload = context_payload(raw, preflop_vs_open()[-1], first_frame=first)
+    seats = node_payload(first)["seats"]
+    expected = sum(s["stackBb"] + s.get("investedBb", 0.0) for s in seats) / len(seats)
+    assert payload["averageStackBb"] == pytest.approx(expected)
+    assert payload["averageStackSource"] == "table"
+
+
+def test_explicit_average_stack_wins_over_starting_stack():
+    raw = {**_context(), "averageStackBb": 50.5, "startingStackChips": 50000}
+    payload = context_payload(raw, preflop_vs_open()[0], first_frame=preflop_vs_open()[0])
+    assert payload["averageStackBb"] == 50.5 and "averageStackSource" not in payload
+
+
+def test_explicit_average_stack_in_chips_wins_over_starting_stack():
+    raw = {**_context(), "averageStackChips": 70700, "startingStackChips": 50000}
+    raw.pop("averageStackBb")
+    frame = _in_chips(preflop_vs_open()[0])
+    payload = context_payload(raw, frame, first_frame=frame)
+    assert payload["averageStackBb"] == pytest.approx(70700 / frame["blinds"]["bb"])
+    assert "averageStackSource" not in payload
+
+
+def test_late_reg_open_without_first_frame_derives_nothing():
+    raw = {**_context(), "startingStackChips": 50000, "lateRegOpen": True}
+    raw.pop("averageStackBb")
+    payload = context_payload(raw, preflop_vs_open()[0])
+    assert "averageStackBb" not in payload and "averageStackSource" not in payload
+
+
+def test_starting_stack_without_frame_derives_nothing():
+    raw = {**_context(), "startingStackChips": 50000, "lateRegOpen": False}
+    raw.pop("averageStackBb")
+    payload = context_payload(raw, None)
+    assert "averageStackBb" not in payload and "averageStackSource" not in payload
+
+
+def test_starting_stack_must_be_positive():
+    with pytest.raises(ValueError, match="стартовый стек должен быть > 0"):
+        context_payload({**_context(), "startingStackChips": 0}, None)
+
+
+def test_starting_stack_is_checked_even_when_not_needed():
+    raw = {**_context(), "startingStackChips": -5}
+    with pytest.raises(ValueError, match="стартовый стек должен быть > 0"):
+        context_payload(raw, preflop_vs_open()[0], first_frame=preflop_vs_open()[0])

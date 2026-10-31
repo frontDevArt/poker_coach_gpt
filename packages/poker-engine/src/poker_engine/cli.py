@@ -149,7 +149,8 @@ def _dispatch(args: argparse.Namespace) -> dict:
     if args.command == "coach":
         # Форму контекста и кадра проверяет движок (`coach`, `frames`), здесь — только чтение.
         if args.coach_command == "start":
-            return coach.start(args.hand, _read_json(args.context))
+            late_reg = {None: None, "open": True, "closed": False}[args.late_reg]
+            return coach.start(args.hand, _read_json(args.context), late_reg_open=late_reg)
         if args.coach_command == "step":
             return coach.step(args.hand, _read_json(args.frame))
         if args.coach_command == "lint":
@@ -277,6 +278,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p_start = co_sub.add_parser("start", help="новый файл раздачи с контекстом")
     p_start.add_argument("--hand", required=True, help="файл раздачи")
     p_start.add_argument("--context", required=True, help="файл с JSON или '-' для stdin")
+    p_start.add_argument(
+        "--late-reg",
+        choices=("open", "closed"),
+        default=None,
+        help="была ли открыта поздняя регистрация (перекрывает lateRegOpen контекста)",
+    )
     p_step = co_sub.add_parser("step", help="кадр в конец раздачи и совет на нём")
     p_step.add_argument("--hand", required=True, help="файл раздачи")
     p_step.add_argument("--frame", required=True, help="файл с JSON или '-' для stdin")
