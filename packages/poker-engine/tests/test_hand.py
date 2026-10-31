@@ -13,7 +13,9 @@ from conftest import (
     _context,
     flop_frame,
     preflop_frame,
+    preflop_open,
     preflop_vs_allin_after_raise,
+    preflop_vs_open,
     preflop_vs_3bet,
 )
 from poker_engine import advice, coach, preflop_advisor
@@ -160,6 +162,33 @@ def test_rounding_of_a_fold_after_the_last_frame_is_not_a_call(seat, position):
     assert [a for a in summary["line"] if a["seatIndex"] == seat] == [
         {"seatIndex": seat, "position": position, "action": "fold"}
     ]
+
+
+_OPEN_AND_CALL = (preflop_open, {3: 2.0, 6: 2.0}, {7, 2, 4, 5}, 3, 6)
+_THREE_BET_AND_CALL = (preflop_vs_open, {7: 6.0, 3: 6.0}, {2, 4, 5, 6}, 3, 7)
+
+
+@pytest.mark.parametrize("case", [_OPEN_AND_CALL, _THREE_BET_AND_CALL])
+@pytest.mark.parametrize("who", ["raiser", "caller"])
+@pytest.mark.parametrize("noise", [-0.1, 0.1])
+def test_rounding_of_a_raise_after_the_last_frame_is_not_an_action(case, who, noise):
+    # Фаза 14b, N1: наибольшее вложенное префлопа ставит рейз героя после последнего кадра, и
+    # прижать его к вложенному кадра нечем. Шум в шаг у рейзера или у уравнявшего — не рейз
+    # уравнявшего (линия вне дерева) и не колл на другую сумму: оба на наибольшем вложенном, с
+    # шагом печати.
+    frames, put, folded, raiser, caller = case
+    flop = flop_frame(3, put, folded)
+    seat = raiser if who == "raiser" else caller
+    next(s for s in flop["seats"] if s["seatIndex"] == seat)["stackBb"] -= noise
+    summary = _summary([*frames(), flop])
+
+    assert "line" in summary, summary.get("reason")
+    acts = {a["seatIndex"]: a for a in summary["line"] if a["action"] != "fold"}
+    assert (acts[raiser]["action"], acts[caller]["action"]) == ("raise", "call")
+    # Наибольшее на исходе улицы: шум вверх у любого из двух поднимает его на шаг.
+    size = put[raiser] + max(noise, 0.0)
+    assert acts[raiser]["toBb"] == acts[caller]["toBb"] == pytest.approx(size, abs=1e-9)
+    assert acts[raiser]["toBb"] == round(acts[raiser]["toBb"], 1)
 
 
 def test_a_limp_and_the_check():

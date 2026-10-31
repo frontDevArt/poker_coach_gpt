@@ -126,7 +126,10 @@ def _closing(preflop_nodes: list[DecisionNode], next_node: DecisionNode) -> dict
 
     Вложенное в пределах `_DERIVED_BB` от наибольшего вложенного последнего кадра префлопа или
     от своего вложенного там — оно и есть: это шум округления стеков, а не ставка (рейз меньше
-    большого блайнда не бывает, олл-ин виден по стеку 0).
+    большого блайнда не бывает, олл-ин виден по стеку 0). Наибольшее вложенное улицы ставится и
+    после последнего кадра — рейз героя на своём шаге и колл на него: прижать его не к чему, и
+    вложенное в пределах `_DERIVED_BB` ниже наибольшего на исходе улицы — колл этого наибольшего.
+    Его размер поэтому точен до шума печати, а не до шага.
     """
     began = {seat.seat_index: seat.stack_bb + seat.invested_bb for seat in preflop_nodes[0].seats}
     starts = {seat.seat_index: seat.stack_bb + seat.invested_bb for seat in next_node.seats}
@@ -137,8 +140,9 @@ def _closing(preflop_nodes: list[DecisionNode], next_node: DecisionNode) -> dict
         if index in began:
             amount = began[index] - start
             near = [at for at in (known, last.get(index, 0.0)) if abs(amount - at) <= _DERIVED_BB]
-            put[index] = min(near, key=lambda at: abs(amount - at)) if near else amount
+            put[index] = min(near, key=lambda at: abs(amount - at)) if near else _on_step(amount)
     top = max(put.values())
+    put = {index: top if top - amount <= _DERIVED_BB else amount for index, amount in put.items()}
     return {
         seat.seat_index: replace(
             seat,
@@ -149,6 +153,11 @@ def _closing(preflop_nodes: list[DecisionNode], next_node: DecisionNode) -> dict
         for seat in next_node.seats
         if seat.seat_index in put
     }
+
+
+def _on_step(amount: float) -> float:
+    """Разность сумм экрана — на шаг печати, без хвоста плавающей точки."""
+    return round(round(amount / ROUNDING_STEP_BB) * ROUNDING_STEP_BB, 6)
 
 
 def _read(nodes: list[DecisionNode]):
